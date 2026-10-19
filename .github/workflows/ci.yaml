@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on force-pushed PR branches. Push events key the
+# group by commit SHA so every merged commit on main gets a complete record.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go
+    # Where this job runs is the RUNNER_LABELS repository variable, a JSON
+    # array of runner labels, and it MUST be set: there is no default. Unset,
+    # it reaches fromJSON as an empty string and the run fails at once with
+    # "Error when evaluating 'runs-on' for job 'go'", before any runner is
+    # assigned. A silent default would put a new repository's jobs somewhere
+    # nobody chose: on the garage, where a public repository's jobs queue
+    # forever, or on hosted runners, which bill a private repository.
+    #
+    # For a new private repository, run it in the garage, the JIT runners on
+    # runner.lan, with exactly the labels they register:
+    #
+    #   ["self-hosted","garage","proxmox"]
+    #
+    # All three are named because `garage` alone would also be satisfied by
+    # any other org runner someone gives that label. The org's `garage`
+    # runner group serves every private repository and no public one, so a
+    # public repository uses ["ubuntu-latest"] instead, which is free there
+    # and keeps fork pull requests off the garage LAN. A private repository
+    # can switch to ["ubuntu-latest"] while the garage is down, a settings
+    # change rather than a pull request whose own checks need the runner that
+    # is down.
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS) }}
+    env:
+      # This repository is private until it is published, and its module path
+      # is go.holos.run/distro. GOPRIVATE implies GONOPROXY and GONOSUMDB; do
+      # not set those separately. The exact module path, not a wildcard, so
+      # public modules keep their checksum database verification. Drop it once
+      # the repository is public.
+      GOPRIVATE: go.holos.run/distro
+    steps:
+      # `runs-on` matches labels, not runner groups, so another org runner
+      # carrying the same three labels could take this job. The garage
+      # supervisor names every runner garage-<n>-<...>; fail loudly if the job
+      # landed elsewhere while RUNNER_LABELS asked for the garage.
+      - name: ran on the garage runner
+        if: contains(vars.RUNNER_LABELS, 'garage')
+        run: |
+          echo "runner: ${RUNNER_NAME} (${RUNNER_OS}/${RUNNER_ARCH})"
+          case "${RUNNER_NAME}" in
+            garage-*) ;;
+            *) echo "::error::expected a garage-* runner, got ${RUNNER_NAME}"; exit 1 ;;
+          esac
+
+      # Pinned to full commit SHAs for supply-chain hardening, the same pins
+      # aavis-ops uses on this runner.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # go-version-file reads the directive from go.mod, so the toolchain
+      # follows the module rather than a version written here. The module has
+      # no dependencies and so no go.sum for the module cache to key on.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: module path
+        run: |
+          got="$(go list -m)"
+          if [ "${got}" != "go.holos.run/distro" ]; then
+            echo "::error file=go.mod::module is ${got}, want go.holos.run/distro"
+            exit 1
+          fi
+          go list ./...
+
+      # The go.holos.run pages are what make the module path resolve. Each
+      # must name the module path in go.mod, so a rename of either cannot
+      # leave the other behind. The 404 page must equal the index page: the go
+      # command resolves a subpath from the 404 page, re-fetches the prefix
+      # from the index page, and fails if the two tags disagree.
+      - name: go-import pages match go.mod
+        run: |
+          cmp sites/go.holos.run/distro/index.html sites/go.holos.run/distro/404.html
+          want="<meta name=\"go-import\" content=\"$(go list -m) git "
+          for page in sites/go.holos.run/distro/index.html sites/go.holos.run/distro/404.html; do
+            if ! grep -qF "${want}" "${page}"; then
+              echo "::error file=${page}::no go-import tag for $(go list -m)"
+              exit 1
+            fi
+          done
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "${unformatted}" ]; then
+            echo "::error::gofmt -l reports unformatted files:"
+            echo "${unformatted}"
+            exit 1
+          fi
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
