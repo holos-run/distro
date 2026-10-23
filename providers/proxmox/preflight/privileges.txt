@@ -1,0 +1,35 @@
+# Privileges of the HolosProvisioner role, granted on / to holos@pve, whose
+# token holos@pve!distro (privsep 0) talosvm uses.
+#
+# This file is the authoritative list. preflight.sh sets the role to exactly
+# these privileges, and talosvm embeds this file and refuses to create or
+# destroy while the token lacks one of them. When talosvm starts calling a new
+# Proxmox API endpoint, or sends a new parameter to one it already calls, look
+# up what that needs and add it here with the call that needs it; when a call
+# goes away, remove what only it needed.
+#
+# One privilege per line, then a comment naming the calls that need it. The
+# references are qemu-server src/PVE/API2/Qemu.pm (create_vm,
+# $check_vm_modify_config_perm), pve-storage src/PVE/API2/Storage/Status.pm
+# (download_url) and pve-manager PVE/API2/Cluster.pm (resources, status).
+#
+# Calls that need nothing listed here: GET /cluster/nextid and GET
+# /access/permissions (any user), and GET /nodes/{node}/tasks/{upid}/status
+# (the owner of the task).
+
+VM.Allocate              # POST /nodes/{node}/qemu (create); DELETE /nodes/{node}/qemu/{vmid}
+VM.Audit                 # GET /cluster/resources?type=vm; GET /nodes/{node}/{qemu,lxc}/{vmid}/config to find addresses in use
+VM.PowerMgmt             # POST /nodes/{node}/qemu/{vmid}/status/start; POST /nodes/{node}/qemu/{vmid}/status/stop
+VM.Config.CPU            # POST /nodes/{node}/qemu cpu, sockets, cores
+VM.Config.Memory         # POST /nodes/{node}/qemu memory, balloon
+VM.Config.HWType         # POST /nodes/{node}/qemu machine, scsihw, serial0=socket
+VM.Config.Options        # POST /nodes/{node}/qemu name, description, ostype, bios, agent, onboot, tags
+VM.Config.Disk           # POST /nodes/{node}/qemu boot
+VM.Config.Network        # POST /nodes/{node}/qemu net0 (with its MAC)
+VM.Config.Cloudinit      # POST /nodes/{node}/qemu cicustom (the network snippet), citype
+Datastore.AllocateSpace  # POST /nodes/{node}/qemu scsi0, efidisk0 and the ide2 cloud-init drive on the disk storage; ide0 ISO access; the cicustom snippet volume on garage (check_volume_access for snippets)
+Datastore.AllocateTemplate # POST /nodes/{node}/storage/{storage}/download-url of the Talos ISO
+Datastore.Audit          # GET /cluster/resources?type=storage; GET /nodes/{node}/storage/{storage}/content
+Sys.Audit                # GET /cluster/status for the Proxmox cluster name; GET /nodes status
+Sys.AccessNetwork        # POST /nodes/{node}/storage/{storage}/download-url (instead of Sys.Audit with Sys.Modify on /)
+SDN.Use                  # POST /nodes/{node}/qemu net0 on the k8s vnet, /sdn/zones/cloud/k8s
