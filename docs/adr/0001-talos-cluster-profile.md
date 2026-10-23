@@ -127,7 +127,18 @@ Per node, written by the script:
   `topology.kubernetes.io/zone`: the Proxmox node the VM was created on. The
   Proxmox CSI plugin needs only these two labels, so no Proxmox cloud
   controller manager is installed.
-- `holos.run/pool`: the worker's pool, from its `talosvm-pool-<name>` tag.
+- `holos.run/nodepool`: the worker's pool, from its `talosvm-pool-<name>` tag.
+  "Node pool" is the word GKE and Karpenter use for the same thing.
+
+The node pool label is self-asserted. On a worker, Talos applies labels with
+the node's own kubelet credentials, so the NodeRestriction admission plugin
+refuses any `node-restriction.kubernetes.io/` label there (tested: "is not
+allowed to modify labels"), and a compromised worker could rewrite
+`holos.run/nodepool` on itself. The label steers scheduling; it is not an
+isolation boundary. A pool that separates workloads by isolation level, such
+as a microVM sandbox pool, needs a taint to keep other workloads off and a
+`node-restriction.kubernetes.io/` label applied with admin credentials, not
+from the machine config, before anything relies on it for isolation.
 
 The installer image is the Image Factory `nocloud-installer` for the same
 schematic the VM booted, so the installed system keeps the extensions and

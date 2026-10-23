@@ -20,7 +20,7 @@ ADR 0001 has the reasoning and the two provisioning steps.
 | --- | --- | --- |
 | [`patches/all.yaml`](patches/all.yaml) | every node | KubePrism on `127.0.0.1:7445`; sysctls for sandbox density and user namespaces |
 | [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true`; node label `holos.run/pod-network: none` |
-| `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and `holos.run/pool` on workers |
+| `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and `holos.run/nodepool` on workers |
 
 The sysctls:
 

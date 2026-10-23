@@ -17,7 +17,7 @@ set -euo pipefail
 
 TALOS_VERSION=v1.14.4
 KUBERNETES_VERSION=1.37.1
-POOL_LABEL=holos.run/pool
+POOL_LABEL=holos.run/nodepool
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
