@@ -237,11 +237,11 @@ func TestCreateListDestroy(t *testing.T) {
 	}
 
 	want := []string{
-		tenantSnippet,
 		"talosvm_spike_spike-cp-1-net.yaml",
 		"talosvm_spike_spike-general-1-net.yaml",
 		"talosvm_spike_spike-general-2-net.yaml",
 		"talosvm_spike_spike-general-3-net.yaml",
+		tenantSnippet,
 	}
 	if got := listDir(t, r.SnippetsDir); !slices.Equal(got, want) {
 		t.Errorf("snippets = %v, want %v", got, want)
@@ -354,7 +354,7 @@ func TestCreateListDestroy(t *testing.T) {
 	}
 	// The prefix alone is not enough: talosvm_spike_handmade-net.yaml
 	// belongs to no VM destroy selected, so it stays.
-	if got := listDir(t, r.SnippetsDir); !slices.Equal(got, []string{tenantSnippet, "talosvm_lab_lab-cp-1-net.yaml", "talosvm_spike_handmade-net.yaml"}) {
+	if got := listDir(t, r.SnippetsDir); !slices.Equal(got, []string{"talosvm_lab_lab-cp-1-net.yaml", "talosvm_spike_handmade-net.yaml", tenantSnippet}) {
 		t.Errorf("snippets after destroy = %v", got)
 	}
 	if b, _ := os.ReadFile(filepath.Join(r.SnippetsDir, tenantSnippet)); string(b) != tenantSnippetText {

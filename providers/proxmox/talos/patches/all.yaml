@@ -1,0 +1,30 @@
+# Applied to every node, control plane and worker. Nothing here names a
+# cluster, a node or an address; cluster.sh adds those per node.
+#
+# KubePrism, the node-local API server load balancer on 127.0.0.1:7445. It is
+# on by default in Talos 1.14; stated here because Cilium's kube-proxy
+# replacement will be configured to reach the API server through it.
+apiVersion: v1alpha1
+kind: KubePrismConfig
+port: 7445
+---
+# Kernel parameters.
+#
+# The neighbor table and inotify values are the ones upstream Substrate's GKE
+# setup puts on its node pool (tools/setup-gcp/cmd/cluster.go,
+# requiredNodeSysctls): every awake sandbox has its own network namespace,
+# veth pair and inotify watches, and the kernel defaults run out at about 800
+# sandboxes per node.
+#
+# user.max_user_namespaces: Talos sets it to 0 (KSPP hardening). gVisor and
+# Kubernetes user namespaces need it raised; 11255 is the value Talos's own
+# user namespace and extension test patches use.
+apiVersion: v1alpha1
+kind: SysctlConfig
+params:
+  net.ipv4.neigh.default.gc_thresh1: "4096"
+  net.ipv4.neigh.default.gc_thresh2: "16384"
+  net.ipv4.neigh.default.gc_thresh3: "32768"
+  fs.inotify.max_user_instances: "65536"
+  fs.inotify.max_user_watches: "1048576"
+  user.max_user_namespaces: "11255"

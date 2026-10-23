@@ -1,0 +1,38 @@
+# Applied to control plane nodes only. These documents describe cluster-wide
+# components that exist only in the control plane's machine config.
+#
+# No CNI and no kube-proxy: Cilium replaces both, so nodes stay NotReady
+# until it is installed. This is the Talos 1.14 form: delete the Flannel
+# document, disable kube-proxy.
+apiVersion: v1alpha1
+kind: KubeFlannelCNIConfig
+$patch: delete
+---
+apiVersion: v1alpha1
+kind: KubeProxyConfig
+enabled: false
+---
+# Kubernetes 1.37 serves PodCertificateRequest and ClusterTrustBundle as
+# certificates.k8s.io/v1 by default. Substrate's pod certificate controller
+# and kagent's chart still ask for v1beta1, so serve it as well.
+#
+# The control plane is not on the pod network (see the KubeNodeConfig below),
+# so it reaches neither Service ClusterIPs nor Pod IPs in the VXLAN overlay.
+# Admission webhooks name a URL on an L4 load balancer listening on the host
+# network. An APIService can only name a Service, so aggregator routing makes
+# the API server dial the Service's endpoints instead of its ClusterIP; a
+# selectorless Service whose EndpointSlice names the load balancer then works.
+apiVersion: v1alpha1
+kind: KubeAPIServerConfig
+extraArgs:
+  runtime-config: certificates.k8s.io/v1beta1=true
+  enable-aggregator-routing: "true"
+---
+# The control plane is not on the pod network, as in GKE and EKS, where the
+# control plane is not a node: no CNI agent runs here and the node stays
+# NotReady by design. Every CNI and pod network DaemonSet keeps off nodes
+# with this label.
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+labels:
+  holos.run/pod-network: none

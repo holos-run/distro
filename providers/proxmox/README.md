@@ -7,7 +7,7 @@ from hand-made VMs, and the program is small: `talosvm create`, `list` and
 
 `talosvm` stops at VMs booted into Talos maintenance mode with a working
 static network. It does not apply Talos machine configuration; that is the
-next step, `talosctl` with patches under `providers/proxmox/talos`.
+next step, `talosctl` with patches under [`talos/`](talos/README.md).
 
 ## What the VMs are
 
