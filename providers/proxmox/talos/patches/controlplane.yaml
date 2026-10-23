@@ -36,3 +36,13 @@ apiVersion: v1alpha1
 kind: KubeNodeConfig
 labels:
   holos.run/pod-network: none
+---
+# Talos does not deploy CoreDNS. The platform's coredns component
+# (holos/components/coredns) deploys it instead, because the Corefile is
+# platform policy (the site's private zone is forwarded to the site's
+# resolvers) and Talos offers no way to set it: KubeCoreDNSConfig has only
+# enabled and image, and talosctl upgrade-k8s re-applies Talos's own
+# Corefile. Switching an existing cluster over is in holos/README.md.
+apiVersion: v1alpha1
+kind: KubeCoreDNSConfig
+enabled: false

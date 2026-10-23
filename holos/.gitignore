@@ -1,0 +1,12 @@
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+node_modules/
+tmp/
+# components/<name>/vendor/ is not ignored: it is the Helm chart cache the
+# Helm generator reads, committed so every render, CI's included, uses the
+# same chart without a network.

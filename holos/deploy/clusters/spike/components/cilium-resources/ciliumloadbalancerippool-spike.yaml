@@ -1,0 +1,8 @@
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+    name: spike
+spec:
+    blocks:
+        - start: 10.20.0.30
+          stop: 10.20.0.33

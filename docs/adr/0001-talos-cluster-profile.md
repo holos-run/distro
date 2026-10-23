@@ -115,6 +115,9 @@ For control plane nodes (`patches/controlplane.yaml`):
   Cilium is installed; that is the expected hand-off, not a failure.
 - **Off the pod network**: the `holos.run/pod-network: none` node label and
   `--enable-aggregator-routing`, as above.
+- **No Talos CoreDNS**: `KubeCoreDNSConfig` is disabled. Talos can set only
+  CoreDNS's image, and `talosctl upgrade-k8s` re-applies its own Corefile, so
+  the platform deploys CoreDNS with its own Corefile (`holos/components/coredns`).
 - **`certificates.k8s.io/v1beta1`** served alongside v1
   (`--runtime-config=certificates.k8s.io/v1beta1=true`). Kubernetes 1.37
   serves PodCertificateRequest and ClusterTrustBundle as v1 by default, but

@@ -1,4 +1,4 @@
-# Go module prerequisites
+# The Go module
 
 The distro is the Go module `go.holos.run/distro`. Its programs run from a
 checkout of the repository root with `go run`, for example:
@@ -7,48 +7,17 @@ checkout of the repository root with `go run`, for example:
 go run ./providers/proxmox/cmd/<name>
 ```
 
-The module path is under the project's own domain, so renaming the repository
-or making it public changes no import path. `https://go.holos.run/distro`
-serves a `go-import` tag that points the go command at
-`https://github.com/holos-run/private-distro`. If the repository is renamed,
-that tag changes with it; see [Serving go.holos.run](#serving-goholosrun).
+The module path is under the project's own domain, so renaming or moving the
+repository changes no import path. `https://go.holos.run/distro` serves a
+`go-import` tag that points the go command at
+`https://github.com/holos-run/distro`. If the repository is renamed, that tag
+changes with it; see [Serving go.holos.run](#serving-goholosrun).
 
-## While the repository is private
-
-The repository will be public soon. Until then, working in a checkout needs
-nothing beyond a Go toolchain, but fetching the module by its path, for example
-with `go get` or `go install` from another module, needs two more things.
-
-1. Tell Go the module is private, so it skips the public module proxy and
-   checksum database. `GOPRIVATE` also sets `GONOPROXY` and `GONOSUMDB`.
-
-   ```sh
-   go env -w GOPRIVATE=go.holos.run/distro
-   ```
-
-   or, for one shell, `export GOPRIVATE=go.holos.run/distro`. `go env -w`
-   replaces any existing value; list several patterns comma-separated.
-
-2. Give git credentials for github.com. Go runs git with
-   `GIT_TERMINAL_PROMPT=0`, so an HTTPS fetch without credentials fails
-   without asking for a password. Use either the GitHub CLI as a credential
-   helper, once you have logged in with it:
-
-   ```sh
-   gh auth login
-   gh auth setup-git
-   ```
-
-   or rewrite the organization's HTTPS URLs to SSH, which uses your SSH key.
-   Scoping the rewrite to `holos-run/` leaves your other GitHub fetches alone:
-
-   ```sh
-   git config --global url."git@github.com:holos-run/".insteadOf "https://github.com/holos-run/"
-   ```
-
-Once the repository is public, drop `go.holos.run/distro` from `GOPRIVATE`
-(`go env -u GOPRIVATE` if it was the only entry) and the credentials are no
-longer needed for it.
+The repository is public, so fetching the module by its path, for example
+with `go get` or `go install` from another module, needs only a Go toolchain:
+the public module proxy and checksum database serve it like any other module.
+If you set `GOPRIVATE=go.holos.run/distro` while the repository was private,
+remove it (`go env -u GOPRIVATE` if it was the only entry).
 
 ## Serving go.holos.run
 
@@ -64,10 +33,12 @@ longer needed for it.
 
 CI checks that both `distro` pages name the module path in `go.mod`.
 
-It is deployed by a Cloudflare Pages project connected to this repository:
+It is deployed by a Cloudflare Pages project whose git source is this
+repository, `holos-run/distro`:
 
 | Setting | Value |
 | --- | --- |
+| Git repository | `holos-run/distro` |
 | Production branch | `main` |
 | Framework preset | None |
 | Build command | empty |

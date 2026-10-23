@@ -39,13 +39,6 @@ jobs:
     # change rather than a pull request whose own checks need the runner that
     # is down.
     runs-on: ${{ fromJSON(vars.RUNNER_LABELS) }}
-    env:
-      # This repository is private until it is published, and its module path
-      # is go.holos.run/distro. GOPRIVATE implies GONOPROXY and GONOSUMDB; do
-      # not set those separately. The exact module path, not a wildcard, so
-      # public modules keep their checksum database verification. Drop it once
-      # the repository is public.
-      GOPRIVATE: go.holos.run/distro
     steps:
       # `runs-on` matches labels, not runner groups, so another org runner
       # carrying the same three labels could take this job. The garage

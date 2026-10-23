@@ -19,7 +19,7 @@ ADR 0001 has the reasoning and the two provisioning steps.
 | File | Applies to | Sets |
 | --- | --- | --- |
 | [`patches/all.yaml`](patches/all.yaml) | every node | KubePrism on `127.0.0.1:7445`; sysctls for sandbox density and user namespaces |
-| [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true`; node label `holos.run/pod-network: none` |
+| [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled, Talos's CoreDNS disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true`; node label `holos.run/pod-network: none` |
 | `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and `holos.run/nodepool` on workers |
 
 The sysctls:
@@ -118,4 +118,7 @@ All three can be rerun. To change the patches on a running cluster, edit
 them, then `gen` and `apply`.
 
 `talosctl health` passes without a CNI: it skips the node-ready, kube-proxy
-and CoreDNS checks, and CoreDNS stays `Pending` until Cilium is installed.
+and CoreDNS checks. Talos's own CoreDNS is disabled by the control plane
+patch, so the cluster has no DNS until the platform's `cilium`,
+`cilium-resources` and `coredns` components are applied; see
+[holos/README.md](../../../holos/README.md).
