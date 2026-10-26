@@ -7,6 +7,9 @@
 #   cluster.sh bootstrap <cluster>   bootstrap etcd, write kubeconfig
 #   cluster.sh up        <cluster>   gen, apply, bootstrap
 #
+# The patches in patches/ are the same for every cluster. Those in
+# clusters/<cluster>/ are the cluster's own, rendered from holos/talos.cue.
+#
 # Secrets, machine configs, talosconfig and kubeconfig live outside the
 # repository in $HOLOS_TALOS_DIR/<cluster> (default ~/.config/holos/talos),
 # directories 0700 and files 0600. Nothing this script writes goes in git.
@@ -90,6 +93,11 @@ installer() {
 }
 
 gen() {
+  # The cluster's own patches, rendered from the platform's CUE (holos/talos.cue)
+  # by `cue cmd talos` and committed: the API server's webhook host entries.
+  local rendered=$here/clusters/$cluster/controlplane.yaml
+  [[ -s $rendered ]] || die "no $rendered; run cue cmd talos in holos/"
+
   list "$state/nodes.json.tmp"
   mv "$state/nodes.json.tmp" "$state/nodes.json"
 
@@ -111,6 +119,7 @@ gen() {
     --install-image "$image" \
     --config-patch "@$patches/all.yaml" \
     --config-patch-control-plane "@$patches/controlplane.yaml" \
+    --config-patch-control-plane "@$rendered" \
     --output "$base" --force >/dev/null
 
   talosctl --talosconfig "$base/talosconfig" config endpoint "$cp"

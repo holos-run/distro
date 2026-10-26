@@ -7,7 +7,7 @@ package holos
 //
 // The validating webhook, istiod-default-validator, is served by istiod, so
 // it is registered under istiod's webhookServices entry (webhooks.cue) and
-// fails open through the load balancer like istiod's own.
+// is reached through the Gateway like istiod's own.
 
 holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: Istio.namespace

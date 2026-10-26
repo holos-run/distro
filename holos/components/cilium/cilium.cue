@@ -52,7 +52,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		}
 
 		// A VXLAN overlay, as ADR 0001 decided: the control plane is not on
-		// the pod network and reaches webhooks through a load balancer.
+		// the pod network and reaches webhooks through the ingress Gateway.
 		routingMode:    "tunnel"
 		tunnelProtocol: "vxlan"
 

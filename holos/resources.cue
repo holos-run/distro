@@ -11,6 +11,7 @@ import (
 	certv1 "cert-manager.io/certificate/v1"
 	issuer "cert-manager.io/issuer/v1"
 	hrv1 "gateway.networking.k8s.io/httproute/v1"
+	tlsv1 "gateway.networking.k8s.io/tlsroute/v1"
 	gwv1 "gateway.networking.k8s.io/gateway/v1"
 	app "argoproj.io/application/v1alpha1"
 	ap "argoproj.io/appproject/v1alpha1"
@@ -46,6 +47,7 @@ import (
 	Service?: [_]:            corev1.#Service
 	ServiceAccount?: [_]:     corev1.#ServiceAccount
 	StatefulSet?: [_]:        appsv1.#StatefulSet
+	TLSRoute?: [_]:           tlsv1.#TLSRoute
 
 	// Cilium's CRDs have no generated CUE schema here; these entries pin
 	// the API version and leave the rest to the API server's validation.

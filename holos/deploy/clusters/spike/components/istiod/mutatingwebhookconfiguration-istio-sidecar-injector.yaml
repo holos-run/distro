@@ -19,7 +19,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://istiod.istio-system.webhooks.spike.bank.internal:9443/inject
-  failurePolicy: Ignore
+  failurePolicy: Fail
   name: rev.namespace.sidecar-injector.istio.io
   namespaceSelector:
     matchExpressions:
@@ -51,7 +51,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://istiod.istio-system.webhooks.spike.bank.internal:9443/inject
-  failurePolicy: Ignore
+  failurePolicy: Fail
   name: rev.object.sidecar-injector.istio.io
   namespaceSelector:
     matchExpressions:
@@ -85,7 +85,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://istiod.istio-system.webhooks.spike.bank.internal:9443/inject
-  failurePolicy: Ignore
+  failurePolicy: Fail
   name: namespace.sidecar-injector.istio.io
   namespaceSelector:
     matchExpressions:
@@ -115,7 +115,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://istiod.istio-system.webhooks.spike.bank.internal:9443/inject
-  failurePolicy: Ignore
+  failurePolicy: Fail
   name: object.sidecar-injector.istio.io
   namespaceSelector:
     matchExpressions:

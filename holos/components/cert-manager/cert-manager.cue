@@ -40,7 +40,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 				digest: "sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458"
 			}
 			// The webhook's dynamic serving certificate also carries the
-			// hostname the API server dials through the load balancer
+			// hostname the API server dials through the Gateway
 			// (webhooks.cue). The chart's webhook.url.host would add it too,
 			// but it renders the URL without a port.
 			extraArgs: ["--dynamic-serving-dns-names=\(Cluster.webhooks.hosts[Webhook.name])"]

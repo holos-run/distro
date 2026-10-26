@@ -55,7 +55,8 @@ import "net"
 		// the block's first unless set. It is reserved, not left to LB IPAM:
 		// cilium-resources gives it a pool of its own that only the gateway's
 		// Service draws from, so the private zone's *.<privateDomain> record
-		// stays right across a recreate of the Gateway or the cluster.
+		// and the control plane's webhook host entries (talos.cue) stay right
+		// across a recreate of the Gateway or the cluster.
 		gateway: net.IPv4 & string | *start
 
 		// The block runs from start to stop and gateway lies in it, so a bad
@@ -72,17 +73,19 @@ import "net"
 
 	// webhooks is how the API server reaches this cluster's admission
 	// webhooks. The control plane is off the pod network (ADR 0001), so every
-	// webhook's clientConfig is a URL on the HAProxy layer 4 load balancer on
-	// the control plane, which passes TLS through to a host-network Gateway
-	// that routes on SNI to the webhook's Pods. webhooks.cue has the hostname
-	// scheme and the registry of webhook Services.
+	// webhook's clientConfig is a URL on the ingress Gateway's address
+	// (loadBalancer.gateway), whose webhooks listener passes TLS through to
+	// the webhook's Pods, routed on SNI. webhooks.cue has the hostname scheme
+	// and the registry of webhook Services.
 	webhooks: {
 		// enforcing is ADR 0001's provisioning flag, one value for every
 		// webhook in the cluster. false while the cluster bootstraps: every
 		// webhook fails open (Ignore), so the API server admits a request it
 		// cannot get a webhook's answer for. Set true once every webhook
-		// answers through the load balancer; every webhook then renders
-		// Fail.
+		// answers through the Gateway; every webhook then renders Fail. A
+		// cluster built from scratch starts false: with Fail, cert-manager's
+		// webhook would refuse the private CA's resources, which the Gateway
+		// it is reached through depends on (README.md, "Admission webhooks").
 		enforcing:     bool | *false
 		failurePolicy: "Ignore" | "Fail"
 		if enforcing {failurePolicy: "Fail"}
@@ -93,18 +96,15 @@ import "net"
 		// rather than stalling when the webhook is unreachable.
 		timeoutSeconds: int & >=1 & <=30 | *3
 
-		// port is HAProxy's listener on the control plane's address: not
-		// 443, left free on the control plane, and clear of everything Talos
-		// binds there: 6443 (API server), 50000/50001 (apid, trustd),
-		// 2379/2380 (etcd), 10250 (kubelet), 10257/10259 (controller
-		// manager, scheduler), 7445 (KubePrism, on localhost) and 53 (host
-		// DNS, on 169.254.116.108).
+		// port is the Gateway's webhooks listener, on the Gateway's address
+		// beside its 443 and 80. Not 443, which the HTTPS listener terminates.
 		port: 9443
 
 		// domain is the suffix of every webhook hostname in the cluster. The
-		// names resolve only on the control plane, through Talos
-		// extraHostEntries pointing them at the control plane's address, so
-		// the private zone needs no records for them.
+		// API server resolves the names through Talos static host entries on
+		// the control plane (talos.cue), which point them at the Gateway's
+		// address, so it does not depend on the site's resolver. The private
+		// zone's *.<privateDomain> wildcard gives the same answer elsewhere.
 		domain: "webhooks.\(name).\(site.privateDomain)"
 
 		// hosts maps each entry of webhookServices (webhooks.cue) to its
@@ -154,4 +154,8 @@ clusters: spike: {
 		start: "10.20.0.30"
 		stop:  "10.20.0.33"
 	}
+	// Every webhook answers through the gateway's webhooks listener, so the
+	// cluster enforces. A rebuild starts with this false (README.md,
+	// "Admission webhooks").
+	webhooks: enforcing: true
 }

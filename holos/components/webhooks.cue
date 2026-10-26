@@ -3,12 +3,13 @@ package holos
 import "encoding/yaml"
 
 // #WebhookPatch is the Kustomize patch that points a chart's admission webhook
-// configuration at the load balancer, as ADR 0001 requires of every webhook
-// in the distro (webhooks.cue has the path a request takes). For each
-// webhook in the configuration it:
+// configuration at the ingress Gateway's address, as ADR 0001 requires of
+// every webhook in the distro (webhooks.cue has the path a request takes).
+// For each webhook in the configuration it:
 //
 //   - replaces clientConfig.service with clientConfig.url, the Service's
-//     hostname and HAProxy port from Cluster.webhooks plus the webhook's path;
+//     hostname and the Gateway's webhooks port from Cluster.webhooks plus the
+//     webhook's path;
 //   - sets failurePolicy from the cluster's enforcement flag, Ignore while it
 //     bootstraps and Fail once enforcing;
 //   - sets timeoutSeconds to the cluster's short webhook timeout.

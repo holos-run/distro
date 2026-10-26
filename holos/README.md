@@ -12,6 +12,7 @@ holos/
 ├── registry.cue    the components, in sync order
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── webhooks.cue    the Services that serve admission webhooks
+├── talos.cue       the control plane's Talos patch made from the above; talos_tool.cue writes it
 ├── private-ca.cue  the names of the private CA and its trust bundle
 ├── istio.cue       the mesh's release, namespace, images and trust domain
 ├── signing-keys/   the public keys commits on main are signed with
@@ -67,8 +68,12 @@ in it, comparing the addresses as numbers, so a bad value fails `cue vet`.
 exits 0, which is why the render procedure runs `cue vet` first.
 
 To change the gateway's address, set `loadBalancer.gateway` (or the block)
-and render; the Gateway's `spec.addresses` and both pools follow. Then change
-the router's `*.bank.internal` record to match.
+and render; the Gateway's `spec.addresses` and both pools follow, and so does
+the control plane's Talos patch of webhook host entries (`cue cmd talos`).
+Apply that with `talosctl` (`providers/proxmox/talos/README.md`) as soon as
+the Gateway reports its new address: in between, the API server dials the
+old one and every webhook call is refused. Then change the router's
+`*.bank.internal` record to match.
 
 ## Components
 
@@ -79,15 +84,15 @@ the router's `*.bank.internal` record to match.
 | `coredns` | CoreDNS from the CoreDNS project's Helm chart, replacing the one Talos deploys, with the site's private zone forwarded to its resolvers |
 | `argocd` | Argo CD v3.5.6 from argo-helm's `argo-cd` chart 10.11.6, in `argocd`, syncing this repository's `main` |
 | `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
-| `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook on the load balancer |
+| `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook reached through the gateway |
 | `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate` and the `private-ca` `ClusterIssuer` |
-| `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook on the load balancer |
+| `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook reached through the gateway |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
 | `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
-| `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks on the load balancer and the private root as its JWKS trust |
+| `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks reached through the gateway and the private root as its JWKS trust |
 | `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
 | `ztunnel` | Ambient's node proxy on every worker |
-| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect and Argo CD's `HTTPRoute` |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, and the admission webhooks' TLS passthrough listener and `TLSRoute`s |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
@@ -138,11 +143,12 @@ private zone does not depend on how the nodes' resolvers are set.
 ### Admission webhooks
 
 The control plane is off the pod network (ADR 0001), so the API server
-reaches an admission webhook through a URL on HAProxy, a layer 4 load
-balancer on the control plane, which passes TLS through to a host-network
-Gateway that routes on SNI to the webhook's Service. HAProxy, the
-`extraHostEntries` and the Gateway are a later item; until they exist no
-webhook is reachable, and every webhook fails open.
+reaches an admission webhook as a client outside the cluster would: through a
+URL on the ingress Gateway's address, 10.20.0.30, where the `webhooks`
+listener on port 9443 passes TLS through to the webhook's Service, routed on
+SNI by one `TLSRoute` per webhook (The ingress gateway, below). The control
+plane is on the same LAN as the address, so nothing listens on the control
+plane and no proxy is in between.
 
 Every component that registers a webhook renders its configurations with
 `#WebhookPatch` (`components/webhooks.cue`), which sets, from the cluster's
@@ -151,46 +157,129 @@ Every component that registers a webhook renders its configurations with
 - `clientConfig.url`: `https://<service>.<namespace>.webhooks.<cluster>.<privateDomain>:9443/<path>`,
   for example
   `https://cert-manager-webhook.cert-manager.webhooks.spike.bank.internal:9443/validate`.
-  The hostname resolves only on the control plane, through Talos
-  `extraHostEntries`, to the control plane's address, where HAProxy listens on
-  9443. The webhook's serving certificate carries the hostname.
+  The hostname is the SNI the Gateway routes on and a DNS name on the
+  webhook's serving certificate. The control plane resolves it through a
+  Talos host entry to the Gateway's address (`talos.cue`,
+  `providers/proxmox/talos/README.md`), so the API server does not depend on
+  the router; the router's `*.bank.internal` record gives the same answer
+  everywhere else.
 - `failurePolicy`: `Ignore` while `webhooks.enforcing` is false, the
   default; `Fail` once it is set. It is one flag per cluster, ADR 0001's two
-  provisioning steps.
+  provisioning steps. `spike` enforces.
 - `timeoutSeconds`: 3, not the default 10.
 
-The webhook's Service is registered in `webhooks.cue`, the one list the load
-balancer item renders the host entries, HAProxy and TLSRoutes from.
-cert-manager's cainjector fills each configuration's `caBundle`; it does so
-for a URL as it does for a Service. istiod fills its own (see Istio below).
+The webhook's Service is registered in `webhooks.cue`, the one list the
+listener's `TLSRoute`s and the control plane's host entries are rendered
+from. A new entry also needs its hostname on the webhook's serving
+certificate, and its host entry applied to a running control plane with
+`talosctl`: Argo CD does not reach the machine config. cert-manager's
+cainjector fills each configuration's `caBundle`; it does so for a URL as it
+does for a Service. istiod fills its own (see Istio below).
 
-While the webhooks fail open, the API server skips them: a cert-manager
-resource is not validated, and a CertificateRequest is not stamped with its
-requester's `spec.username` and `spec.groups` by the mutating webhook.
-cert-manager's own approver does not need them. The API server logs every
-skipped call as `Failed calling webhook, failing open`. With no host entry the
-name does not resolve and the call fails at once; once a name resolves to an
-address that does not answer, each request waits the 3-second timeout.
+A webhook call costs little: a server-side dry run of a `Certificate` takes
+about 110 ms, a `ConfigMap`'s about 160 ms. While nothing answers on 9443 the
+gateway's address drops the connection, so every call to a webhook failing
+open waits the full 3 seconds (3.1s for a `Certificate`) and the API server
+logs `Failed calling webhook, failing open ... context deadline exceeded`.
+With `Fail` the request is refused instead.
 
-That includes the private zone's wildcard. A `*.bank.internal` record
-answers for `*.webhooks.spike.bank.internal` too, at any depth, so the API
-server would dial the gateway's address on 9443, which the gateway's Service
-does not serve: the connection is dropped rather than refused, and every
-webhook call waits the full 3 seconds before failing open (measured: 3.2s a
-request, against 0.2s for a name that does not resolve or for the control
-plane's address, where 9443 is refused).
-So point the webhook names at the control plane, where HAProxy will listen,
-alongside the wildcard:
+Check that every webhook answers through the Gateway with a request each
+must refuse, as server-side dry runs; each error names the webhook that
+refused it:
 
-```text
-*.bank.internal                    A 10.20.0.30   the ingress Gateway
-*.webhooks.spike.bank.internal     A 10.20.0.50   spike-cp-1, HAProxy's 9443
+```sh
+kubectl apply --dry-run=server -f - <<'YAML'
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: bad, namespace: default}
+spec:
+  secretName: bad
+  issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: private-ca}
+YAML
+# admission webhook "webhook.cert-manager.io" denied the request: ... at least one of commonName ... must be set
+kubectl apply --dry-run=server -f - <<'YAML'
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata: {name: bad}
+spec:
+  sources: [{useDefaultCAs: true}]
+  target:
+    configMap: {key: ca.crt}
+    namespaceSelector: {matchExpressions: [{key: a, operator: Bogus}]}
+YAML
+# admission webhook "trust.cert-manager.io" denied the request: ... not a valid selector operator
+kubectl apply --dry-run=server -f - <<'YAML'
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: bad, namespace: default}
+spec: {action: CUSTOM, rules: [{}]}
+YAML
+# admission webhook "validation.istio.io" denied the request: ... `provider.name` must not be empty
+kubectl -n kube-system logs kube-apiserver-spike-cp-1 --since=10m | grep -c 'failing open'   # 0
 ```
 
-The more specific wildcard answers for the webhook names (RFC 4592; dnsmasq
-likewise matches the longest domain). Talos `extraHostEntries` on the
-control plane, once the load balancer item renders them, take precedence
-over DNS either way.
+A `Bundle` with two kinds of source is refused too, but by the CRD's own
+validation, before any webhook is called, so it proves nothing about the
+path. From the garage network each hostname answers on the Gateway's address
+with the webhook's own certificate, and a name no route matches is reset:
+
+```sh
+for h in cert-manager-webhook.cert-manager istiod.istio-system trust-manager.cert-manager; do
+  echo | openssl s_client -connect 10.20.0.30:9443 -servername $h.webhooks.spike.bank.internal 2>/dev/null |
+    openssl x509 -noout -ext subjectAltName
+done
+```
+
+With `Fail`, every webhook depends on the Gateway and on istiod, which
+programs it: while the gateway's Pods are down, a request a webhook matches
+is refused, such as any write of a cert-manager resource, a `Bundle` or an
+Istio resource. Pods and other core objects are not matched (the sidecar
+injector matches only Pods that ask for a sidecar), so the gateway and
+istiod can always be restarted.
+
+#### Building a cluster with enforcement
+
+A cluster is built with `webhooks.enforcing` false and turned on afterwards,
+as ADR 0001 says. Built with it on, the bootstrap does not converge:
+cert-manager's webhook configuration arrives with `Fail` and a URL on a
+Gateway that does not exist yet, so it refuses `private-ca`'s `Issuer`,
+`Certificate` and `ClusterIssuer`. `private-ca` never reports `Healthy`, so
+the root `Application` never creates the ones after it. The Gateway could
+not come up anyway: it needs istiod, which mounts the `private-ca` ConfigMap
+that trust-manager writes from a `Bundle` its own webhook would refuse, and
+a certificate cert-manager's webhook would refuse. Nothing in that loop can
+start first.
+
+So to rebuild `spike`, or to build a new cluster:
+
+1. Merge `webhooks: enforcing: false` for the cluster (for `spike`, drop the
+   line in `clusters.cue`), render, and bootstrap (Bootstrap Argo CD, below).
+2. Once every `Application` is `Synced` and `Healthy`, check every webhook
+   with the requests above. A webhook that answers refuses them under
+   `Ignore` too.
+3. Merge `webhooks: enforcing: true`.
+
+Between the Gateway coming up and step 3, istiod switches its validators to
+`Fail` (see Istio below) and Argo CD sets them back to `Ignore`, so
+`istio-base` and `istiod` go `OutOfSync` from time to time. Step 3 ends it.
+
+The Gateway, its listener and the `TLSRoute`s must already be live when
+`enforcing` turns on. Argo CD's server-side apply dry-runs every object in an
+`Application`, and the dry run calls the webhooks, so if cert-manager's
+configuration turned to `Fail` before `ingress-gateway` synced, that sync
+would be refused and the listener that fixes it would never land. The
+rebuild procedure has the listener in step 1. Turning enforcement on in the
+same commit that adds the listener needs the Gateway and `TLSRoute`s applied
+by hand first, which is how `spike` first enforced.
+
+`istio-ingress` carries `cert-manager.io/disable-validation: "true"`, so the
+wildcard `Certificate` never depends on the webhook path, and a commit that
+breaks the path, such as a bad listener, a lost address or a host entry that
+no longer matches, can still be rolled back through Argo CD. Any other sync
+whose objects a webhook matches cannot be until the path works again; then
+apply `gateway-ingress.yaml` and `tlsroute-*.yaml` from a good checkout by
+hand with `--server-side --field-manager=argocd-controller` and
+`argocd app sync ingress-gateway`.
 
 ### The private CA
 
@@ -381,10 +470,20 @@ with Argo CD:
   run passes, and istiod leaves `Ignore` alone: it retries about once a
   minute and logs `Not ready to switch validation to fail-closed`. The
   configurations' `resourceVersion` does not move.
-- Once the load balancer reaches istiod, the dry run is refused and istiod
-  sets `Fail`. With `webhooks.enforcing` still false the render says
-  `Ignore`, so Argo CD's self-heal and istiod would take turns; turn
-  `enforcing` on in the same change that makes the webhooks reachable.
+- Once the Gateway reaches istiod, the dry run is refused and istiod sets
+  `Fail`. It remembers that until it restarts: from then on it sets `Fail`
+  again whenever the configuration changes, even after the Gateway stops
+  reaching it. With `webhooks.enforcing` false the render says `Ignore`, so
+  Argo CD's self-heal and istiod take turns, `istio-base` and `istiod` go
+  `OutOfSync` between Argo CD's self-heal attempts, and every turn bumps the
+  configurations' `resourceVersion`. With `enforcing` true the two agree and
+  nothing moves. Measured on `spike`: about ten updates a configuration in
+  the first 90 seconds with the listener up and `Ignore` rendered; none in
+  six minutes with `Fail` rendered.
+- Turning `enforcing` off on a cluster whose istiod has seen the webhook
+  answer therefore needs an istiod restart as well
+  (`kubectl -n istio-system delete pod -l app=istiod`) once the Gateway
+  no longer reaches it, or the two keep taking turns.
 
 The chart's own URL values, `istiodRemote.injectionURL` and
 `base.validationURL`, would set the URL too, but not the timeout or the
@@ -422,6 +521,22 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   on 80 takes only the `https-redirect` route, which answers every request
   with a 301 to the same URL over HTTPS. A route attaches with
   `IngressGateway.parentRef`, which names the `https` listener.
+- **Webhooks listener.** `webhooks` on 9443 for
+  `*.webhooks.<cluster>.<privateDomain>`, protocol `TLS` in `Passthrough`
+  mode: the gateway reads the SNI and forwards the connection, and the
+  webhook's Pods terminate TLS. It accepts only `TLSRoute`s, and only from the
+  namespaces of the Services in `webhooks.cue` (`cert-manager`,
+  `istio-system`), selected by `kubernetes.io/metadata.name`. This component
+  renders one `TLSRoute` per entry from the registry, in the entry's own
+  namespace, matching its hostname and forwarding to the Service's port.
+  Being in the backend's namespace, a route needs no `ReferenceGrant`; routes
+  in `istio-ingress` would need one in each webhook namespace, more objects
+  for the same result, since only platform namespaces can attach either way.
+  A route matching another webhook's hostname would gain nothing: the API
+  server checks the serving certificate against the webhook's `caBundle`.
+  Every route is rendered here,
+  not by the webhook's component, so the listener and its routes change in
+  one sync. istiod adds 9443 to the gateway's Service.
 - **ServiceAccount.** The `gateway.istio.io/service-account` annotation names
   it `ingress-gateway`, so the gateway's mesh identity is
   `spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`
@@ -444,8 +559,14 @@ From this directory:
 cue vet ./...
 rm -rf deploy/clusters
 holos render platform
-git status deploy/
+cue cmd talos
+git status deploy/ ../providers/proxmox/talos/clusters/
 ```
+
+`cue cmd talos` writes the control plane's Talos patch, the webhook host
+entries, from the same data (`talos.cue`); it is not part of the platform, so
+`holos render platform` does not write it. A change to it reaches a running
+cluster only through `talosctl` (`providers/proxmox/talos/README.md`).
 
 `holos render platform` writes files but never removes one a component no
 longer renders, such as the Hubble certgen Job whose name changes with the
@@ -456,8 +577,10 @@ component with `holos render platform --selector component=cilium`.
 
 ## Bootstrap Argo CD
 
-Argo CD needs pod networking, and DNS to reach GitHub, before it can sync
-anything, so a new cluster gets four components by hand: `cilium`,
+A cluster is built with its webhooks failing open, `webhooks.enforcing`
+false in `clusters.cue`; turn it on once they answer (Building a cluster with
+enforcement, above). Argo CD needs pod networking, and DNS to reach GitHub,
+before it can sync anything, so a new cluster gets four components by hand: `cilium`,
 `coredns`, `argocd` and the root `Application` with its `AppProject`. The
 root then creates every component's `Application` in registry order, waiting
 for each to report `Healthy` before the next, and takes over the four as it
@@ -671,7 +794,7 @@ do not answer ping, and a connection to any other port is dropped, not
 refused.
 
 Istio and the gateway: the node agents on the workers only, the webhooks
-failing open, the gateway at its pinned address, and hello answering through
+enforcing through the gateway, the gateway at its pinned address, and hello answering through
 it with a certificate that chains to the root, from the garage network and
 from a pod. Until the private zone has its wildcard, `--resolve` stands in
 for it.
@@ -683,6 +806,9 @@ kubectl get validatingwebhookconfiguration istio-validator-istio-system \
 kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
 kubectl get ciliumloadbalancerippools            # spike: 0 available; spike-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
+kubectl get tlsroute -A                          # cert-manager-webhook, trust-manager, istiod
+kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
+  -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy'   # Fail everywhere
 
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > /tmp/root.pem
 curl --resolve hello.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://hello.bank.internal/
