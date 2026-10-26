@@ -72,6 +72,12 @@ registry: [
 	// hello is the ambient echo service behind the gateway. It needs the node
 	// agents and the Gateway.
 	{name: "hello"},
+	// ceph-csi-rbd is the Ceph RBD driver and the default StorageClass,
+	// ceph-rbd. It needs pod networking alone, and its key's Secret, which is
+	// made by hand; it comes ahead of every component that claims a volume.
+	{name: "ceph-csi-rbd"},
+	// local-path is the node-local fallback StorageClass, not the default.
+	{name: "local-path"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits

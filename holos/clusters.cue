@@ -16,6 +16,16 @@ import "net"
 	privateDomain: string
 	// resolvers serve privateDomain. CoreDNS forwards the zone to them.
 	resolvers: [...net.IPv4 & string] & [_, ...]
+	// ceph is the Ceph cluster the site's hosts run, which ceph-csi-rbd
+	// provisions volumes from. The driver creates nothing on the Ceph side.
+	ceph: {
+		// fsid names the Ceph cluster; ceph-csi calls it the clusterID.
+		fsid: =~"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+		// monitors are the monitors' v1 addresses, port 6789. The kernel
+		// RBD client maps an image with the msgr1 protocol unless told
+		// otherwise, so these work for the provisioner and the node plugin.
+		monitors: [...string] & [_, ...]
+	}
 }
 
 #Cluster: {
@@ -69,6 +79,17 @@ import "net"
 		}
 		_stopNotBeforeStart: true & _n.start <= _n.stop
 		_gatewayInBlock:     true & _n.start <= _n.gateway && _n.gateway <= _n.stop
+	}
+
+	// ceph is the cluster's share of the site's Ceph cluster: the RBD pool
+	// its volumes are images in and the Ceph client it authenticates as,
+	// whose caps are profile rbd on that pool. The client's key is never in
+	// git; it is put in Secret <namespace>/<secret> by hand (README.md,
+	// "Storage"). A second cluster on the site takes a pool of its own.
+	ceph: {
+		pool:   string
+		user:   string
+		secret: string | *"ceph-client-\(user)"
 	}
 
 	// webhooks is how the API server reaches this cluster's admission
@@ -143,6 +164,12 @@ clusters: [NAME=string]: #Cluster & {name: NAME}
 sites: garage: {
 	privateDomain: "bank.internal"
 	resolvers: ["192.168.2.1"]
+	// The Proxmox hosts' Ceph: r620a to c, monitors on the hosts'
+	// 10.15.15.0/24 mesh, which the k8s vnet routes to through the hosts.
+	ceph: {
+		fsid: "c9eeedfd-1b9d-4796-aff3-1e6a0e994ff1"
+		monitors: ["10.15.15.1:6789", "10.15.15.2:6789", "10.15.15.3:6789"]
+	}
 }
 
 // treasury is the first garage cluster: treasury-cp-1 at 10.20.0.50 and
@@ -158,4 +185,9 @@ clusters: treasury: {
 	// cluster enforces. A rebuild starts with this false (README.md,
 	// "Admission webhooks").
 	webhooks: enforcing: true
+	// Volumes are images in k8s-rbd, as client.k8s.
+	ceph: {
+		pool: "k8s-rbd"
+		user: "k8s"
+	}
 }
