@@ -192,8 +192,8 @@ func TestNewChecks(t *testing.T) {
 }
 
 func TestTagList(t *testing.T) {
-	got := Resource{Tags: "talosvm;talosvm-cluster-spike,talosvm-role-worker talosvm-pool-general"}.TagList()
-	if strings.Join(got, "|") != "talosvm|talosvm-cluster-spike|talosvm-role-worker|talosvm-pool-general" {
+	got := Resource{Tags: "talosvm;talosvm-cluster-treasury,talosvm-role-worker talosvm-pool-general"}.TagList()
+	if strings.Join(got, "|") != "talosvm|talosvm-cluster-treasury|talosvm-role-worker|talosvm-pool-general" {
 		t.Errorf("TagList = %q", got)
 	}
 }

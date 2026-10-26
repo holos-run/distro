@@ -181,7 +181,7 @@ func newRunner(t *testing.T, f *fakePVE, cfg Config) (*Runner, *bytes.Buffer) {
 
 func TestCreateDryRunPrintsExactCalls(t *testing.T) {
 	f := newFake()
-	r, out := newRunner(t, f, spike())
+	r, out := newRunner(t, f, treasury())
 	r.DryRun = true
 	if err := r.Create(context.Background()); err != nil {
 		t.Fatalf("Create: %v\n%s", err, out)
@@ -194,19 +194,19 @@ func TestCreateDryRunPrintsExactCalls(t *testing.T) {
 		t.Errorf("dry run wrote files: %v", got)
 	}
 	for _, want := range []string{
-		"WRITE " + filepath.Join(r.SnippetsDir, "talosvm_spike_spike-cp-1-net.yaml") + " (mode 0644)\n",
-		"    | # Written by talosvm for cluster spike, VM spike-cp-1.\n",
+		"WRITE " + filepath.Join(r.SnippetsDir, "talosvm_treasury_treasury-cp-1-net.yaml") + " (mode 0644)\n",
+		"    | # Written by talosvm for cluster treasury, VM treasury-cp-1.\n",
 		"POST /api2/json/nodes/r620a/qemu/104/status/start\n",
 		"    |       - 10.20.0.50/32\n",
 		"    |         on-link: true\n",
-		"    cicustom=network=garage:snippets/talosvm_spike_spike-cp-1-net.yaml\n",
-		"    net0=virtio=" + MACFor("spike", "spike-cp-1", 0) + ",bridge=k8s,mtu=1\n",
+		"    cicustom=network=garage:snippets/talosvm_treasury_treasury-cp-1-net.yaml\n",
+		"    net0=virtio=" + MACFor("treasury", "treasury-cp-1", 0) + ",bridge=k8s,mtu=1\n",
 		"POST /api2/json/nodes/r620a/storage/garage/download-url",
 		"    url=" + r.Factory.BaseURL + "/image/0123456789abcdef0123/v1.14.4/nocloud-amd64.iso",
 		"POST /api2/json/nodes/r620a/qemu\n",
-		"    name=spike-cp-1\n",
+		"    name=treasury-cp-1\n",
 		"    vmid=104\n",
-		"    name=spike-general-3\n",
+		"    name=treasury-general-3\n",
 		"    vmid=107\n",
 		"dry run: sent none of these 13 calls",
 	} {
@@ -218,7 +218,7 @@ func TestCreateDryRunPrintsExactCalls(t *testing.T) {
 
 func TestCreateListDestroy(t *testing.T) {
 	f := newFake()
-	r, out := newRunner(t, f, spike())
+	r, out := newRunner(t, f, treasury())
 	ctx := context.Background()
 	if err := r.Create(ctx); err != nil {
 		t.Fatalf("Create: %v\n%s", err, out)
@@ -237,17 +237,17 @@ func TestCreateListDestroy(t *testing.T) {
 	}
 
 	want := []string{
-		"talosvm_spike_spike-cp-1-net.yaml",
-		"talosvm_spike_spike-general-1-net.yaml",
-		"talosvm_spike_spike-general-2-net.yaml",
-		"talosvm_spike_spike-general-3-net.yaml",
+		"talosvm_treasury_treasury-cp-1-net.yaml",
+		"talosvm_treasury_treasury-general-1-net.yaml",
+		"talosvm_treasury_treasury-general-2-net.yaml",
+		"talosvm_treasury_treasury-general-3-net.yaml",
 		tenantSnippet,
 	}
 	if got := listDir(t, r.SnippetsDir); !slices.Equal(got, want) {
 		t.Errorf("snippets = %v, want %v", got, want)
 	}
-	b, _ := os.ReadFile(filepath.Join(r.SnippetsDir, "talosvm_spike_spike-general-2-net.yaml"))
-	if !strings.Contains(string(b), "- 10.20.0.52/32") || !strings.Contains(string(b), MACFor("spike", "spike-general-2", 0)) {
+	b, _ := os.ReadFile(filepath.Join(r.SnippetsDir, "talosvm_treasury_treasury-general-2-net.yaml"))
+	if !strings.Contains(string(b), "- 10.20.0.52/32") || !strings.Contains(string(b), MACFor("treasury", "treasury-general-2", 0)) {
 		t.Errorf("snippet:\n%s", b)
 	}
 
@@ -276,24 +276,24 @@ func TestCreateListDestroy(t *testing.T) {
 	f.calls = nil
 	moved := *r
 	moved.Config.FirstAddress = "10.20.0.60"
-	if err := moved.Create(ctx); err == nil || !strings.Contains(err.Error(), "VM spike-cp-1 has address 10.20.0.50, config says 10.20.0.60") {
+	if err := moved.Create(ctx); err == nil || !strings.Contains(err.Error(), "VM treasury-cp-1 has address 10.20.0.50, config says 10.20.0.60") {
 		t.Errorf("moved create = %v", err)
 	}
 	if len(f.calls) != 0 {
 		t.Errorf("moved create sent %v", f.calls)
 	}
-	if b, _ := os.ReadFile(filepath.Join(r.SnippetsDir, "talosvm_spike_spike-cp-1-net.yaml")); !strings.Contains(string(b), "10.20.0.50/32") {
+	if b, _ := os.ReadFile(filepath.Join(r.SnippetsDir, "talosvm_treasury_treasury-cp-1-net.yaml")); !strings.Contains(string(b), "10.20.0.50/32") {
 		t.Errorf("snippet changed:\n%s", b)
 	}
 
 	// A missing snippet of an existing VM is written again, with the MAC
 	// on its net0.
-	os.Remove(filepath.Join(r.SnippetsDir, "talosvm_spike_spike-general-1-net.yaml"))
+	os.Remove(filepath.Join(r.SnippetsDir, "talosvm_treasury_treasury-general-1-net.yaml"))
 	out.Reset()
 	if err := r.Create(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := os.ReadFile(filepath.Join(r.SnippetsDir, "talosvm_spike_spike-general-1-net.yaml")); err != nil || !strings.Contains(string(b), MACFor("spike", "spike-general-1", 0)) {
+	if b, err := os.ReadFile(filepath.Join(r.SnippetsDir, "talosvm_treasury_treasury-general-1-net.yaml")); err != nil || !strings.Contains(string(b), MACFor("treasury", "treasury-general-1", 0)) {
 		t.Errorf("missing snippet not rewritten: %v\n%s", err, b)
 	}
 
@@ -310,10 +310,10 @@ func TestCreateListDestroy(t *testing.T) {
 		got = append(got, fmt.Sprintf("%s %d %s/%s %s %s %s", v.Name, v.VMID, v.Region, v.Zone, v.Role, v.Pool, v.Address))
 	}
 	want = []string{
-		"spike-cp-1 104 garage/r620a controlplane  10.20.0.50",
-		"spike-general-1 105 garage/r620b worker general 10.20.0.51",
-		"spike-general-2 106 garage/r620c worker general 10.20.0.52",
-		"spike-general-3 107 garage/r620a worker general 10.20.0.53",
+		"treasury-cp-1 104 garage/r620a controlplane  10.20.0.50",
+		"treasury-general-1 105 garage/r620b worker general 10.20.0.51",
+		"treasury-general-2 106 garage/r620c worker general 10.20.0.52",
+		"treasury-general-3 107 garage/r620a worker general 10.20.0.53",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("list =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -337,7 +337,7 @@ func TestCreateListDestroy(t *testing.T) {
 	// survive a real destroy.
 	f.vms = append(f.vms, res(120, "lab-cp-1", "r620b", "talosvm;talosvm-cluster-lab;talosvm-role-controlplane"))
 	os.WriteFile(filepath.Join(r.SnippetsDir, "talosvm_lab_lab-cp-1-net.yaml"), []byte(SnippetHeader("lab", "lab-cp-1")+"\n"), 0o644)
-	os.WriteFile(filepath.Join(r.SnippetsDir, "talosvm_spike_handmade-net.yaml"), []byte(SnippetHeader("spike", "handmade")+"\n"), 0o644)
+	os.WriteFile(filepath.Join(r.SnippetsDir, "talosvm_treasury_handmade-net.yaml"), []byte(SnippetHeader("treasury", "handmade")+"\n"), 0o644)
 	r.DryRun = false
 	if err := r.Destroy(ctx); err != nil {
 		t.Fatal(err)
@@ -352,9 +352,9 @@ func TestCreateListDestroy(t *testing.T) {
 	if n := len(f.calls); n != 8 {
 		t.Errorf("destroy sent %d calls, want a stop and a delete for each of 4 VMs: %v", n, f.calls)
 	}
-	// The prefix alone is not enough: talosvm_spike_handmade-net.yaml
+	// The prefix alone is not enough: talosvm_treasury_handmade-net.yaml
 	// belongs to no VM destroy selected, so it stays.
-	if got := listDir(t, r.SnippetsDir); !slices.Equal(got, []string{"talosvm_lab_lab-cp-1-net.yaml", "talosvm_spike_handmade-net.yaml", tenantSnippet}) {
+	if got := listDir(t, r.SnippetsDir); !slices.Equal(got, []string{"talosvm_lab_lab-cp-1-net.yaml", "talosvm_treasury_handmade-net.yaml", tenantSnippet}) {
 		t.Errorf("snippets after destroy = %v", got)
 	}
 	if b, _ := os.ReadFile(filepath.Join(r.SnippetsDir, tenantSnippet)); string(b) != tenantSnippetText {
@@ -368,7 +368,7 @@ func TestCreateRefusesBeforeChanging(t *testing.T) {
 		edit func(*fakePVE)
 		want string
 	}{
-		{"name taken", func(f *fakePVE) { f.vms = append(f.vms, res(150, "spike-general-1", "r620a", "")) }, "names are taken"},
+		{"name taken", func(f *fakePVE) { f.vms = append(f.vms, res(150, "treasury-general-1", "r620a", "")) }, "names are taken"},
 		{"address taken", func(f *fakePVE) { f.configs[103] = map[string]string{"ipconfig0": "ip=10.20.0.52/32,gw=10.20.0.1"} }, "10.20.0.52 is already used by vmid 103 jeffsbox"},
 		{"address in a cicustom snippet", func(f *fakePVE) {
 			f.configs[103] = map[string]string{"cicustom": "network=garage:snippets/jeffsbox-net.yaml"}
@@ -379,7 +379,7 @@ func TestCreateRefusesBeforeChanging(t *testing.T) {
 	} {
 		f := newFake()
 		tc.edit(f)
-		r, _ := newRunner(t, f, spike())
+		r, _ := newRunner(t, f, treasury())
 		os.WriteFile(filepath.Join(r.SnippetsDir, "jeffsbox-net.yaml"), []byte("version: 2\nethernets:\n  net0:\n    addresses: [10.20.0.53/32]\n"), 0o644)
 		err := r.Create(context.Background())
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -397,7 +397,7 @@ func TestCreateRefusesBeforeChanging(t *testing.T) {
 func TestDestroyChecksPrivileges(t *testing.T) {
 	f := newFake()
 	f.privs = slices.DeleteFunc(f.privs, func(p string) bool { return p == "VM.Allocate" })
-	r, _ := newRunner(t, f, spike())
+	r, _ := newRunner(t, f, treasury())
 	var me *preflight.MissingError
 	if err := r.Destroy(context.Background()); !errors.As(err, &me) {
 		t.Errorf("Destroy err = %v, want a MissingError", err)
@@ -405,7 +405,7 @@ func TestDestroyChecksPrivileges(t *testing.T) {
 }
 
 func TestCreateRejectsOfflineNode(t *testing.T) {
-	cfg := spike()
+	cfg := treasury()
 	cfg.Nodes = []string{"old"}
 	r, _ := newRunner(t, newFake(), cfg)
 	if err := r.Create(context.Background()); err == nil || !strings.Contains(err.Error(), `"old" is not an online`) {
@@ -415,7 +415,7 @@ func TestCreateRejectsOfflineNode(t *testing.T) {
 
 func TestSnippetsDirRequired(t *testing.T) {
 	f := newFake()
-	r, _ := newRunner(t, f, spike())
+	r, _ := newRunner(t, f, treasury())
 	r.SnippetsDir = filepath.Join(t.TempDir(), "not-mounted")
 	for _, run := range []func(context.Context) error{r.Create, r.Destroy} {
 		if err := run(context.Background()); err == nil || !strings.Contains(err.Error(), "snippets dir") {
@@ -429,7 +429,7 @@ func TestSnippetsDirRequired(t *testing.T) {
 
 func TestWriteFileAtomic(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, "talosvm_spike_spike-cp-1-net.yaml")
+	p := filepath.Join(dir, "talosvm_treasury_treasury-cp-1-net.yaml")
 	if err := writeFileAtomic(p, "a\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -452,8 +452,8 @@ func TestWriteFileAtomic(t *testing.T) {
 // never overwritten: create refuses before any change.
 func TestCreateRefusesForeignSnippet(t *testing.T) {
 	f := newFake()
-	r, _ := newRunner(t, f, spike())
-	p := filepath.Join(r.SnippetsDir, SnippetName("spike", "spike-cp-1"))
+	r, _ := newRunner(t, f, treasury())
+	p := filepath.Join(r.SnippetsDir, SnippetName("treasury", "treasury-cp-1"))
 	os.WriteFile(p, []byte("# hand-written\nversion: 2\n"), 0o644)
 	if err := r.Create(context.Background()); err == nil || !strings.Contains(err.Error(), "refusing to touch") {
 		t.Errorf("Create = %v, want a refusal", err)

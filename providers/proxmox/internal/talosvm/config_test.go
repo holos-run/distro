@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-func spike() Config {
+func treasury() Config {
 	c := Default()
-	c.Cluster = "spike"
+	c.Cluster = "treasury"
 	return c
 }
 
@@ -19,14 +19,14 @@ func TestDefaultNeedsOnlyACluster(t *testing.T) {
 	if err := Default().Validate(); err == nil || !strings.Contains(err.Error(), "cluster is required") {
 		t.Errorf("Default().Validate() = %v, want cluster is required", err)
 	}
-	if err := spike().Validate(); err != nil {
+	if err := treasury().Validate(); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestValidateReportsEverything(t *testing.T) {
-	c := spike()
-	c.Cluster = "Spike"
+	c := treasury()
+	c.Cluster = "Treasury"
 	c.TalosVersion = "1.14.4"
 	c.ControlPlane.Count = 2
 	c.ControlPlane.MemoryMiB = 1024
@@ -75,7 +75,7 @@ func TestCheckNodeAddress(t *testing.T) {
 }
 
 func TestAddressAssignment(t *testing.T) {
-	c := spike()
+	c := treasury()
 	c.Pools = append(c.Pools, Pool{Name: "microvm", Count: 2, Size: c.Pools[0].Size, Addresses: []string{"10.20.0.120", "10.20.0.121"}})
 	got, err := c.addresses()
 	if err != nil {
@@ -107,7 +107,7 @@ func TestAddressRefusals(t *testing.T) {
 		{"runs off the end", func(c *Config) { c.FirstAddress = "10.20.0.253" }, "broadcast"},
 		{"not an address", func(c *Config) { c.FirstAddress = "fifty" }, "firstAddress"},
 	} {
-		c := spike()
+		c := treasury()
 		tc.edit(&c)
 		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", tc.name, err, tc.want)
@@ -118,9 +118,9 @@ func TestAddressRefusals(t *testing.T) {
 // The snippet is the shape the garage's maintenance-mode Talos VMs already
 // boot with: a /32 and an on-link default route to the anycast gateway.
 func TestNetworkConfig(t *testing.T) {
-	s := Spec{Name: "spike-cp-1", Address: netip.MustParseAddr("10.20.0.50")}
-	got := NetworkConfig(spike(), s, "BC:24:11:D1:BA:A5")
-	want := `# Written by talosvm for cluster spike, VM spike-cp-1.
+	s := Spec{Name: "treasury-cp-1", Address: netip.MustParseAddr("10.20.0.50")}
+	got := NetworkConfig(treasury(), s, "BC:24:11:D1:BA:A5")
+	want := `# Written by talosvm for cluster treasury, VM treasury-cp-1.
 version: 2
 ethernets:
   net0:
@@ -143,11 +143,11 @@ ethernets:
 }
 
 func TestMACFor(t *testing.T) {
-	a, b := MACFor("spike", "spike-cp-1", 0), MACFor("spike", "spike-general-1", 0)
-	if a != MACFor("spike", "spike-cp-1", 0) || a == b || a == MACFor("lab", "spike-cp-1", 0) {
+	a, b := MACFor("treasury", "treasury-cp-1", 0), MACFor("treasury", "treasury-general-1", 0)
+	if a != MACFor("treasury", "treasury-cp-1", 0) || a == b || a == MACFor("lab", "treasury-cp-1", 0) {
 		t.Errorf("MACFor not deterministic per cluster and VM: %s %s", a, b)
 	}
-	if a1 := MACFor("spike", "spike-cp-1", 1); a1 == a || a1 != MACFor("spike", "spike-cp-1", 1) {
+	if a1 := MACFor("treasury", "treasury-cp-1", 1); a1 == a || a1 != MACFor("treasury", "treasury-cp-1", 1) {
 		t.Errorf("MACFor attempt 1 = %s, want a different, stable candidate", a1)
 	}
 	if !strings.HasPrefix(a, "BC:24:11:") || len(a) != 17 || strings.ToUpper(a) != a {

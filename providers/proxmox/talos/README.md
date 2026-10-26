@@ -20,7 +20,7 @@ Gateway. ADR 0001 has the reasoning and the two provisioning steps.
 | --- | --- | --- |
 | [`patches/all.yaml`](patches/all.yaml) | every node | KubePrism on `127.0.0.1:7445`; sysctls for sandbox density and user namespaces |
 | [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled, Talos's CoreDNS disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true`; node label `holos.run/pod-network: none` |
-| [`clusters/<cluster>/controlplane.yaml`](clusters/spike/controlplane.yaml) (rendered, committed) | the cluster's control plane | `StaticHostConfig`: every admission webhook hostname at the ingress Gateway's address |
+| [`clusters/<cluster>/controlplane.yaml`](clusters/treasury/controlplane.yaml) (rendered, committed) | the cluster's control plane | `StaticHostConfig`: every admission webhook hostname at the ingress Gateway's address |
 | `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and `holos.run/nodepool` on workers |
 
 The sysctls:
@@ -98,20 +98,20 @@ Then, from the repository root, with the Proxmox credentials loaded for
 ```sh
 set -a; . ~/.config/holos/proxmox.env; set +a
 
-go run ./providers/proxmox/cmd/talosvm create -cluster spike
+go run ./providers/proxmox/cmd/talosvm create -cluster treasury
 
 # create returns once Proxmox has started the VMs, before Talos is up. Wait
 # until every node answers in maintenance mode (under a minute on the garage).
 # Only for new VMs: a configured node never answers --insecure, so the loop
 # would wait forever on a cluster that is already up.
-for a in $(go run ./providers/proxmox/cmd/talosvm list -cluster spike -json | jq -r '.[].address'); do
+for a in $(go run ./providers/proxmox/cmd/talosvm list -cluster treasury -json | jq -r '.[].address'); do
   until talosctl get machinestatus -n "$a" --insecure >/dev/null 2>&1; do sleep 5; done
 done
 
-providers/proxmox/talos/cluster.sh up spike
+providers/proxmox/talos/cluster.sh up treasury
 
-export TALOSCONFIG=~/.config/holos/talos/spike/talosconfig
-export KUBECONFIG=~/.config/holos/talos/spike/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
 talosctl health
 kubectl get nodes -o wide --show-labels
 ```
@@ -165,8 +165,8 @@ like any other patch change, from scratch. Without the Proxmox credentials
 reboot; check that with a dry run first:
 
 ```sh
-export TALOSCONFIG=~/.config/holos/talos/spike/talosconfig
-p=providers/proxmox/talos/clusters/spike/controlplane.yaml
+export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
+p=providers/proxmox/talos/clusters/treasury/controlplane.yaml
 del=$'apiVersion: v1alpha1\nkind: StaticHostConfig\nname: 10.20.0.30\n$patch: delete'
 talosctl -n 10.20.0.50 patch mc -p "$del" -p @$p --dry-run   # "without a reboot", and the diff
 talosctl -n 10.20.0.50 patch mc -p "$del" -p @$p --mode no-reboot
@@ -181,7 +181,7 @@ address changed, delete the old one. Then bring the saved config in step, so
 that a later `apply` without `gen` does not take the entries away:
 
 ```sh
-c=~/.config/holos/talos/spike/nodes/spike-cp-1.yaml
+c=~/.config/holos/talos/treasury/nodes/treasury-cp-1.yaml
 talosctl machineconfig patch $c -p "$del" -p @$p --output $c
 ```
 

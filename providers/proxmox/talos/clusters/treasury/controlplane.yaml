@@ -1,0 +1,8 @@
+# Rendered from holos/talos.cue by `cue cmd talos` in holos/. Do not edit.
+apiVersion: v1alpha1
+kind: StaticHostConfig
+name: 10.20.0.30
+hostnames:
+  - cert-manager-webhook.cert-manager.webhooks.treasury.bank.internal
+  - istiod.istio-system.webhooks.treasury.bank.internal
+  - trust-manager.cert-manager.webhooks.treasury.bank.internal

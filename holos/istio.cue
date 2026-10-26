@@ -9,7 +9,8 @@ Istio: {
 	// version is the release of all four charts, from
 	// oci://ghcr.io/istio/release/charts, and of the images. 1.31.3 is the
 	// latest patch of 1.31, the release the gateway-api component's CRDs
-	// match. 1.31 lists Kubernetes 1.32 to 1.36; the spike ran it on 1.37.
+	// match. 1.31 lists Kubernetes 1.32 to 1.36; the Substrate spike ran it
+	// on 1.37.
 	version: "1.31.3"
 	charts:  "oci://ghcr.io/istio/release/charts"
 

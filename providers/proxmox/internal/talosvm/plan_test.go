@@ -26,7 +26,7 @@ func mustSpecs(t *testing.T, c Config, nodes []string) []Spec {
 }
 
 func TestSpecsPlacement(t *testing.T) {
-	c := spike()
+	c := treasury()
 	c.Pools = append(c.Pools, Pool{Name: "microvm", Count: 2, Size: c.Pools[0].Size, Nodes: []string{"r620c"}})
 	var got []string
 	for _, s := range mustSpecs(t, c, garageNodes) {
@@ -34,9 +34,9 @@ func TestSpecsPlacement(t *testing.T) {
 	}
 	// One control plane, then the three general workers one per host.
 	want := []string{
-		"spike-cp-1@r620a=10.20.0.50",
-		"spike-general-1@r620b=10.20.0.51", "spike-general-2@r620c=10.20.0.52", "spike-general-3@r620a=10.20.0.53",
-		"spike-microvm-1@r620c=10.20.0.54", "spike-microvm-2@r620c=10.20.0.55",
+		"treasury-cp-1@r620a=10.20.0.50",
+		"treasury-general-1@r620b=10.20.0.51", "treasury-general-2@r620c=10.20.0.52", "treasury-general-3@r620a=10.20.0.53",
+		"treasury-microvm-1@r620c=10.20.0.54", "treasury-microvm-2@r620c=10.20.0.55",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("Specs =\n%v\nwant\n%v", got, want)
@@ -44,14 +44,14 @@ func TestSpecsPlacement(t *testing.T) {
 }
 
 func TestCreateParams(t *testing.T) {
-	c := spike()
+	c := treasury()
 	s := mustSpecs(t, c, garageNodes)[1]
 	img := Image{FactoryURL: FactoryURL, SchematicID: "abcdef0123456789", TalosVersion: "v1.14.4"}
 	p := CreateParams(c, s, 105, img, "d")
 	want := map[string]string{
 		"vmid":        "105",
-		"name":        "spike-general-1",
-		"tags":        "talosvm;talosvm-cluster-spike;talosvm-role-worker;talosvm-pool-general",
+		"name":        "treasury-general-1",
+		"tags":        "talosvm;talosvm-cluster-treasury;talosvm-role-worker;talosvm-pool-general",
 		"ostype":      "l26",
 		"machine":     "q35",
 		"bios":        "ovmf",
@@ -66,8 +66,8 @@ func TestCreateParams(t *testing.T) {
 		"ide0":        "garage:iso/talos-v1.14.4-abcdef012345-nocloud-amd64.iso,media=cdrom",
 		"ide2":        "local-zfs:cloudinit",
 		"citype":      "nocloud",
-		"cicustom":    "network=garage:snippets/talosvm_spike_spike-general-1-net.yaml",
-		"net0":        "virtio=" + MACFor("spike", "spike-general-1", 0) + ",bridge=k8s,mtu=1",
+		"cicustom":    "network=garage:snippets/talosvm_treasury_treasury-general-1-net.yaml",
+		"net0":        "virtio=" + MACFor("treasury", "treasury-general-1", 0) + ",bridge=k8s,mtu=1",
 		"serial0":     "socket",
 		"boot":        "order=scsi0;ide0",
 		"agent":       "enabled=1",
@@ -153,17 +153,17 @@ func TestOwned(t *testing.T) {
 		r    pve.Resource
 		want bool
 	}{
-		{res(1, "a", "n", "talosvm;talosvm-cluster-spike;talosvm-role-worker"), true},
-		{res(1, "a", "n", "talosvm-cluster-spike,talosvm"), true},
+		{res(1, "a", "n", "talosvm;talosvm-cluster-treasury;talosvm-role-worker"), true},
+		{res(1, "a", "n", "talosvm-cluster-treasury,talosvm"), true},
 		{res(1, "a", "n", "talosvm;talosvm-cluster-lab"), false},
-		{res(1, "a", "n", "talosvm-cluster-spike"), false},
-		{res(1, "a", "n", "talosvm;cluster-spike"), false},
+		{res(1, "a", "n", "talosvm-cluster-treasury"), false},
+		{res(1, "a", "n", "talosvm;cluster-treasury"), false},
 		{res(1, "a", "n", "talosvm"), false},
-		{res(1, "spike-cp-1", "n", ""), false}, // a name alone is never ownership
-		{pve.Resource{Type: "lxc", Tags: "talosvm;talosvm-cluster-spike"}, false},
-		{pve.Resource{Type: "qemu", Template: 1, Tags: "talosvm;talosvm-cluster-spike"}, false},
+		{res(1, "treasury-cp-1", "n", ""), false}, // a name alone is never ownership
+		{pve.Resource{Type: "lxc", Tags: "talosvm;talosvm-cluster-treasury"}, false},
+		{pve.Resource{Type: "qemu", Template: 1, Tags: "talosvm;talosvm-cluster-treasury"}, false},
 	} {
-		if got := Owned(tc.r, "spike"); got != tc.want {
+		if got := Owned(tc.r, "treasury"); got != tc.want {
 			t.Errorf("Owned(%+v) = %v, want %v", tc.r, got, tc.want)
 		}
 	}
@@ -192,18 +192,18 @@ func ownedFile(files map[string]string, asked *[]string) func(string, string) (s
 
 func TestDestroyCallsSelectOnlyTheCluster(t *testing.T) {
 	guests := append(tenants(),
-		res(104, "spike-cp-1", "r620a", "talosvm;talosvm-cluster-spike;talosvm-role-controlplane"),
-		res(105, "spike-general-1", "r620b", "talosvm;talosvm-cluster-spike;talosvm-role-worker;talosvm-pool-general"),
+		res(104, "treasury-cp-1", "r620a", "talosvm;talosvm-cluster-treasury;talosvm-role-controlplane"),
+		res(105, "treasury-general-1", "r620b", "talosvm;talosvm-cluster-treasury;talosvm-role-worker;talosvm-pool-general"),
 		res(106, "lab-cp-1", "r620c", "talosvm;talosvm-cluster-lab;talosvm-role-controlplane"),
-		res(107, "spike-general-2", "r620c", "talosvm-cluster-spike"), // hand-tagged, not ours
+		res(107, "treasury-general-2", "r620c", "talosvm-cluster-treasury"), // hand-tagged, not ours
 	)
 	guests[len(guests)-3].Status = "stopped"
 	files := map[string]string{
-		"/mnt/s/talosvm_spike_spike-cp-1-net.yaml": SnippetHeader("spike", "spike-cp-1") + "\nversion: 2\n",
-		"/mnt/s/talosvm_lab_lab-cp-1-net.yaml":     SnippetHeader("lab", "lab-cp-1") + "\n",
+		"/mnt/s/talosvm_treasury_treasury-cp-1-net.yaml": SnippetHeader("treasury", "treasury-cp-1") + "\nversion: 2\n",
+		"/mnt/s/talosvm_lab_lab-cp-1-net.yaml":           SnippetHeader("lab", "lab-cp-1") + "\n",
 	}
 	var asked []string
-	calls, err := DestroyCalls(guests, "spike", "/mnt/s", ownedFile(files, &asked))
+	calls, err := DestroyCalls(guests, "treasury", "/mnt/s", ownedFile(files, &asked))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,22 +214,22 @@ func TestDestroyCallsSelectOnlyTheCluster(t *testing.T) {
 	want := []string{
 		"POST /api2/json/nodes/r620a/qemu/104/status/stop",
 		"DELETE /api2/json/nodes/r620a/qemu/104?purge=1",
-		"REMOVE /mnt/s/talosvm_spike_spike-cp-1-net.yaml",
+		"REMOVE /mnt/s/talosvm_treasury_treasury-cp-1-net.yaml",
 		"DELETE /api2/json/nodes/r620b/qemu/105?purge=1",
 	}
-	if !slices.Equal(asked, []string{"/mnt/s/talosvm_spike_spike-cp-1-net.yaml", "/mnt/s/talosvm_spike_spike-general-1-net.yaml"}) {
+	if !slices.Equal(asked, []string{"/mnt/s/talosvm_treasury_treasury-cp-1-net.yaml", "/mnt/s/talosvm_treasury_treasury-general-1-net.yaml"}) {
 		t.Errorf("DestroyCalls looked at %v", asked)
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("DestroyCalls =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if calls, _ := DestroyCalls(tenants(), "spike", "/mnt/s", ownedFile(files, nil)); len(calls) != 0 {
+	if calls, _ := DestroyCalls(tenants(), "treasury", "/mnt/s", ownedFile(files, nil)); len(calls) != 0 {
 		t.Errorf("DestroyCalls selected tenants: %v", calls)
 	}
 	// A file at our name that talosvm did not write for this VM stops the
 	// whole destroy before anything is deleted.
-	files["/mnt/s/talosvm_spike_spike-general-1-net.yaml"] = "# someone else's\n"
-	if _, err := DestroyCalls(guests, "spike", "/mnt/s", ownedFile(files, nil)); err == nil || !strings.Contains(err.Error(), "refusing") {
+	files["/mnt/s/talosvm_treasury_treasury-general-1-net.yaml"] = "# someone else's\n"
+	if _, err := DestroyCalls(guests, "treasury", "/mnt/s", ownedFile(files, nil)); err == nil || !strings.Contains(err.Error(), "refusing") {
 		t.Errorf("DestroyCalls = %v, want a refusal", err)
 	}
 }
@@ -246,34 +246,34 @@ func TestSnippetNameIsUnambiguous(t *testing.T) {
 }
 
 func TestReconcile(t *testing.T) {
-	specs := mustSpecs(t, spike(), garageNodes)
-	existing := append(tenants(), res(104, "spike-cp-1", "r620b", "talosvm;talosvm-cluster-spike;talosvm-role-controlplane"))
-	create, skip, err := Reconcile(specs, existing, "spike")
+	specs := mustSpecs(t, treasury(), garageNodes)
+	existing := append(tenants(), res(104, "treasury-cp-1", "r620b", "talosvm;talosvm-cluster-treasury;talosvm-role-controlplane"))
+	create, skip, err := Reconcile(specs, existing, "treasury")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(skip) != 1 || skip[0].Spec.Name != "spike-cp-1" || len(create) != 3 {
+	if len(skip) != 1 || skip[0].Spec.Name != "treasury-cp-1" || len(create) != 3 {
 		t.Errorf("create %d skip %d, want 3 and 1", len(create), len(skip))
 	}
-	conflict := append(existing, res(300, "spike-general-2", "r620a", "hand-made"))
-	if _, _, err := Reconcile(specs, conflict, "spike"); err == nil || !strings.Contains(err.Error(), "spike-general-2") {
-		t.Errorf("Reconcile err = %v, want a conflict on spike-general-2", err)
+	conflict := append(existing, res(300, "treasury-general-2", "r620a", "hand-made"))
+	if _, _, err := Reconcile(specs, conflict, "treasury"); err == nil || !strings.Contains(err.Error(), "treasury-general-2") {
+		t.Errorf("Reconcile err = %v, want a conflict on treasury-general-2", err)
 	}
-	dup := append(existing, res(108, "spike-cp-1", "r620a", "talosvm;talosvm-cluster-spike"))
-	if _, _, err := Reconcile(specs, dup, "spike"); err == nil {
+	dup := append(existing, res(108, "treasury-cp-1", "r620a", "talosvm;talosvm-cluster-treasury"))
+	if _, _, err := Reconcile(specs, dup, "treasury"); err == nil {
 		t.Error("Reconcile accepted two VMs with the same name")
 	}
 }
 
-func spikePlan(t *testing.T) VMPlan {
+func treasuryPlan(t *testing.T) VMPlan {
 	t.Helper()
-	specs := mustSpecs(t, spike(), garageNodes)
+	specs := mustSpecs(t, treasury(), garageNodes)
 	var create []Action
 	for _, s := range specs {
 		create = append(create, Action{Spec: s})
 	}
 	return VMPlan{
-		Config: spike(), Create: create, Guests: tenants(), Nets: map[int]GuestNet{},
+		Config: treasury(), Create: create, Guests: tenants(), Nets: map[int]GuestNet{},
 		Dir: "/mnt/s", VMIDs: []int{104, 105, 106, 107},
 		Image: Image{FactoryURL: FactoryURL, SchematicID: "abc", TalosVersion: "v1.14.4"},
 		Read:  ownedFile(map[string]string{}, nil),
@@ -289,16 +289,16 @@ func callStrings(calls []Call) []string {
 }
 
 func TestPlanCreatesThenStarts(t *testing.T) {
-	calls, err := spikePlan(t).Calls()
+	calls, err := treasuryPlan(t).Calls()
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := callStrings(calls)
 	want := []string{
-		"WRITE /mnt/s/talosvm_spike_spike-cp-1-net.yaml", "POST /nodes/r620a/qemu", "POST /nodes/r620a/qemu/104/status/start",
-		"WRITE /mnt/s/talosvm_spike_spike-general-1-net.yaml", "POST /nodes/r620b/qemu", "POST /nodes/r620b/qemu/105/status/start",
-		"WRITE /mnt/s/talosvm_spike_spike-general-2-net.yaml", "POST /nodes/r620c/qemu", "POST /nodes/r620c/qemu/106/status/start",
-		"WRITE /mnt/s/talosvm_spike_spike-general-3-net.yaml", "POST /nodes/r620a/qemu", "POST /nodes/r620a/qemu/107/status/start",
+		"WRITE /mnt/s/talosvm_treasury_treasury-cp-1-net.yaml", "POST /nodes/r620a/qemu", "POST /nodes/r620a/qemu/104/status/start",
+		"WRITE /mnt/s/talosvm_treasury_treasury-general-1-net.yaml", "POST /nodes/r620b/qemu", "POST /nodes/r620b/qemu/105/status/start",
+		"WRITE /mnt/s/talosvm_treasury_treasury-general-2-net.yaml", "POST /nodes/r620c/qemu", "POST /nodes/r620c/qemu/106/status/start",
+		"WRITE /mnt/s/talosvm_treasury_treasury-general-3-net.yaml", "POST /nodes/r620a/qemu", "POST /nodes/r620a/qemu/107/status/start",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("calls =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -309,13 +309,13 @@ func TestPlanCreatesThenStarts(t *testing.T) {
 }
 
 func TestPlanCollisions(t *testing.T) {
-	p := spikePlan(t)
+	p := treasuryPlan(t)
 	p.Nets = map[int]GuestNet{
 		100: {Addresses: []netip.Addr{netip.MustParseAddr("10.20.0.4")}},
 		103: {Addresses: []netip.Addr{netip.MustParseAddr("10.20.0.52")}},
 	}
 	_, err := p.Calls()
-	if err == nil || !strings.Contains(err.Error(), "spike-general-2: address 10.20.0.52 is already used by vmid 103 jeffsbox") {
+	if err == nil || !strings.Contains(err.Error(), "treasury-general-2: address 10.20.0.52 is already used by vmid 103 jeffsbox") {
 		t.Errorf("Calls = %v", err)
 	}
 }
@@ -323,11 +323,11 @@ func TestPlanCollisions(t *testing.T) {
 // A taken MAC moves on to the next candidate, and so does one an earlier
 // VM of the same run just took.
 func TestPlanRehashesMACs(t *testing.T) {
-	p := spikePlan(t)
-	p.Nets = map[int]GuestNet{102: {MACs: []string{MACFor("spike", "spike-general-3", 0)}}}
-	// Make spike-general-1's first candidate the same as spike-cp-1's, as
+	p := treasuryPlan(t)
+	p.Nets = map[int]GuestNet{102: {MACs: []string{MACFor("treasury", "treasury-general-3", 0)}}}
+	// Make treasury-general-1's first candidate the same as treasury-cp-1's, as
 	// a 24-bit hash can.
-	p.Create[1].Spec.Name = "spike-cp-1"
+	p.Create[1].Spec.Name = "treasury-cp-1"
 	calls, err := p.Calls()
 	if err != nil {
 		t.Fatal(err)
@@ -340,8 +340,8 @@ func TestPlanRehashesMACs(t *testing.T) {
 		}
 	}
 	want := []string{
-		MACFor("spike", "spike-cp-1", 0), MACFor("spike", "spike-cp-1", 1),
-		MACFor("spike", "spike-general-2", 0), MACFor("spike", "spike-general-3", 1),
+		MACFor("treasury", "treasury-cp-1", 0), MACFor("treasury", "treasury-cp-1", 1),
+		MACFor("treasury", "treasury-general-2", 0), MACFor("treasury", "treasury-general-3", 1),
 	}
 	if !slices.Equal(macs, want) {
 		t.Errorf("MACs = %v, want %v", macs, want)
@@ -349,13 +349,13 @@ func TestPlanRehashesMACs(t *testing.T) {
 }
 
 func TestPlanExistingVMs(t *testing.T) {
-	cp := res(104, "spike-cp-1", "r620a", "talosvm;talosvm-cluster-spike;talosvm-role-controlplane")
+	cp := res(104, "treasury-cp-1", "r620a", "talosvm;talosvm-cluster-treasury;talosvm-role-controlplane")
 	cp.Status = "stopped"
-	specs := mustSpecs(t, spike(), garageNodes)
-	cpPath := "/mnt/s/talosvm_spike_spike-cp-1-net.yaml"
+	specs := mustSpecs(t, treasury(), garageNodes)
+	cpPath := "/mnt/s/talosvm_treasury_treasury-cp-1-net.yaml"
 	base := func() VMPlan {
 		return VMPlan{
-			Config: spike(), Existing: []Action{{Spec: specs[0], Existing: &cp}},
+			Config: treasury(), Existing: []Action{{Spec: specs[0], Existing: &cp}},
 			Guests: append(tenants(), cp), Dir: "/mnt/s",
 			Nets: map[int]GuestNet{104: {Net0MAC: "BC:24:11:AA:BB:CC", MACs: []string{"BC:24:11:AA:BB:CC"}}},
 		}
@@ -364,7 +364,7 @@ func TestPlanExistingVMs(t *testing.T) {
 	// Snippet there with the same address: nothing to write; the stopped
 	// VM is started.
 	p := base()
-	p.Read = ownedFile(map[string]string{cpPath: NetworkConfig(spike(), specs[0], "BC:24:11:AA:BB:CC")}, nil)
+	p.Read = ownedFile(map[string]string{cpPath: NetworkConfig(treasury(), specs[0], "BC:24:11:AA:BB:CC")}, nil)
 	calls, err := p.Calls()
 	if err != nil || !slices.Equal(callStrings(calls), []string{"POST /nodes/r620a/qemu/104/status/start"}) {
 		t.Errorf("same address: %v, %v", callStrings(calls), err)
@@ -373,8 +373,8 @@ func TestPlanExistingVMs(t *testing.T) {
 	// The config now says another address: refused, never rewritten.
 	moved := specs[0]
 	moved.Address = netip.MustParseAddr("10.20.0.60")
-	p.Read = ownedFile(map[string]string{cpPath: NetworkConfig(spike(), moved, "BC:24:11:AA:BB:CC")}, nil)
-	if _, err := p.Calls(); err == nil || !strings.Contains(err.Error(), "VM spike-cp-1 has address 10.20.0.60, config says 10.20.0.50") {
+	p.Read = ownedFile(map[string]string{cpPath: NetworkConfig(treasury(), moved, "BC:24:11:AA:BB:CC")}, nil)
+	if _, err := p.Calls(); err == nil || !strings.Contains(err.Error(), "VM treasury-cp-1 has address 10.20.0.60, config says 10.20.0.50") {
 		t.Errorf("moved address: %v", err)
 	}
 
@@ -402,11 +402,11 @@ func TestCheckStorages(t *testing.T) {
 			pve.Storage{Node: n, Storage: "nosnip", Status: "available", Shared: 1, Content: "iso"},
 		)
 	}
-	shared, err := CheckStorages(spike(), garageNodes, ss)
+	shared, err := CheckStorages(treasury(), garageNodes, ss)
 	if err != nil || !shared {
 		t.Errorf("CheckStorages = %v, %v; want shared, nil", shared, err)
 	}
-	c := spike()
+	c := treasury()
 	c.ISOStorage = "local"
 	if shared, err := CheckStorages(c, garageNodes, ss); err != nil || shared {
 		t.Errorf("CheckStorages(local) = %v, %v; want not shared", shared, err)
@@ -415,12 +415,12 @@ func TestCheckStorages(t *testing.T) {
 	if _, err := CheckStorages(c, garageNodes, ss); err == nil || !strings.Contains(err.Error(), "storage ssd is not on node r620a") {
 		t.Errorf("CheckStorages(ssd) = %v", err)
 	}
-	c = spike()
+	c = treasury()
 	c.SnippetStorage = "nosnip"
 	if _, err := CheckStorages(c, garageNodes, ss); err == nil || !strings.Contains(err.Error(), "does not allow snippets") {
 		t.Errorf("CheckStorages(nosnip) = %v", err)
 	}
-	c = spike()
+	c = treasury()
 	c.DiskStorage = "local"
 	if _, err := CheckStorages(c, garageNodes, ss); err == nil || !strings.Contains(err.Error(), "does not allow images") {
 		t.Errorf("CheckStorages(local disks) = %v", err)

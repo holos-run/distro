@@ -36,4 +36,4 @@ _Tags: {
 // clusterName is the cluster a component renders for. holos render platform
 // injects it from each component's parameters (platform/platform.cue); the
 // default lets `holos cue export ./components/<name>` work on its own.
-clusterName: string | *"spike" @tag(clusterName)
+clusterName: string | *"treasury" @tag(clusterName)

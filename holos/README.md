@@ -32,7 +32,7 @@ registry (`registry.cue`), rendered to
 `deploy/clusters/<cluster>/components/<component>/`, one file per resource.
 
 The garage's ingress range is 10.20.0.30 to .49, sized for about six clusters
-with three or four Gateway addresses each. `spike` has the first four,
+with three or four Gateway addresses each. `treasury` has the first four,
 10.20.0.30 to .33. A new cluster takes the next free block:
 
 ```cue
@@ -47,15 +47,15 @@ unless set, is reserved, so the private zone's wildcard record stays right
 when the Gateway or the cluster is recreated. `cilium-resources` splits the
 block into two `CiliumLoadBalancerIPPool`s that do not overlap:
 
-- `<cluster>` (`spike`) holds only the gateway's address and selects only the
-  gateway's Service, by the `gateway.networking.k8s.io/gateway-name` label
+- `<cluster>` (`treasury`) holds only the gateway's address and selects only
+  the gateway's Service, by the `gateway.networking.k8s.io/gateway-name` label
   istiod sets on it and the `io.kubernetes.service.namespace` label LB IPAM
   adds to every Service. No other Service can be given the address, whatever
   order things start in, even one that asks for it; it stays Pending with
   `pool_selector_mismatch`.
-- `<cluster>-general` (`spike-general`) holds the rest of the block, 10.20.0.31
-  to .33, for every namespace but the gateway's. The gateway's Service matches
-  only the first pool, so it can be given nothing else.
+- `<cluster>-general` (`treasury-general`) holds the rest of the block,
+  10.20.0.31 to .33, for every namespace but the gateway's. The gateway's
+  Service matches only the first pool, so it can be given nothing else.
 
 The pool holding the gateway's address keeps the cluster's name, the name the
 single pool had: narrowing a pool in place carries the gateway's allocation
@@ -156,7 +156,7 @@ Every component that registers a webhook renders its configurations with
 
 - `clientConfig.url`: `https://<service>.<namespace>.webhooks.<cluster>.<privateDomain>:9443/<path>`,
   for example
-  `https://cert-manager-webhook.cert-manager.webhooks.spike.bank.internal:9443/validate`.
+  `https://cert-manager-webhook.cert-manager.webhooks.treasury.bank.internal:9443/validate`.
   The hostname is the SNI the Gateway routes on and a DNS name on the
   webhook's serving certificate. The control plane resolves it through a
   Talos host entry to the Gateway's address (`talos.cue`,
@@ -165,7 +165,8 @@ Every component that registers a webhook renders its configurations with
   everywhere else.
 - `failurePolicy`: `Ignore` while `webhooks.enforcing` is false, the
   default; `Fail` once it is set. It is one flag per cluster, ADR 0001's two
-  provisioning steps. `spike` enforces.
+  provisioning steps. `treasury` is built permissive; a later change sets
+  it true once every webhook answers through the Gateway.
 - `timeoutSeconds`: 3, not the default 10.
 
 The webhook's Service is registered in `webhooks.cue`, the one list the
@@ -215,7 +216,7 @@ metadata: {name: bad, namespace: default}
 spec: {action: CUSTOM, rules: [{}]}
 YAML
 # admission webhook "validation.istio.io" denied the request: ... `provider.name` must not be empty
-kubectl -n kube-system logs kube-apiserver-spike-cp-1 --since=10m | grep -c 'failing open'   # 0
+kubectl -n kube-system logs kube-apiserver-treasury-cp-1 --since=10m | grep -c 'failing open'   # 0
 ```
 
 A `Bundle` with two kinds of source is refused too, but by the CRD's own
@@ -225,7 +226,7 @@ with the webhook's own certificate, and a name no route matches is reset:
 
 ```sh
 for h in cert-manager-webhook.cert-manager istiod.istio-system trust-manager.cert-manager; do
-  echo | openssl s_client -connect 10.20.0.30:9443 -servername $h.webhooks.spike.bank.internal 2>/dev/null |
+  echo | openssl s_client -connect 10.20.0.30:9443 -servername $h.webhooks.treasury.bank.internal 2>/dev/null |
     openssl x509 -noout -ext subjectAltName
 done
 ```
@@ -250,10 +251,10 @@ that trust-manager writes from a `Bundle` its own webhook would refuse, and
 a certificate cert-manager's webhook would refuse. Nothing in that loop can
 start first.
 
-So to rebuild `spike`, or to build a new cluster:
+So to rebuild `treasury`, or to build a new cluster:
 
-1. Merge `webhooks: enforcing: false` for the cluster (for `spike`, drop the
-   line in `clusters.cue`), render, and bootstrap (Bootstrap Argo CD, below).
+1. Leave `webhooks.enforcing` at its default, false, for the cluster in
+   `clusters.cue`, render, merge, and bootstrap (Bootstrap Argo CD, below).
 2. Once every `Application` is `Synced` and `Healthy`, check every webhook
    with the requests above. A webhook that answers refuses them under
    `Ignore` too.
@@ -270,7 +271,8 @@ configuration turned to `Fail` before `ingress-gateway` synced, that sync
 would be refused and the listener that fixes it would never land. The
 rebuild procedure has the listener in step 1. Turning enforcement on in the
 same commit that adds the listener needs the Gateway and `TLSRoute`s applied
-by hand first, which is how `spike` first enforced.
+by hand first, which is how the first garage cluster, before its rebuild as
+`treasury`, turned enforcement on.
 
 `istio-ingress` carries `cert-manager.io/disable-validation: "true"`, so the
 wildcard `Certificate` never depends on the webhook path, and a commit that
@@ -298,19 +300,19 @@ A recreated cluster has a new root. Export it for the laptop, and for the
 kubectl plugin, from any namespace's ConfigMap:
 
 ```sh
-kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > ~/spike-root-ca.pem
-openssl x509 -in ~/spike-root-ca.pem -noout -subject -dates -fingerprint -sha256
+kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > ~/treasury-root-ca.pem
+openssl x509 -in ~/treasury-root-ca.pem -noout -subject -dates -fingerprint -sha256
 # macOS: trust it for TLS
 sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain ~/spike-root-ca.pem
+  -k /Library/Keychains/System.keychain ~/treasury-root-ca.pem
 # Debian or Ubuntu
-sudo cp ~/spike-root-ca.pem /usr/local/share/ca-certificates/spike-root-ca.crt
+sudo cp ~/treasury-root-ca.pem /usr/local/share/ca-certificates/treasury-root-ca.crt
 sudo update-ca-certificates
 ```
 
 Before replacing a trusted root, remove the old one: macOS's Keychain Access
-lists it as `Holos spike root CA`. curl takes it without installing it,
-`--cacert ~/spike-root-ca.pem`.
+lists it as `Holos treasury root CA`. curl takes it without installing it,
+`--cacert ~/treasury-root-ca.pem`.
 
 istiod trusts the root when it fetches the JWKS for a RequestAuthentication
 through `/cacerts/extra.pem`, which Istio's chart mounts from ConfigMap
@@ -477,9 +479,9 @@ with Argo CD:
   Argo CD's self-heal and istiod take turns, `istio-base` and `istiod` go
   `OutOfSync` between Argo CD's self-heal attempts, and every turn bumps the
   configurations' `resourceVersion`. With `enforcing` true the two agree and
-  nothing moves. Measured on `spike`: about ten updates a configuration in
-  the first 90 seconds with the listener up and `Ignore` rendered; none in
-  six minutes with `Fail` rendered.
+  nothing moves. Measured on the first garage cluster: about ten updates a
+  configuration in the first 90 seconds with the listener up and `Ignore`
+  rendered; none in six minutes with `Fail` rendered.
 - Turning `enforcing` off on a cluster whose istiod has seen the webhook
   answer therefore needs an istiod restart as well
   (`kubectl -n istio-system delete pod -l app=istiod`) once the Gateway
@@ -589,9 +591,9 @@ from a checkout of `main`, since that is what Argo CD will sync, and from this
 directory:
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/spike/kubeconfig
-export TALOSCONFIG=~/.config/holos/talos/spike/talosconfig
-d=deploy/clusters/spike/components
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
+d=deploy/clusters/treasury/components
 
 kubectl apply --server-side --field-manager=argocd-controller -f $d/cilium/
 kubectl -n kube-system rollout status ds/cilium
@@ -670,9 +672,10 @@ A manual sync checks the signature too.
 
 ### Taking objects over from the hand applies
 
-A cluster built before Argo CD, as `spike` was, had every component applied
-by hand with field manager `holos`. Argo CD takes those objects over without
-a conflict: its server-side apply forces conflicts, and its manifests are
+A cluster built before Argo CD, as the first garage cluster was, had every
+component applied by hand with field manager `holos`. A cluster built from
+scratch with Argo CD, as `treasury` is, has nothing to take over. Argo CD
+takes those objects over without a conflict: its server-side apply forces conflicts, and its manifests are
 the hand applies' manifests, so the two managers share each field. The
 exceptions are atomic fields the API server fills in, such as a
 NetworkPolicy's `ingress` rules or a `fieldRef`, which pass to
@@ -711,8 +714,8 @@ repository root:
 ```sh
 # 1. Disable Talos's CoreDNS (the patch is already in controlplane.yaml).
 set -a; . ~/.config/holos/proxmox.env; set +a
-providers/proxmox/talos/cluster.sh gen spike
-providers/proxmox/talos/cluster.sh apply spike
+providers/proxmox/talos/cluster.sh gen treasury
+providers/proxmox/talos/cluster.sh apply treasury
 
 # 2. Remove Talos's objects and their inventory entries. This is what
 #    `talosctl upgrade-k8s` would do, without touching the control plane.
@@ -744,17 +747,17 @@ kubectl get nodes
 kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg status
 kubectl get ciliumloadbalancerippools
 
-kubectl create ns spike-test
-kubectl -n spike-test run dnstest --image=docker.io/nicolaka/netshoot:v0.14 \
+kubectl create ns treasury-test
+kubectl -n treasury-test run dnstest --image=docker.io/nicolaka/netshoot:v0.14 \
   --restart=Never --command -- sleep 3600
-kubectl -n spike-test exec dnstest -- dig +search kubernetes.default A
-kubectl -n spike-test exec dnstest -- dig @10.96.0.10 test.bank.internal A
-kubectl -n spike-test create deployment echo \
+kubectl -n treasury-test exec dnstest -- dig +search kubernetes.default A
+kubectl -n treasury-test exec dnstest -- dig @10.96.0.10 test.bank.internal A
+kubectl -n treasury-test create deployment echo \
   --image=registry.k8s.io/e2e-test-images/agnhost:2.53 -- /agnhost netexec --http-port=8080
-kubectl -n spike-test expose deployment echo --type=LoadBalancer --port=80 --target-port=8080
-kubectl -n spike-test get svc echo   # EXTERNAL-IP from 10.20.0.31-.33, never the gateway's .30
+kubectl -n treasury-test expose deployment echo --type=LoadBalancer --port=80 --target-port=8080
+kubectl -n treasury-test get svc echo   # EXTERNAL-IP from 10.20.0.31-.33, never the gateway's .30
 curl http://<external-ip>/hostname   # from the garage network
-kubectl delete ns spike-test
+kubectl delete ns treasury-test
 ```
 
 CoreDNS's metrics show which upstream answered: a `bank.internal` query is
@@ -762,7 +765,7 @@ counted against `to="192.168.2.1:53"`, anything else against host DNS,
 `to="169.254.116.108:53"`:
 
 ```sh
-kubectl -n spike-test exec dnstest -- curl -s http://<coredns pod IP>:9153/metrics |
+kubectl -n treasury-test exec dnstest -- curl -s http://<coredns pod IP>:9153/metrics |
   grep proxy_request_duration_seconds_count
 ```
 
@@ -804,7 +807,7 @@ kubectl -n istio-system get pods -o wide        # istiod, and istio-cni-node and
 kubectl get validatingwebhookconfiguration istio-validator-istio-system \
   -o jsonpath='{.webhooks[0].failurePolicy} {.webhooks[0].clientConfig.url}{"\n"}'
 kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
-kubectl get ciliumloadbalancerippools            # spike: 0 available; spike-general: none CONFLICTING
+kubectl get ciliumloadbalancerippools            # treasury: 0 available; treasury-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
 kubectl get tlsroute -A                          # cert-manager-webhook, trust-manager, istiod
 kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
