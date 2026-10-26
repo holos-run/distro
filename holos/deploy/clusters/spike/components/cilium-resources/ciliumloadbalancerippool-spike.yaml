@@ -5,4 +5,8 @@ metadata:
 spec:
     blocks:
         - start: 10.20.0.30
-          stop: 10.20.0.33
+          stop: 10.20.0.30
+    serviceSelector:
+        matchLabels:
+            gateway.networking.k8s.io/gateway-name: ingress
+            io.kubernetes.service.namespace: istio-ingress

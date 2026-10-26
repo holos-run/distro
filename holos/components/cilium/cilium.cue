@@ -68,7 +68,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		// masquerading (the default) stays on.
 		bpf: masquerade: false
 
-		// LoadBalancer addresses from the cluster's CiliumLoadBalancerIPPool
+		// LoadBalancer addresses from the cluster's CiliumLoadBalancerIPPools
 		// (the cilium-resources component), announced on the node network
 		// with ARP.
 		// The kube-proxy replacement handles externalIPs itself, so the

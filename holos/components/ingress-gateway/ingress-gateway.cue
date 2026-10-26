@@ -5,7 +5,7 @@ import "encoding/yaml"
 // The ingress Gateway (IngressGateway, components/ingress.cue): one Gateway
 // of class istio on the private domain, for every platform service, each an
 // HTTPRoute on its HTTPS listener. istiod deploys the gateway for it, a
-// Deployment, a LoadBalancer Service at the pinned address and a
+// Deployment, a LoadBalancer Service at the reserved address and a
 // ServiceAccount, and owns them; none is rendered here.
 //
 // Also the HTTPRoutes of components installed before the Gateway API CRDs,

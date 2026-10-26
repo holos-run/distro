@@ -32,10 +32,7 @@ registry (`registry.cue`), rendered to
 
 The garage's ingress range is 10.20.0.30 to .49, sized for about six clusters
 with three or four Gateway addresses each. `spike` has the first four,
-10.20.0.30 to .33. The ingress Gateway's address is pinned to the block's
-first, `loadBalancer.gateway`, so the private zone's wildcard record stays
-right when the Gateway or the cluster is recreated. A new cluster takes the
-next free block:
+10.20.0.30 to .33. A new cluster takes the next free block:
 
 ```cue
 clusters: example: {
@@ -44,12 +41,41 @@ clusters: example: {
 }
 ```
 
+The ingress Gateway's address, `loadBalancer.gateway`, the block's first
+unless set, is reserved, so the private zone's wildcard record stays right
+when the Gateway or the cluster is recreated. `cilium-resources` splits the
+block into two `CiliumLoadBalancerIPPool`s that do not overlap:
+
+- `<cluster>` (`spike`) holds only the gateway's address and selects only the
+  gateway's Service, by the `gateway.networking.k8s.io/gateway-name` label
+  istiod sets on it and the `io.kubernetes.service.namespace` label LB IPAM
+  adds to every Service. No other Service can be given the address, whatever
+  order things start in, even one that asks for it; it stays Pending with
+  `pool_selector_mismatch`.
+- `<cluster>-general` (`spike-general`) holds the rest of the block, 10.20.0.31
+  to .33, for every namespace but the gateway's. The gateway's Service matches
+  only the first pool, so it can be given nothing else.
+
+The pool holding the gateway's address keeps the cluster's name, the name the
+single pool had: narrowing a pool in place carries the gateway's allocation
+over, where removing or renaming it releases the address first and the
+Service would lose it, however briefly, until the new pool appeared.
+
+`#Cluster.loadBalancer` requires the block to run forward and `gateway` to lie
+in it, comparing the addresses as numbers, so a bad value fails `cue vet`.
+`holos render platform` does not report it: it renders no components and
+exits 0, which is why the render procedure runs `cue vet` first.
+
+To change the gateway's address, set `loadBalancer.gateway` (or the block)
+and render; the Gateway's `spec.addresses` and both pools follow. Then change
+the router's `*.bank.internal` record to match.
+
 ## Components
 
 | Component | What it renders |
 | --- | --- |
 | `cilium` | Cilium 1.20.4 from its Helm chart, in `kube-system`: CNI, kube-proxy replacement, LB IPAM and L2 announcements |
-| `cilium-resources` | The cluster's `CiliumLoadBalancerIPPool`, a `CiliumL2AnnouncementPolicy` on `eth0`, and the `allow-ambient-hostprobes` `CiliumClusterwideNetworkPolicy` |
+| `cilium-resources` | The cluster's two `CiliumLoadBalancerIPPool`s, one reserving the gateway's address and one for the rest of the block, a `CiliumL2AnnouncementPolicy` on `eth0`, and the `allow-ambient-hostprobes` `CiliumClusterwideNetworkPolicy` |
 | `coredns` | CoreDNS from the CoreDNS project's Helm chart, replacing the one Talos deploys, with the site's private zone forwarded to its resolvers |
 | `argocd` | Argo CD v3.5.6 from argo-helm's `argo-cd` chart 10.11.6, in `argocd`, syncing this repository's `main` |
 | `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
@@ -372,10 +398,21 @@ every platform service (`IngressGateway` in `components/ingress.cue`). istiod
 deploys it: a Deployment and a `LoadBalancer` Service both named
 `ingress-istio`, which it owns; none is rendered.
 
-- **Address.** `spec.addresses` pins 10.20.0.30, the cluster's
-  `loadBalancer.gateway`. istiod sets it as the Service's `loadBalancerIP`,
-  which Cilium's LB IPAM honors from the pool, and one worker answers ARP for
-  it. The private zone's `*.bank.internal` points there.
+- **Address.** `spec.addresses` requests 10.20.0.30, the cluster's
+  `loadBalancer.gateway`, which the cluster's pool reserves for the gateway
+  (see Clusters). istiod sets it as the Service's `loadBalancerIP`, LB IPAM
+  allocates it from that pool, and one worker answers ARP for it. The private
+  zone's `*.bank.internal` points there. The request is `spec.addresses`, not
+  Cilium's `lbipam.cilium.io/ips` annotation (`io.cilium/lb-ipam-ips` is its
+  older alias): it is the Gateway API's own field and the Gateway reports the
+  address it was given beside it, and Cilium 1.20 reads `loadBalancerIP` and
+  the annotation alike, as one list of requested addresses. Kubernetes
+  deprecated `loadBalancerIP`, but Cilium supports it until it is removed;
+  if istiod or Cilium stops honoring it, the annotation can reach the Service
+  through the Gateway's `spec.infrastructure.annotations`. The pool would
+  hand the gateway the address without any request, since it is the only
+  address its Service can take; the request makes a mismatch show as a
+  Pending Service with a reason rather than a different address.
 - **Hostnames.** Every service is `<service>.<privateDomain>` (interview
   Q40), `hello.bank.internal`, `argocd.bank.internal`, named in
   `IngressGateway.hosts`, one label under the zone and no cluster name.
@@ -404,6 +441,7 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
 From this directory:
 
 ```sh
+cue vet ./...
 rm -rf deploy/clusters
 holos render platform
 git status deploy/
@@ -591,7 +629,7 @@ kubectl -n spike-test exec dnstest -- dig @10.96.0.10 test.bank.internal A
 kubectl -n spike-test create deployment echo \
   --image=registry.k8s.io/e2e-test-images/agnhost:2.53 -- /agnhost netexec --http-port=8080
 kubectl -n spike-test expose deployment echo --type=LoadBalancer --port=80 --target-port=8080
-kubectl -n spike-test get svc echo   # EXTERNAL-IP from 10.20.0.30-.33
+kubectl -n spike-test get svc echo   # EXTERNAL-IP from 10.20.0.31-.33, never the gateway's .30
 curl http://<external-ip>/hostname   # from the garage network
 kubectl delete ns spike-test
 ```
@@ -643,6 +681,7 @@ kubectl -n istio-system get pods -o wide        # istiod, and istio-cni-node and
 kubectl get validatingwebhookconfiguration istio-validator-istio-system \
   -o jsonpath='{.webhooks[0].failurePolicy} {.webhooks[0].clientConfig.url}{"\n"}'
 kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
+kubectl get ciliumloadbalancerippools            # spike: 0 available; spike-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
 
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > /tmp/root.pem
@@ -664,6 +703,23 @@ kubectl delete ns gw-test
 
 hello answers with the request it received: `X-Forwarded-Proto: https`, and
 `RemoteAddr` the gateway pod's address, which ztunnel preserves.
+
+The gateway's reserved address: another Service never gets it, even asking
+for it, and the gateway's Service comes back at it after a delete, which
+istiod answers by recreating it.
+
+```sh
+kubectl create ns lb-test
+kubectl -n lb-test create service loadbalancer t1 --tcp=80:8080   # 10.20.0.31-.33
+kubectl -n lb-test create -f - <<'EOF'
+{"apiVersion": "v1", "kind": "Service", "metadata": {"name": "t30"},
+ "spec": {"type": "LoadBalancer", "loadBalancerIP": "10.20.0.30", "ports": [{"port": 80}]}}
+EOF
+kubectl -n lb-test get svc t30 -o jsonpath='{.status.conditions[0].reason}{"\n"}'   # pool_selector_mismatch
+kubectl -n istio-ingress delete svc ingress-istio
+kubectl -n istio-ingress get svc ingress-istio   # EXTERNAL-IP 10.20.0.30 again
+kubectl delete ns lb-test
+```
 
 On a fresh cluster, `cilium-dbg status` can report `Cluster health: 2/3`
 for the first probe round, about two minutes: an agent probes a node's health
