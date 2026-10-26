@@ -12,6 +12,7 @@ import (
 	issuer "cert-manager.io/issuer/v1"
 	hrv1 "gateway.networking.k8s.io/httproute/v1"
 	gwv1 "gateway.networking.k8s.io/gateway/v1"
+	app "argoproj.io/application/v1alpha1"
 	ap "argoproj.io/appproject/v1alpha1"
 	es "external-secrets.io/externalsecret/v1beta1"
 	ss "external-secrets.io/secretstore/v1beta1"
@@ -23,6 +24,7 @@ import (
 		metadata: name: string | *InternalLabel
 	}
 
+	Application?: [_]:        app.#Application
 	AppProject?: [_]:         ap.#AppProject
 	Certificate?: [_]:        certv1.#Certificate
 	ClusterIssuer?: [_]:      ci.#ClusterIssuer

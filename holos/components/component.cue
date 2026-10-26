@@ -48,8 +48,9 @@ holos: core.#BuildPlan & {
 #HelmArtifact: {
 	chart: core.#Chart
 	values: {...}
-	namespace:  string
-	resources?: #Resources
+	namespace:   string
+	enableHooks: bool | *false
+	resources?:  #Resources
 	patches: [...#KustomizePatch]
 
 	let HasResources = resources != _|_
@@ -63,9 +64,10 @@ holos: core.#BuildPlan & {
 				kind:   "Helm"
 				output: "helm-output.yaml"
 				helm: {
-					"chart":     chart
-					"values":    values
-					"namespace": namespace
+					"chart":       chart
+					"values":      values
+					"namespace":   namespace
+					"enableHooks": enableHooks
 					// Capabilities.KubeVersion for the chart's version checks;
 					// helm template otherwise assumes its own built-in version.
 					kubeVersion: "v\(Cluster.kubernetesVersion)"
