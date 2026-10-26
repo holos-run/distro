@@ -9,6 +9,8 @@ released in holos v0.106.0. It is its own CUE module
 holos/
 ├── cue.mod/        CUE module; holos init platform v1alpha6's schemas
 ├── clusters.cue    per-site and per-cluster data
+├── webhooks.cue    the Services that serve admission webhooks
+├── private-ca.cue  the names of the private CA and its trust bundle
 ├── platform/       the Platform: the component registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
 └── deploy/         rendered manifests, committed; never edited by hand
@@ -42,6 +44,11 @@ clusters: example: {
 | `cilium` | Cilium 1.20.4 from its Helm chart, in `kube-system`: CNI, kube-proxy replacement, LB IPAM and L2 announcements |
 | `cilium-resources` | The cluster's `CiliumLoadBalancerIPPool`, a `CiliumL2AnnouncementPolicy` on `eth0`, and the `allow-ambient-hostprobes` `CiliumClusterwideNetworkPolicy` |
 | `coredns` | CoreDNS from the CoreDNS project's Helm chart, replacing the one Talos deploys, with the site's private zone forwarded to its resolvers |
+| `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
+| `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook on the load balancer |
+| `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate` and the `private-ca` `ClusterIssuer` |
+| `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook on the load balancer |
+| `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
 committed, so a render needs no network and reads the same chart everywhere.
@@ -87,6 +94,85 @@ the rest to the node's resolver (Talos host DNS, which forwards to the LAN
 resolver), and `bank.internal.` forwards straight to 192.168.2.1, so the
 private zone does not depend on how the nodes' resolvers are set.
 
+### Admission webhooks
+
+The control plane is off the pod network (ADR 0001), so the API server
+reaches an admission webhook through a URL on HAProxy, a layer 4 load
+balancer on the control plane, which passes TLS through to a host-network
+Gateway that routes on SNI to the webhook's Service. HAProxy, the
+`extraHostEntries` and the Gateway are a later item; until they exist no
+webhook is reachable, and every webhook fails open.
+
+Every component that registers a webhook renders its configurations with
+`#WebhookPatch` (`components/webhooks.cue`), which sets, from the cluster's
+`webhooks` in `clusters.cue`:
+
+- `clientConfig.url`: `https://<service>.<namespace>.webhooks.<cluster>.<privateDomain>:9443/<path>`,
+  for example
+  `https://cert-manager-webhook.cert-manager.webhooks.spike.bank.internal:9443/validate`.
+  The hostname resolves only on the control plane, through Talos
+  `extraHostEntries`, to the control plane's address, where HAProxy listens on
+  9443. The webhook's serving certificate carries the hostname.
+- `failurePolicy`: `Ignore` while `webhooks.enforcing` is false, the
+  default; `Fail` once it is set. It is one flag per cluster, ADR 0001's two
+  provisioning steps.
+- `timeoutSeconds`: 3, not the default 10.
+
+The webhook's Service is registered in `webhooks.cue`, the one list the load
+balancer item renders the host entries, HAProxy and TLSRoutes from.
+cert-manager's cainjector fills each configuration's `caBundle`; it does so
+for a URL as it does for a Service.
+
+While the webhooks fail open, the API server skips them: a cert-manager
+resource is not validated, and a CertificateRequest is not stamped with its
+requester's `spec.username` and `spec.groups` by the mutating webhook.
+cert-manager's own approver does not need them. The API server logs every
+skipped call as `Failed calling webhook, failing open`. With no host entry the
+name does not resolve and the call fails at once; once a name resolves to an
+address that does not answer, each request waits the 3-second timeout.
+
+### The private CA
+
+The cluster's certificates come from a private CA (`private-ca.cue` has the
+names). The self-signed `Issuer` `cert-manager/private-ca-bootstrap` signs the
+root, `Certificate` `cert-manager/private-ca-root`, an ECDSA P-256 CA valid
+for ten years whose key cert-manager generates in the cluster, so neither the
+key nor the certificate is in git. The `ClusterIssuer` `private-ca` issues
+from it. trust-manager writes the root to ConfigMap `private-ca`, key
+`ca.crt`, in every namespace, including ones created later. The root's key
+is only in Secret `cert-manager/private-ca-root`; cert-manager and
+trust-manager, whose trust namespace is `cert-manager`, can both read it. Its
+`rotationPolicy` is `Never`, so a reissue keeps the same root.
+
+A recreated cluster has a new root. Export it for the laptop, and for the
+kubectl plugin, from any namespace's ConfigMap:
+
+```sh
+kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > ~/spike-root-ca.pem
+openssl x509 -in ~/spike-root-ca.pem -noout -subject -dates -fingerprint -sha256
+# macOS: trust it for TLS
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain ~/spike-root-ca.pem
+```
+
+istiod trusts the root when it fetches the JWKS for a RequestAuthentication
+through `/cacerts/extra.pem`, which Istio's chart mounts from ConfigMap
+`pilot-jwks-extra-cacerts`, not from the `cacerts` Secret. The Istio
+component mounts this ConfigMap there instead:
+
+```cue
+// istiod chart values
+volumes: [{name: "jwks-extra-cacerts", configMap: {name: PrivateCA.bundle, items: [{key: PrivateCA.bundleKey, path: "extra.pem"}]}}]
+volumeMounts: [{name: "jwks-extra-cacerts", mountPath: "/cacerts", readOnly: true}]
+```
+
+The chart's own `jwksResolverExtraRootCA` value stays empty: setting it
+mounts `pilot-jwks-extra-cacerts` at the same path. istiod reads the file
+once, at start, so a new root needs an istiod restart.
+No `cacerts` Secret is created: one holding any of `ca-cert.pem`,
+`ca-key.pem`, `root-cert.pem`, `cert-chain.pem` or `tls.crt` switches istiod
+to a plugged-in CA, or stops it starting if the set is incomplete.
+
 ## Render
 
 From this directory:
@@ -124,6 +210,28 @@ kubectl apply --server-side --field-manager=holos -f $d/cilium-resources/
 
 kubectl apply --server-side --field-manager=holos -f $d/coredns/
 kubectl -n kube-system rollout status deploy/coredns
+
+kubectl apply --server-side --field-manager=holos -f $d/gateway-api/
+
+# The namespace first: kubectl applies a directory's files in name order.
+kubectl apply --server-side --field-manager=holos -f $d/cert-manager/namespace-cert-manager.yaml
+kubectl apply --server-side --field-manager=holos -f $d/cert-manager/
+kubectl wait --for=condition=Established crd/certificates.cert-manager.io \
+  crd/issuers.cert-manager.io crd/clusterissuers.cert-manager.io
+kubectl -n cert-manager rollout status deploy/cert-manager
+kubectl -n cert-manager rollout status deploy/cert-manager-cainjector
+kubectl -n cert-manager rollout status deploy/cert-manager-webhook
+
+kubectl apply --server-side --field-manager=holos -f $d/private-ca/
+kubectl -n cert-manager wait --for=condition=Ready certificate/private-ca-root
+kubectl wait --for=condition=Ready clusterissuer/private-ca
+
+kubectl apply --server-side --field-manager=holos -f $d/trust-manager/
+kubectl wait --for=condition=Established crd/bundles.trust.cert-manager.io
+kubectl -n cert-manager rollout status deploy/trust-manager
+
+kubectl apply --server-side --field-manager=holos -f $d/private-ca-bundle/
+kubectl wait --for=condition=Synced bundle/private-ca
 ```
 
 The workers turn `Ready` once the Cilium agents are up; the control plane
@@ -195,6 +303,29 @@ counted against `to="192.168.2.1:53"`, anything else against host DNS,
 ```sh
 kubectl -n spike-test exec dnstest -- curl -s http://<coredns pod IP>:9153/metrics |
   grep proxy_request_duration_seconds_count
+```
+
+The private CA: issue a certificate, check it chains to the root in the
+namespace's bundle, and remove it.
+
+```sh
+kubectl create ns ca-test
+kubectl -n ca-test get configmap private-ca   # trust-manager's copy of the root
+kubectl -n ca-test apply -f - <<'EOF'
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: test}
+spec:
+  secretName: test-tls
+  dnsNames: [test.ca-test.bank.internal]
+  issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: private-ca}
+EOF
+kubectl -n ca-test wait --for=condition=Ready certificate/test
+t=$(mktemp -d)
+kubectl -n ca-test get secret test-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > $t/leaf.pem
+kubectl -n ca-test get configmap private-ca -o jsonpath='{.data.ca\.crt}' > $t/root.pem
+openssl verify -CAfile $t/root.pem $t/leaf.pem
+kubectl delete ns ca-test
 ```
 
 LoadBalancer addresses answer TCP and UDP on the Service's ports only; they

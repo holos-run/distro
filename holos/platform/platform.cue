@@ -19,6 +19,20 @@ registry: [
 	{name: "cilium-resources"},
 	// coredns replaces the CoreDNS Talos deploys, to own the Corefile.
 	{name: "coredns"},
+	// gateway-api is the Gateway API CRDs, standard channel, at the release
+	// Istio supports, installed ahead of Istio.
+	{name: "gateway-api"},
+	// cert-manager, its CRDs and its webhook.
+	{name: "cert-manager"},
+	// private-ca is the bootstrap Issuer, the root and the ClusterIssuer. It
+	// needs cert-manager's CRDs established and its controller running.
+	{name: "private-ca"},
+	// trust-manager, its Bundle CRD and its webhook. Its webhook certificate
+	// is a cert-manager Certificate, so it comes after cert-manager.
+	{name: "trust-manager"},
+	// private-ca-bundle is the Bundle that copies the root into every
+	// namespace. It needs trust-manager's CRD and the root's Secret.
+	{name: "private-ca-bundle"},
 ]
 
 for CLUSTER in clusters for C in registry {

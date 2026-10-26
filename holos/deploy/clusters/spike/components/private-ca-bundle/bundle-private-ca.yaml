@@ -1,0 +1,12 @@
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+    name: private-ca
+spec:
+    sources:
+        - secret:
+            key: ca.crt
+            name: private-ca-root
+    target:
+        configMap:
+            key: ca.crt
