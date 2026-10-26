@@ -165,8 +165,7 @@ Every component that registers a webhook renders its configurations with
   everywhere else.
 - `failurePolicy`: `Ignore` while `webhooks.enforcing` is false, the
   default; `Fail` once it is set. It is one flag per cluster, ADR 0001's two
-  provisioning steps. `treasury` is built permissive; a later change sets
-  it true once every webhook answers through the Gateway.
+  provisioning steps. `treasury` enforces.
 - `timeoutSeconds`: 3, not the default 10.
 
 The webhook's Service is registered in `webhooks.cue`, the one list the
