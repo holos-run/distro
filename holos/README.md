@@ -200,6 +200,11 @@ kubectl -n spike-test exec dnstest -- curl -s http://<coredns pod IP>:9153/metri
 LoadBalancer addresses answer TCP and UDP on the Service's ports only; they
 do not answer ping.
 
+On a fresh cluster, `cilium-dbg status` can report `Cluster health: 2/3`
+for the first probe round, about two minutes: an agent probes a node's health
+endpoint before that endpoint is up. Wait for the next round before reading
+it as a fault.
+
 ## The control plane's mirror pods
 
 Once the workers are `Ready`, the node lifecycle controller treats the
