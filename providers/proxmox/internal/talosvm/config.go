@@ -107,8 +107,10 @@ type Config struct {
 // workers, disks on local-zfs, the ISO and snippets on the shared garage NFS
 // storage, and
 // the k8s vnet. The sizes follow the Talos Proxmox guide's minimums with room
-// for the platform: 2 cores and 4 GiB for a control plane, 4 cores and 8 GiB
-// for a worker. The cluster name is left empty on purpose.
+// for the platform: 2 cores and 6 GiB for a control plane, 4 cores and 8 GiB
+// for a worker. A control plane runs etcd and the API server, controller
+// manager and scheduler, and wants about 5 GiB in practice, so 6 GiB leaves
+// headroom. The cluster name is left empty on purpose.
 func Default() Config {
 	return Config{
 		TalosVersion:   DefaultTalosVersion,
@@ -120,7 +122,7 @@ func Default() Config {
 		Nameserver:     "192.168.2.1",
 		SearchDomain:   "lan",
 		FirstAddress:   "10.20.0.50",
-		ControlPlane:   ControlPlane{Count: 1, Size: Size{Cores: 2, MemoryMiB: 4096, DiskGiB: 32}},
+		ControlPlane:   ControlPlane{Count: 1, Size: Size{Cores: 2, MemoryMiB: 6144, DiskGiB: 32}},
 		Pools: []Pool{
 			{Name: "general", Count: 3, Size: Size{Cores: 4, MemoryMiB: 8192, DiskGiB: 64}},
 		},
