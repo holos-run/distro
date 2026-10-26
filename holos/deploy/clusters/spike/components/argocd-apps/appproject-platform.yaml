@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    name: platform
+    namespace: argocd
+spec:
+    clusterResourceWhitelist:
+        - group: '*'
+          kind: '*'
+    description: The Holos platform's components, synced from https://github.com/holos-run/distro.git
+    destinations:
+        - namespace: '*'
+          server: https://kubernetes.default.svc
+    signatureKeys:
+        - keyID: 7716CCA9F8F7BE25
+        - keyID: B5690EEEBB952194
+    sourceRepos:
+        - https://github.com/holos-run/distro.git

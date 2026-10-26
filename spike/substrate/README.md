@@ -4,7 +4,7 @@ Throwaway. These files rerun the milestone "Substrate runs on Talos" by hand on
 the `spike` cluster (Talos 1.14.4, Kubernetes 1.37.1, Cilium 1.20.4 with the
 platform's CoreDNS). That cluster is built by
 [providers/proxmox/talos/README.md](../../providers/proxmox/talos/README.md)
-and the Apply procedure in [holos/README.md](../../holos/README.md). Nothing
+and the bootstrap procedure in [holos/README.md](../../holos/README.md). Nothing
 here is a Holos component; the cluster is rebuilt afterwards. Tags without a
 digest below (curl, busybox, aws-cli, the Istio charts, the Gateway API and
 local-path URLs) are pinned by version only, which is enough for a throwaway.
