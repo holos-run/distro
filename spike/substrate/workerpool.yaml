@@ -1,0 +1,32 @@
+# The gVisor WorkerPool. Worker pods run runsc themselves (Substrate brings its
+# own gVisor; the Talos gVisor extension is not used), so the namespace must be
+# privileged: Talos enforces Pod Security baseline by default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ate-spike
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: spike
+  namespace: ate-spike
+  labels:
+    workload: spike
+spec:
+  replicas: 2
+  # The worker image must match the control plane release (0.7.0-alpha1).
+  workerImage: ghcr.io/kagent-dev/substrate/ateworker-gvisor:v0.7.0-alpha1@sha256:63157fc7b46698c5411dab15540cbbbe1ba41744f5edeb8ad74982d29ff371d7
+  # No configRef: follows the class default, gvisor-default from the chart.
+  sandboxClasses:
+  - name: gvisor
+  template:
+    resources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 1Gi

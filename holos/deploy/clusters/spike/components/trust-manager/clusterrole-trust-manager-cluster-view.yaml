@@ -1,0 +1,20 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/instance: trust-manager
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: trust-manager
+    app.kubernetes.io/version: v0.25.0
+    helm.sh/chart: trust-manager-v0.25.0
+    rbac.authorization.k8s.io/aggregate-to-cluster-reader: "true"
+  name: trust-manager-cluster-view
+rules:
+- apiGroups:
+  - trust.cert-manager.io
+  resources:
+  - bundles
+  verbs:
+  - get
+  - list
+  - watch

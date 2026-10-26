@@ -1,0 +1,13 @@
+# oci://ghcr.io/istio/release/charts/ztunnel 1.31.3
+profile: ambient
+# Both DaemonSets tolerate every taint. spike-cp-1 carries no pod network
+# (holos.run/pod-network=none, the same rule Cilium follows), so their pods
+# there sit in ContainerCreating forever and helm --wait times out.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: holos.run/pod-network
+          operator: NotIn
+          values: [none]

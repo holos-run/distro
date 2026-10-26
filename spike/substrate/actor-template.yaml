@@ -1,0 +1,25 @@
+# ActorTemplate for the spike, in protojson form (ateapi.ActorTemplate), not a
+# Kubernetes object. Create it through the ate API:
+#   kubectl ate create actor-template -f actor-template.yaml
+# traefik/whoami answers on port 80 with its hostname and request headers.
+# Every actor reports Hostname "actor", so the router's access log, not the
+# response, shows which actor answered.
+metadata:
+  atespace: spike
+  name: whoami
+workerSelector:
+  matchLabels:
+    workload: spike
+containers:
+- name: whoami
+  image: docker.io/traefik/whoami:v1.11.0@sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab
+  wakeupProbe:
+    httpGet:
+      path: /health
+      port: 80
+resources:
+  limits:
+    cpuMillicores: 500
+    memoryBytes: 268435456 # 256Mi
+snapshotConfig:
+  preferredFidelity: SNAPSHOT_FIDELITY_MEMORY

@@ -94,6 +94,15 @@ Then, from the repository root, with the Proxmox credentials loaded for
 set -a; . ~/.config/holos/proxmox.env; set +a
 
 go run ./providers/proxmox/cmd/talosvm create -cluster spike
+
+# create returns once Proxmox has started the VMs, before Talos is up. Wait
+# until every node answers in maintenance mode (under a minute on the garage).
+# Only for new VMs: a configured node never answers --insecure, so the loop
+# would wait forever on a cluster that is already up.
+for a in $(go run ./providers/proxmox/cmd/talosvm list -cluster spike -json | jq -r '.[].address'); do
+  until talosctl get machinestatus -n "$a" --insecure >/dev/null 2>&1; do sleep 5; done
+done
+
 providers/proxmox/talos/cluster.sh up spike
 
 export TALOSCONFIG=~/.config/holos/talos/spike/talosconfig
@@ -109,7 +118,11 @@ kubectl get nodes -o wide --show-labels
   control plane VM.
 - `apply` sends each node its config: with `--insecure` to a node in
   maintenance mode, which installs Talos to `/dev/sda` and reboots, and over
-  the authenticated API to a node that is already configured.
+  the authenticated API to a node that is already configured. A node that
+  has not booted yet does not answer the insecure probe, so `apply` takes it
+  for a configured node and the authenticated call fails, which is why the
+  usage above waits for maintenance mode first; `gen` also reads the schematic from the control
+  plane node over the same insecure API, unless `INSTALLER` is set.
 - `bootstrap` waits for the control plane, bootstraps etcd (an etcd that is
   already bootstrapped is fine), and writes the kubeconfig once the API
   server answers.

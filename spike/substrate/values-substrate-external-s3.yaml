@@ -1,0 +1,24 @@
+# Second pass, layered after values-substrate.yaml: the bundled RustFS off and
+# the object store plugin pointed at the standalone RustFS in namespace rustfs.
+# objectStorePlugin.extraEnv reaches both plugin sidecars (ate-api-server and
+# atelet). The chart offers no bucket value for external storage: the bucket is
+# the first path segment of ateApi.snapshotLocation, which stays a gs:// URI
+# even on the S3 backend, as the chart does for its bundled RustFS.
+rustfs:
+  enabled: false
+ateApi:
+  snapshotLocation: gs://substrate-snapshots/
+objectStorePlugin:
+  extraEnv:
+  - name: AWS_REGION
+    value: us-east-1
+  - name: AWS_ENDPOINT_URL
+    value: http://rustfs.rustfs.svc:9000
+  - name: AWS_S3_USE_PATH_STYLE
+    value: "true"
+  - name: AWS_ACCESS_KEY_ID
+    valueFrom:
+      secretKeyRef: {name: substrate-s3, key: AWS_ACCESS_KEY_ID}
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom:
+      secretKeyRef: {name: substrate-s3, key: AWS_SECRET_ACCESS_KEY}

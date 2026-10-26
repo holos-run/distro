@@ -9,6 +9,7 @@ import (
 	ci "cert-manager.io/clusterissuer/v1"
 	rgv1 "gateway.networking.k8s.io/referencegrant/v1beta1"
 	certv1 "cert-manager.io/certificate/v1"
+	issuer "cert-manager.io/issuer/v1"
 	hrv1 "gateway.networking.k8s.io/httproute/v1"
 	gwv1 "gateway.networking.k8s.io/gateway/v1"
 	ap "argoproj.io/appproject/v1alpha1"
@@ -37,6 +38,7 @@ import (
 	ReferenceGrant?: [_]:     rgv1.#ReferenceGrant
 	Role?: [_]:               rbacv1.#Role
 	RoleBinding?: [_]:        rbacv1.#RoleBinding
+	Issuer?: [_]:             issuer.#Issuer
 	Secret?: [_]:             corev1.#Secret
 	SecretStore?: [_]:        ss.#SecretStore
 	Service?: [_]:            corev1.#Service
@@ -48,6 +50,9 @@ import (
 	CiliumClusterwideNetworkPolicy?: [_]: {apiVersion: "cilium.io/v2", ...}
 	CiliumL2AnnouncementPolicy?: [_]: {apiVersion: "cilium.io/v2alpha1", ...}
 	CiliumLoadBalancerIPPool?: [_]: {apiVersion: "cilium.io/v2", ...}
+
+	// trust-manager's Bundle has no generated CUE schema here either.
+	Bundle?: [_]: {apiVersion: "trust.cert-manager.io/v1alpha1", ...}
 
 	Gateway?: [_]: gwv1.#Gateway & {
 		spec: gatewayClassName: string | *"istio"

@@ -52,6 +52,63 @@ import "net"
 		start: net.IPv4 & string
 		stop:  net.IPv4 & string
 	}
+
+	// webhooks is how the API server reaches this cluster's admission
+	// webhooks. The control plane is off the pod network (ADR 0001), so every
+	// webhook's clientConfig is a URL on the HAProxy layer 4 load balancer on
+	// the control plane, which passes TLS through to a host-network Gateway
+	// that routes on SNI to the webhook's Pods. webhooks.cue has the hostname
+	// scheme and the registry of webhook Services.
+	webhooks: {
+		// enforcing is ADR 0001's provisioning flag, one value for every
+		// webhook in the cluster. false while the cluster bootstraps: every
+		// webhook fails open (Ignore), so the API server admits a request it
+		// cannot get a webhook's answer for. Set true once every webhook
+		// answers through the load balancer; every webhook then renders
+		// Fail.
+		enforcing:     bool | *false
+		failurePolicy: "Ignore" | "Fail"
+		if enforcing {failurePolicy: "Fail"}
+		if !enforcing {failurePolicy: "Ignore"}
+
+		// timeoutSeconds bounds how long the API server waits for a webhook,
+		// in place of the default ten seconds, so a request waits briefly
+		// rather than stalling when the webhook is unreachable.
+		timeoutSeconds: int & >=1 & <=30 | *3
+
+		// port is HAProxy's listener on the control plane's address: not
+		// 443, left free on the control plane, and clear of everything Talos
+		// binds there: 6443 (API server), 50000/50001 (apid, trustd),
+		// 2379/2380 (etcd), 10250 (kubelet), 10257/10259 (controller
+		// manager, scheduler), 7445 (KubePrism, on localhost) and 53 (host
+		// DNS, on 169.254.116.108).
+		port: 9443
+
+		// domain is the suffix of every webhook hostname in the cluster. The
+		// names resolve only on the control plane, through Talos
+		// extraHostEntries pointing them at the control plane's address, so
+		// the private zone needs no records for them.
+		domain: "webhooks.\(name).\(site.privateDomain)"
+
+		// hosts maps each entry of webhookServices (webhooks.cue) to its
+		// hostname: the Service's name and namespace under domain, as a
+		// Service's cluster DNS name is under svc.cluster.local. The hostname
+		// is the SNI the Gateway routes on and a DNS name the webhook's
+		// serving certificate carries.
+		hosts: {
+			for K, S in webhookServices {
+				(K): "\(S.name).\(S.namespace).\(domain)"
+			}
+		}
+
+		// urls maps each entry of webhookServices to the base URL a
+		// webhook's clientConfig names; the webhook's path is appended.
+		urls: {
+			for K, H in hosts {
+				(K): "https://\(H):\(port)"
+			}
+		}
+	}
 }
 
 sites: [NAME=string]: #Site & {name: NAME}

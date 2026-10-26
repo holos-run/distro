@@ -1,0 +1,31 @@
+# Values for oci://ghcr.io/kagent-dev/substrate/helm/substrate 0.7.0-alpha1,
+# first pass: the chart's bundled RustFS. Install as release "substrate" in
+# ate-system so the Services carry their plain names (atenet-router, api).
+
+# The fork's hack/install-postgres.sh writes connection strings that log in
+# with projected postgres.podcert.ate.dev certificates.
+postgres:
+  clientCertificates:
+    enabled: true
+
+# The bundled RustFS, used only by this spike (Q12). Its PVC lands on
+# local-path, which the spike installs because the cluster has no StorageClass.
+rustfs:
+  enabled: true
+
+# Talos runs no kubelet credential provider. Empty keeps the chart from mounting
+# the GKE host paths (/etc/srv/kubernetes, /home/kubernetes/bin). These are the
+# chart defaults, stated so the choice is visible.
+atelet:
+  imageCredentialProviderConfig: ""
+  imageCredentialProviderConfigYAML: ""
+  imageCredentialProviderBinDir: ""
+
+# No collector on the spike cluster.
+otel:
+  traces:
+    enabled: false
+  metrics:
+    enabled: false
+  logs:
+    enabled: false
