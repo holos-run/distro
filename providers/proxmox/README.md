@@ -410,7 +410,7 @@ whole; unknown fields are an error. `-cluster`, `-first-address` and
   "nameserver": "192.168.2.1",
   "searchDomain": "lan",
   "firstAddress": "10.20.0.50",
-  "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 4096, "diskGiB": 32 },
+  "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 6144, "diskGiB": 32 },
   "pools": [
     { "name": "general", "count": 3, "cores": 4, "memoryMiB": 8192, "diskGiB": 64 }
   ]
