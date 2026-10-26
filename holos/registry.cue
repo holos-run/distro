@@ -55,6 +55,23 @@ registry: [
 	// private-ca-bundle is the Bundle that copies the root into every
 	// namespace. It needs trust-manager's CRD and the root's Secret.
 	{name: "private-ca-bundle"},
+	// istio-base is Istio's CRDs and the istio-system namespace, ahead of
+	// everything else of Istio's.
+	{name: "istio-base"},
+	// istiod is the mesh's control plane. It mounts the private-ca
+	// ConfigMap, so it comes after private-ca-bundle.
+	{name: "istiod"},
+	// istio-cni and ztunnel are the ambient node agents. Both wait on istiod
+	// for their configuration and certificates.
+	{name: "istio-cni"},
+	{name: "ztunnel"},
+	// ingress-gateway is the ingress Gateway, its wildcard certificate and
+	// the routes of components that come before it. It needs the Gateway API
+	// CRDs, the private-ca ClusterIssuer and istiod's istio GatewayClass.
+	{name: "ingress-gateway"},
+	// hello is the ambient echo service behind the gateway. It needs the node
+	// agents and the Gateway.
+	{name: "hello"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits

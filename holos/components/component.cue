@@ -40,7 +40,9 @@ holos: core.#BuildPlan & {
 // #HelmArtifact renders a Helm chart into OutputDir, one file per resource.
 // The chart is read from the component's vendor/ cache, which Holos fills on
 // the first render and which is committed. Helm hooks are not rendered
-// (holos runs helm template --no-hooks).
+// (holos runs helm template --no-hooks). Documents that are not Kubernetes
+// objects, such as the comment-only output of Istio's profile templates, are
+// dropped.
 //
 // resources, if set, are rendered beside the chart, and patches, if any, are
 // Kustomize patches applied to both; either routes the output through
@@ -93,7 +95,7 @@ holos: core.#BuildPlan & {
 				kind: "Command"
 				inputs: [SliceInput]
 				output: OutputDir
-				command: args: ["holos", "kubectl-slice", "-f", "\(BuildContext.tempDir)/\(SliceInput)", "-o", "\(BuildContext.tempDir)/\(OutputDir)"]
+				command: args: ["holos", "kubectl-slice", "--skip-non-k8s", "-f", "\(BuildContext.tempDir)/\(SliceInput)", "-o", "\(BuildContext.tempDir)/\(OutputDir)"]
 			},
 		]
 	}

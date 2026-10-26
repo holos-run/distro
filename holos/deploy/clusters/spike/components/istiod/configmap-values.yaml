@@ -1,0 +1,332 @@
+apiVersion: v1
+data:
+  merged-values: |-
+    {
+      "affinity": {},
+      "autoscaleBehavior": {},
+      "autoscaleEnabled": false,
+      "autoscaleMax": 5,
+      "autoscaleMin": 1,
+      "base": {
+        "enableIstioConfigCRDs": true
+      },
+      "cni": {
+        "ambient": {
+          "enabled": true
+        },
+        "enabled": false,
+        "provider": "default"
+      },
+      "configMap": true,
+      "cpu": {
+        "targetAverageUtilization": 80
+      },
+      "deploymentAnnotations": {},
+      "deploymentLabels": {},
+      "env": {
+        "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
+        "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.spike.bank.internal",
+        "PILOT_ENABLE_AMBIENT": "true"
+      },
+      "envVarFrom": [],
+      "experimental": {
+        "stableValidationPolicy": false
+      },
+      "extraContainerArgs": [],
+      "gatewayClasses": {},
+      "gateways": {
+        "seccompProfile": {},
+        "securityContext": {}
+      },
+      "global": {
+        "caAddress": "",
+        "caName": "",
+        "certSigners": [],
+        "configCluster": false,
+        "configValidation": true,
+        "defaultPodDisruptionBudget": {
+          "enabled": true
+        },
+        "defaultResources": {
+          "requests": {
+            "cpu": "10m"
+          }
+        },
+        "externalIstiod": false,
+        "hub": "docker.io/istio",
+        "imagePullPolicy": "",
+        "imagePullSecrets": [],
+        "istioNamespace": "istio-system",
+        "istiod": {
+          "enableAnalysis": false
+        },
+        "logAsJson": false,
+        "logging": {
+          "level": "default:info"
+        },
+        "meshID": "",
+        "meshNetworks": {},
+        "mountMtlsCerts": false,
+        "multiCluster": {
+          "clusterName": ""
+        },
+        "nativeNftables": false,
+        "network": "",
+        "networkPolicy": {
+          "enabled": false
+        },
+        "omitSidecarInjectorConfigMap": false,
+        "operatorManageWebhooks": false,
+        "pilotCertProvider": "istiod",
+        "priorityClassName": "",
+        "proxy": {
+          "autoInject": "enabled",
+          "clusterDomain": "cluster.local",
+          "componentLogLevel": "misc:error",
+          "excludeIPRanges": "",
+          "excludeInboundPorts": "",
+          "excludeOutboundPorts": "",
+          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e",
+          "includeIPRanges": "*",
+          "includeInboundPorts": "*",
+          "includeOutboundPorts": "",
+          "logLevel": "warning",
+          "outlierLogPath": "",
+          "privileged": false,
+          "readinessFailureThreshold": 4,
+          "readinessInitialDelaySeconds": 0,
+          "readinessPeriodSeconds": 15,
+          "resources": {
+            "limits": {
+              "cpu": "2000m",
+              "memory": "1024Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          },
+          "seccompProfile": {},
+          "startupProbe": {
+            "enabled": true,
+            "failureThreshold": 600
+          },
+          "statusPort": 15020,
+          "tracer": "none"
+        },
+        "proxy_init": {
+          "forceApplyIptables": false,
+          "image": "proxyv2"
+        },
+        "remotePilotAddress": "",
+        "resourceScope": "all",
+        "sds": {
+          "token": {
+            "aud": "istio-ca"
+          }
+        },
+        "sts": {
+          "servicePort": 0
+        },
+        "tag": "1.31.3",
+        "variant": "distroless",
+        "waypoint": {
+          "affinity": {},
+          "nodeSelector": {},
+          "resources": {
+            "limits": {
+              "cpu": "2",
+              "memory": "1Gi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          },
+          "tolerations": [],
+          "topologySpreadConstraints": []
+        }
+      },
+      "hub": "",
+      "image": "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a",
+      "initContainers": [],
+      "ipFamilies": [],
+      "ipFamilyPolicy": "",
+      "istiodRemote": {
+        "enabled": false,
+        "enabledLocalInjectorIstiod": false,
+        "injectionCABundle": "",
+        "injectionPath": "/inject",
+        "injectionURL": ""
+      },
+      "jwksResolverExtraRootCA": "",
+      "keepaliveMaxServerConnectionAge": "30m",
+      "memory": {},
+      "meshConfig": {
+        "defaultConfig": {
+          "proxyMetadata": {
+            "ISTIO_META_ENABLE_HBONE": "true"
+          }
+        },
+        "enablePrometheusMerge": true,
+        "serviceScopeConfigs": [
+          {
+            "scope": "GLOBAL",
+            "servicesSelector": {
+              "matchExpressions": [
+                {
+                  "key": "istio.io/global",
+                  "operator": "In",
+                  "values": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "trustDomain": "cluster.local"
+      },
+      "nodeSelector": {},
+      "ownerName": "",
+      "pdb": {
+        "minAvailable": 1,
+        "unhealthyPodEvictionPolicy": ""
+      },
+      "pilot": {
+        "env": {
+          "PILOT_ENABLE_AMBIENT": "true"
+        }
+      },
+      "podAnnotations": {},
+      "podLabels": {},
+      "profile": "ambient",
+      "replicaCount": 1,
+      "resources": {
+        "requests": {
+          "cpu": "500m",
+          "memory": "2048Mi"
+        }
+      },
+      "revision": "",
+      "revisionTags": [],
+      "rollingMaxSurge": "100%",
+      "rollingMaxUnavailable": "25%",
+      "seccompProfile": {},
+      "serviceAccountAnnotations": {},
+      "serviceAnnotations": {},
+      "sidecarInjectorWebhook": {
+        "alwaysInjectSelector": [],
+        "defaultTemplates": [],
+        "enableNamespacesByDefault": false,
+        "injectedAnnotations": {},
+        "neverInjectSelector": [],
+        "reinvocationPolicy": "Never",
+        "rewriteAppHTTPProbe": true,
+        "templates": {}
+      },
+      "sidecarInjectorWebhookAnnotations": {},
+      "tag": "",
+      "taint": {
+        "enabled": false,
+        "name": "cni.istio.io/not-ready",
+        "namespace": ""
+      },
+      "telemetry": {
+        "enabled": true,
+        "v2": {
+          "enabled": true,
+          "prometheus": {
+            "enabled": true
+          },
+          "stackdriver": {
+            "enabled": false
+          }
+        }
+      },
+      "tolerations": [],
+      "topologySpreadConstraints": [],
+      "traceSampling": 1,
+      "trustedZtunnelName": "",
+      "trustedZtunnelNamespace": "",
+      "variant": "",
+      "volumeMounts": [
+        {
+          "mountPath": "/cacerts",
+          "name": "jwks-extra-cacerts",
+          "readOnly": true
+        }
+      ],
+      "volumes": [
+        {
+          "configMap": {
+            "items": [
+              {
+                "key": "ca.crt",
+                "path": "extra.pem"
+              }
+            ],
+            "name": "private-ca"
+          },
+          "name": "jwks-extra-cacerts"
+        }
+      ]
+    }
+  original-values: |-
+    {
+      "autoscaleEnabled": false,
+      "env": {
+        "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
+        "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.spike.bank.internal"
+      },
+      "global": {
+        "proxy": {
+          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e"
+        }
+      },
+      "image": "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a",
+      "meshConfig": {
+        "trustDomain": "cluster.local"
+      },
+      "profile": "ambient",
+      "volumeMounts": [
+        {
+          "mountPath": "/cacerts",
+          "name": "jwks-extra-cacerts",
+          "readOnly": true
+        }
+      ],
+      "volumes": [
+        {
+          "configMap": {
+            "items": [
+              {
+                "key": "ca.crt",
+                "path": "extra.pem"
+              }
+            ],
+            "name": "private-ca"
+          },
+          "name": "jwks-extra-cacerts"
+        }
+      ]
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    kubernetes.io/description: This ConfigMap contains the Helm values used during
+      chart rendering. This ConfigMap is rendered for debugging purposes and external
+      tooling; modifying these values has no effect.
+  labels:
+    app.kubernetes.io/instance: istiod
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: istiod
+    app.kubernetes.io/part-of: istio
+    app.kubernetes.io/version: 1.31.3
+    helm.sh/chart: istiod-1.31.3
+    install.operator.istio.io/owning-resource: unknown
+    istio.io/rev: default
+    operator.istio.io/component: Pilot
+    release: istiod
+  name: values
+  namespace: istio-system

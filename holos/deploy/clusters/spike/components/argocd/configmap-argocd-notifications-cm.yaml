@@ -1,7 +1,7 @@
 apiVersion: v1
 data:
   context: |
-    argocdUrl: https://argocd.spike.bank.internal
+    argocdUrl: https://argocd.bank.internal
 kind: ConfigMap
 metadata:
   labels:

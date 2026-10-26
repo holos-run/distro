@@ -1,0 +1,18 @@
+apiVersion: v1
+data:
+    deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              topologySpreadConstraints:
+                - maxSkew: 1
+                  topologyKey: kubernetes.io/hostname
+                  whenUnsatisfiable: ScheduleAnyway
+                  labelSelector:
+                    matchLabels:
+                      gateway.networking.k8s.io/gateway-name: ingress
+kind: ConfigMap
+metadata:
+    name: ingress-gateway
+    namespace: istio-ingress
