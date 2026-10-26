@@ -35,3 +35,22 @@ spec:
           name: http
           port: 80
           protocol: HTTP
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: TLSRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
+                            - cert-manager
+                            - istio-system
+          hostname: '*.webhooks.spike.bank.internal'
+          name: webhooks
+          port: 9443
+          protocol: TLS
+          tls:
+            mode: Passthrough

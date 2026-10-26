@@ -17,7 +17,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://cert-manager-webhook.cert-manager.webhooks.spike.bank.internal:9443/mutate
-  failurePolicy: Ignore
+  failurePolicy: Fail
   matchPolicy: Equivalent
   name: webhook.cert-manager.io
   rules:

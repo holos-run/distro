@@ -16,7 +16,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://trust-manager.cert-manager.webhooks.spike.bank.internal:9443/validate-trust-cert-manager-io-v1alpha1-bundle
-  failurePolicy: Ignore
+  failurePolicy: Fail
   name: trust.cert-manager.io
   rules:
   - apiGroups:

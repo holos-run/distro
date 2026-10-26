@@ -37,7 +37,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			// Adds the webhook hostname (webhooks.cue) to the DNS names of
 			// istiod's serving certificate, which serves the webhooks on 15017,
 			// so the API server can verify it when it dials the hostname
-			// through the load balancer.
+			// through the Gateway.
 			ISTIOD_CUSTOM_HOST: Cluster.webhooks.hosts[Webhook.name]
 		}
 
@@ -64,9 +64,10 @@ holos: spec: artifacts: [(#HelmArtifact & {
 
 	// istiod patches these configurations' caBundle with its CA's root, a
 	// field the render leaves out and Argo CD's server-side diff ignores. It
-	// also switches the validator's failurePolicy to Fail, but only once a
-	// dry run of an invalid resource is refused by the webhook, which cannot
-	// happen until the load balancer reaches istiod (README.md, "Istio").
+	// also switches the validators' failurePolicy to Fail once a dry run of an
+	// invalid resource is refused by the webhook, that is once the Gateway
+	// reaches istiod, and from then on until it restarts, whatever the render
+	// says; webhooks.enforcing must agree (README.md, "Istio").
 	patches: [
 		(#WebhookPatch & {
 			kind:    "ValidatingWebhookConfiguration"

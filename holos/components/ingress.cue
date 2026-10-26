@@ -1,5 +1,7 @@
 package holos
 
+import "list"
+
 // IngressGateway is the cluster's one ingress Gateway, which the
 // ingress-gateway component renders: every platform service with a hostname
 // is an HTTPRoute on its HTTPS listener. A component that adds a route names
@@ -44,10 +46,26 @@ IngressGateway: {
 	}
 
 	// listeners are the Gateway's listener names. https terminates TLS for
-	// every host; http answers every request with a redirect to https.
+	// every host; http answers every request with a redirect to https;
+	// webhooks passes TLS through to the admission webhooks (webhooks.cue).
 	listeners: {
-		https: "https"
-		http:  "http"
+		https:    "https"
+		http:     "http"
+		webhooks: "webhooks"
+	}
+
+	// webhooks is the listener the API server reaches every admission
+	// webhook through: Cluster.webhooks.port on the gateway's address, for
+	// every webhook hostname, routed on SNI by one TLSRoute per entry in
+	// webhookServices (webhooks.cue) and passed through to the webhook's
+	// Service. Talos host entries on the control plane point the
+	// hostnames at address (talos.cue).
+	webhooks: {
+		port:     Cluster.webhooks.port
+		hostname: "*.\(Cluster.webhooks.domain)"
+		// namespaces are those of the webhook Services, the only namespaces
+		// whose TLSRoutes the listener accepts.
+		namespaces: list.SortStrings([for NS, _ in {for S in webhookServices {(S.namespace): _}} {NS}])
 	}
 
 	// parentRef attaches an HTTPRoute to the HTTPS listener.
