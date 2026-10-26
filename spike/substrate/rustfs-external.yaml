@@ -1,0 +1,113 @@
+# A standalone RustFS in its own namespace for the second pass: the object
+# store plugin reaches it through objectStorePlugin.extraEnv rather than the
+# chart's bundled RustFS. Same image the chart pins. Credentials come from the
+# Secret rustfs/rustfs-credentials, created by hand (see README.md).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rustfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rustfs-data
+  namespace: rustfs
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: rustfs
+spec:
+  selector:
+    app: rustfs
+  ports:
+  - name: api
+    port: 9000
+    targetPort: 9000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+  namespace: rustfs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rustfs
+  template:
+    metadata:
+      labels:
+        app: rustfs
+    spec:
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+      - name: rustfs
+        image: docker.io/rustfs/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
+        ports:
+        - containerPort: 9000
+          name: api
+        env:
+        - name: RUSTFS_ADDRESS
+          value: ":9000"
+        - name: RUSTFS_VOLUMES
+          value: /data
+        - name: RUSTFS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef: {name: rustfs-credentials, key: AWS_ACCESS_KEY_ID}
+        - name: RUSTFS_SECRET_KEY
+          valueFrom:
+            secretKeyRef: {name: rustfs-credentials, key: AWS_SECRET_ACCESS_KEY}
+        resources:
+          requests: {cpu: 50m, memory: 256Mi}
+          limits: {cpu: "1", memory: 1Gi}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: rustfs-data
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bucket-init
+  namespace: rustfs
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: create-bucket
+        image: docker.io/amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
+        envFrom:
+        - secretRef:
+            name: rustfs-credentials
+        env:
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ENDPOINT_URL
+          value: http://rustfs.rustfs.svc:9000
+        command:
+        - /bin/sh
+        - -c
+        - |
+          for i in $(seq 1 60); do
+            aws s3api head-bucket --bucket substrate-snapshots 2>/dev/null && exit 0
+            aws s3api create-bucket --bucket substrate-snapshots && exit 0
+            sleep 2
+          done
+          exit 1

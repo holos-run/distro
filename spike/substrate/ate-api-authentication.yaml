@@ -1,0 +1,20 @@
+# Replaces what `ate-setup create api-authentication-config` writes on Talos.
+# ate-setup reads the issuer from the cluster's discovery document
+# (https://10.20.0.50:6443 on spike) and only adds the CA and discovery token
+# files for the in-cluster issuer https://kubernetes.default.svc. Talos's API
+# server has anonymous auth off, so discovery needs the token, and the issuer's
+# certificate is signed by the cluster CA, so it needs the CA file too.
+# The issuer is spike-cp-1's address; another cluster needs its own.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ate-api-authentication
+  namespace: ate-system
+data:
+  authentication.yaml: |-
+    jwtProviders:
+    - name: kubernetes
+      issuer: https://10.20.0.50:6443
+      audiences: [api.ate-system.svc]
+      certificateAuthorityFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      discoveryTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token

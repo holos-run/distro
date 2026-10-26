@@ -1,0 +1,20 @@
+# oci://ghcr.io/istio/release/charts/cni 1.31.3
+# Talos keeps CNI at the standard paths (/etc/cni/net.d on tmpfs,
+# /opt/cni/bin on a writable overlay, netns under /var/run/netns), so the
+# chart defaults apply; stated here so the choice is visible.
+profile: ambient
+cni:
+  cniBinDir: /opt/cni/bin
+  cniConfDir: /etc/cni/net.d
+  cniNetnsDir: /var/run/netns
+# Both DaemonSets tolerate every taint. spike-cp-1 carries no pod network
+# (holos.run/pod-network=none, the same rule Cilium follows), so their pods
+# there sit in ContainerCreating forever and helm --wait times out.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: holos.run/pod-network
+          operator: NotIn
+          values: [none]
