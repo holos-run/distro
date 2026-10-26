@@ -26,7 +26,7 @@ registry: [
 	// cilium is the CNI and kube-proxy replacement. Nothing else gets a pod
 	// address until it is up.
 	{name: "cilium"},
-	// cilium-resources holds the Cilium custom resources: the LB IPAM pool,
+	// cilium-resources holds the Cilium custom resources: the LB IPAM pools,
 	// the L2 announcement policy and the ambient kubelet probe policy. The
 	// operator registers their CRDs when it starts, after cilium is synced,
 	// so the dry run Argo CD makes before applying skips kinds it cannot

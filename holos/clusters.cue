@@ -52,10 +52,22 @@ import "net"
 		start: net.IPv4 & string
 		stop:  net.IPv4 & string
 		// gateway is the ingress Gateway's address (components/ingress.cue),
-		// the block's first unless set. It is pinned, not left to LB IPAM, so
-		// the private zone's *.<privateDomain> record stays right across a
-		// recreate of the Gateway or the cluster.
+		// the block's first unless set. It is reserved, not left to LB IPAM:
+		// cilium-resources gives it a pool of its own that only the gateway's
+		// Service draws from, so the private zone's *.<privateDomain> record
+		// stays right across a recreate of the Gateway or the cluster.
 		gateway: net.IPv4 & string | *start
+
+		// The block runs from start to stop and gateway lies in it, so a bad
+		// value fails cue vet rather than leaving the gateway's Service
+		// Pending. The addresses are compared as numbers.
+		_n: {
+			start: (#IPv4Number & {ip: loadBalancer.start}).n
+			stop: (#IPv4Number & {ip: loadBalancer.stop}).n
+			gateway: (#IPv4Number & {ip: loadBalancer.gateway}).n
+		}
+		_stopNotBeforeStart: true & _n.start <= _n.stop
+		_gatewayInBlock:     true & _n.start <= _n.gateway && _n.gateway <= _n.stop
 	}
 
 	// webhooks is how the API server reaches this cluster's admission
@@ -114,6 +126,15 @@ import "net"
 			}
 		}
 	}
+}
+
+// #IPv4Number is an IPv4 address as a number, to compare addresses by: as
+// strings, 10.20.0.4 sorts after 10.20.0.30. (net.CompareIP is newer than
+// the CUE that holos v0.106.0 evaluates with.)
+#IPv4Number: {
+	ip: net.IPv4 & string
+	let B = net.ToIP4(ip)
+	n: ((B[0]*256+B[1])*256+B[2])*256 + B[3]
 }
 
 sites: [NAME=string]: #Site & {name: NAME}

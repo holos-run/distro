@@ -25,7 +25,7 @@ IngressGateway: {
 	// generates.
 	parameters: "ingress-gateway"
 
-	// address is the gateway's LoadBalancer address, pinned in the cluster's
+	// address is the gateway's LoadBalancer address, reserved in the cluster's
 	// block (clusters.cue), where the private zone's wildcard points.
 	address: Cluster.loadBalancer.gateway
 
