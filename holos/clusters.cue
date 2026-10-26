@@ -154,8 +154,8 @@ clusters: treasury: {
 		start: "10.20.0.30"
 		stop:  "10.20.0.33"
 	}
-	// The cluster is built from scratch, so webhooks.enforcing is left at its
-	// default, false. A later change sets it true once every webhook answers
-	// through the gateway's webhooks listener (README.md, "Admission
-	// webhooks").
+	// Every webhook answers through the gateway's webhooks listener, so the
+	// cluster enforces. A rebuild starts with this false (README.md,
+	// "Admission webhooks").
+	webhooks: enforcing: true
 }
