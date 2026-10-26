@@ -51,6 +51,11 @@ import "net"
 	loadBalancer: {
 		start: net.IPv4 & string
 		stop:  net.IPv4 & string
+		// gateway is the ingress Gateway's address (components/ingress.cue),
+		// the block's first unless set. It is pinned, not left to LB IPAM, so
+		// the private zone's *.<privateDomain> record stays right across a
+		// recreate of the Gateway or the cluster.
+		gateway: net.IPv4 & string | *start
 	}
 
 	// webhooks is how the API server reaches this cluster's admission

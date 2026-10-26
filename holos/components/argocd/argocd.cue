@@ -37,10 +37,9 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	enableHooks: true
 
 	values: {
-		// The hostname the server will have behind the ingress gateway. Until
-		// the gateway exists Argo CD is reached with a port-forward; the name
-		// is only the URL Argo CD reports for itself.
-		global: domain: "argocd.\(Cluster.name).\(Cluster.site.privateDomain)"
+		// The server's hostname on the ingress gateway (ingress-gateway
+		// renders its HTTPRoute), and the URL Argo CD reports for itself.
+		global: domain: IngressGateway.hosts.argocd
 
 		controller: image: tag:      ArgoCDImage
 		server: image: tag:          ArgoCDImage
@@ -105,6 +104,11 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			// such as the caBundle cert-manager's cainjector writes into
 			// webhook configurations, are then not differences.
 			params: "controller.diff.server.side": "true"
+
+			// The gateway terminates TLS with the private CA's wildcard and
+			// sends plain HTTP to the server, so the server serves no TLS of
+			// its own. It still answers on its Service's port 443, unencrypted.
+			params: "server.insecure": true
 
 			// The keys that sign main's commits (ArgoCD.signingKeys), in Argo
 			// CD's keyring, so the platform AppProject can require them.

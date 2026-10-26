@@ -13,6 +13,7 @@ holos/
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── webhooks.cue    the Services that serve admission webhooks
 ├── private-ca.cue  the names of the private CA and its trust bundle
+├── istio.cue       the mesh's release, namespace, images and trust domain
 ├── signing-keys/   the public keys commits on main are signed with
 ├── platform/       the Platform: the registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
@@ -31,7 +32,10 @@ registry (`registry.cue`), rendered to
 
 The garage's ingress range is 10.20.0.30 to .49, sized for about six clusters
 with three or four Gateway addresses each. `spike` has the first four,
-10.20.0.30 to .33. A new cluster takes the next free block:
+10.20.0.30 to .33. The ingress Gateway's address is pinned to the block's
+first, `loadBalancer.gateway`, so the private zone's wildcard record stays
+right when the Gateway or the cluster is recreated. A new cluster takes the
+next free block:
 
 ```cue
 clusters: example: {
@@ -53,6 +57,12 @@ clusters: example: {
 | `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate` and the `private-ca` `ClusterIssuer` |
 | `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook on the load balancer |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
+| `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
+| `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks on the load balancer and the private root as its JWKS trust |
+| `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
+| `ztunnel` | Ambient's node proxy on every worker |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect and Argo CD's `HTTPRoute` |
+| `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -126,7 +136,7 @@ Every component that registers a webhook renders its configurations with
 The webhook's Service is registered in `webhooks.cue`, the one list the load
 balancer item renders the host entries, HAProxy and TLSRoutes from.
 cert-manager's cainjector fills each configuration's `caBundle`; it does so
-for a URL as it does for a Service.
+for a URL as it does for a Service. istiod fills its own (see Istio below).
 
 While the webhooks fail open, the API server skips them: a cert-manager
 resource is not validated, and a CertificateRequest is not stamped with its
@@ -135,6 +145,26 @@ cert-manager's own approver does not need them. The API server logs every
 skipped call as `Failed calling webhook, failing open`. With no host entry the
 name does not resolve and the call fails at once; once a name resolves to an
 address that does not answer, each request waits the 3-second timeout.
+
+That includes the private zone's wildcard. A `*.bank.internal` record
+answers for `*.webhooks.spike.bank.internal` too, at any depth, so the API
+server would dial the gateway's address on 9443, which the gateway's Service
+does not serve: the connection is dropped rather than refused, and every
+webhook call waits the full 3 seconds before failing open (measured: 3.2s a
+request, against 0.2s for a name that does not resolve or for the control
+plane's address, where 9443 is refused).
+So point the webhook names at the control plane, where HAProxy will listen,
+alongside the wildcard:
+
+```text
+*.bank.internal                    A 10.20.0.30   the ingress Gateway
+*.webhooks.spike.bank.internal     A 10.20.0.50   spike-cp-1, HAProxy's 9443
+```
+
+The more specific wildcard answers for the webhook names (RFC 4592; dnsmasq
+likewise matches the longest domain). Talos `extraHostEntries` on the
+control plane, once the load balancer item renders them, take precedence
+over DNS either way.
 
 ### The private CA
 
@@ -158,11 +188,18 @@ openssl x509 -in ~/spike-root-ca.pem -noout -subject -dates -fingerprint -sha256
 # macOS: trust it for TLS
 sudo security add-trusted-cert -d -r trustRoot \
   -k /Library/Keychains/System.keychain ~/spike-root-ca.pem
+# Debian or Ubuntu
+sudo cp ~/spike-root-ca.pem /usr/local/share/ca-certificates/spike-root-ca.crt
+sudo update-ca-certificates
 ```
+
+Before replacing a trusted root, remove the old one: macOS's Keychain Access
+lists it as `Holos spike root CA`. curl takes it without installing it,
+`--cacert ~/spike-root-ca.pem`.
 
 istiod trusts the root when it fetches the JWKS for a RequestAuthentication
 through `/cacerts/extra.pem`, which Istio's chart mounts from ConfigMap
-`pilot-jwks-extra-cacerts`, not from the `cacerts` Secret. The Istio
+`pilot-jwks-extra-cacerts`, not from the `cacerts` Secret. The `istiod`
 component mounts this ConfigMap there instead:
 
 ```cue
@@ -254,12 +291,113 @@ them as `PreSync` hooks, and applied by hand the Job runs once and deletes
 itself a minute after it finishes.
 
 Login is the local `admin` until Keycloak gives Argo CD a client; Dex is
-off. There is no ingress yet, so Argo CD is reached with a port-forward.
-`global.domain` is already `argocd.<cluster>.<privateDomain>`, the name the
-server will have behind the gateway. Argo CD runs Deployments and one
+off. Argo CD is at https://argocd.bank.internal, `global.domain`, through the
+ingress gateway, which terminates TLS with the private CA's wildcard and
+sends plain HTTP to the server: `server.insecure` is set, so the server
+serves no TLS of its own, on either of its Service's ports. The `HTTPRoute`
+is rendered by `ingress-gateway`, not by this component, so this component
+still applies by hand before the Gateway API CRDs exist. The `argocd`
+namespace is not in ambient, so the hop from the gateway to the server is
+plain HTTP inside the cluster; enrolling it would put ztunnel in the path
+Argo CD needs to repair the platform. Argo CD runs Deployments and one
 StatefulSet, no DaemonSet, so the control plane's `NoSchedule` taint keeps
 it on the workers. Its pods meet the restricted Pod Security standard, so the
 `argocd` namespace needs no label. The images are pinned by digest.
+
+### Istio
+
+Istio 1.31.3 in ambient mode (interview Q16), from the charts at
+`oci://ghcr.io/istio/release/charts`, in four components applied in this
+order: `istio-base` (the CRDs and the `istio-system` namespace), `istiod`,
+`istio-cni` and `ztunnel`. `istio.cue` has the release, the images, pinned by
+digest, and the trust domain, `cluster.local`. A workload's mesh identity is
+`spiffe://cluster.local/ns/<namespace>/sa/<service account>`.
+
+- `istio-system` is labeled `pod-security.kubernetes.io/enforce=privileged`:
+  istio-cni and ztunnel run privileged pods on every node, which Talos's
+  baseline enforcement refuses.
+- istio-cni and ztunnel tolerate every taint, so both carry Cilium's
+  affinity, `holos.run/pod-network NotIn [none]`, and stay off the control
+  plane, where they could never start. istiod is a Deployment and the
+  control plane's taint keeps it off.
+- istio-cni's default paths are Talos's (`/opt/cni/bin`, `/etc/cni/net.d`,
+  `/var/run/netns`) and it chains after `05-cilium.conflist`; the Cilium
+  values carry what Istio needs (see Cilium above) and
+  `cilium-resources` admits the kubelet probes ambient SNATs to
+  169.254.7.127.
+- istiod runs one replica without the chart's `HorizontalPodAutoscaler`:
+  there is no metrics server, and Argo CD reports an autoscaler that cannot
+  read metrics as `Degraded`.
+- `ENABLE_INGRESS_WAYPOINT_ROUTING` is set, Istio 1.31's default stated: a
+  gateway sends a request for a Service labeled
+  `istio.io/ingress-use-waypoint` through the Service's waypoint, which
+  holos-authenticator relies on.
+- A namespace joins the mesh with the label
+  `istio.io/dataplane-mode=ambient` (`Istio.ambient`). Substrate's
+  namespaces stay out: their port-scoped NetworkPolicies would have to admit
+  the mesh port 15008, and with it every mesh identity.
+
+istiod's webhooks follow the platform's model (Admission webhooks, above).
+The validator `istio-validator-istio-system`, `istio-base`'s
+`istiod-default-validator` and the sidecar injector (idle in ambient: it
+matches only pods or namespaces that ask for a sidecar) all name
+`https://istiod.istio-system.webhooks.<cluster>.<privateDomain>:9443`, and
+`ISTIOD_CUSTOM_HOST` adds that hostname to istiod's serving certificate.
+istiod manages these configurations itself, which works with the URL and
+with Argo CD:
+
+- It writes its own CA's root into every webhook's `caBundle`, whether
+  `clientConfig` names a Service or a URL. The render leaves `caBundle` out,
+  and Argo CD diffs server-side, so the field istiod owns is no difference.
+- It switches a validator's `failurePolicy` from `Ignore` to `Fail` only once
+  a dry-run create of a known-invalid Istio `Gateway` is refused by the
+  webhook. While the URL is unreachable the API server fails open, the dry
+  run passes, and istiod leaves `Ignore` alone: it retries about once a
+  minute and logs `Not ready to switch validation to fail-closed`. The
+  configurations' `resourceVersion` does not move.
+- Once the load balancer reaches istiod, the dry run is refused and istiod
+  sets `Fail`. With `webhooks.enforcing` still false the render says
+  `Ignore`, so Argo CD's self-heal and istiod would take turns; turn
+  `enforcing` on in the same change that makes the webhooks reachable.
+
+The chart's own URL values, `istiodRemote.injectionURL` and
+`base.validationURL`, would set the URL too, but not the timeout or the
+enforcement flag's `failurePolicy`, so `#WebhookPatch` is used, as for every
+other component.
+
+### The ingress gateway
+
+One Gateway API `Gateway`, `istio-ingress/ingress` of class `istio`, for
+every platform service (`IngressGateway` in `components/ingress.cue`). istiod
+deploys it: a Deployment and a `LoadBalancer` Service both named
+`ingress-istio`, which it owns; none is rendered.
+
+- **Address.** `spec.addresses` pins 10.20.0.30, the cluster's
+  `loadBalancer.gateway`. istiod sets it as the Service's `loadBalancerIP`,
+  which Cilium's LB IPAM honors from the pool, and one worker answers ARP for
+  it. The private zone's `*.bank.internal` points there.
+- **Hostnames.** Every service is `<service>.<privateDomain>` (interview
+  Q40), `hello.bank.internal`, `argocd.bank.internal`, named in
+  `IngressGateway.hosts`, one label under the zone and no cluster name.
+- **Listeners.** `https` on 443 for `*.bank.internal`, terminating TLS with
+  the `wildcard` `Certificate` from `ClusterIssuer` `private-ca` (Secret
+  `istio-ingress/wildcard-tls`), open to routes from every namespace. `http`
+  on 80 takes only the `https-redirect` route, which answers every request
+  with a 301 to the same URL over HTTPS. A route attaches with
+  `IngressGateway.parentRef`, which names the `https` listener.
+- **ServiceAccount.** The `gateway.istio.io/service-account` annotation names
+  it `ingress-gateway`, so the gateway's mesh identity is
+  `spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`
+  (`IngressGateway.spiffeID`), the identity substrate-shim puts on the
+  Substrate router's allowed list. Without the annotation it would be
+  `ingress-istio`, a side effect of the class.
+- **Deployment.** `infrastructure.parametersRef` names ConfigMap
+  `istio-ingress/ingress-gateway`, whose `deployment` key istiod merges into
+  the Deployment it generates: two replicas spread across nodes, so draining
+  a worker does not drop the gateway. substrate-shim adds its podCertificate
+  volume there.
+- `istio-ingress` is not in ambient: the gateway is its own mesh proxy and
+  reaches an ambient workload over HBONE through the workload's ztunnel.
 
 ## Render
 
@@ -334,15 +472,23 @@ above from a fixed checkout.
 
 ### Logging in
 
-The local `admin`, through a port-forward, with the argocd CLI or a browser
-at https://localhost:8443. The certificate is the server's own self-signed
-one, hence `--insecure`.
+The local `admin`, with a browser at https://argocd.bank.internal or with
+the argocd CLI, once the laptop trusts the private root (The private CA,
+above). The gateway serves HTTP/1.1 to the server, so the CLI needs
+`--grpc-web`; without it the CLI warns and falls back to it.
 
 ```sh
-kubectl -n argocd port-forward svc/argocd-server 8443:443 &
-argocd login localhost:8443 --insecure --username admin --password \
+argocd login argocd.bank.internal --grpc-web --username admin --password \
   "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
 argocd app list
+```
+
+Without the gateway, as during a bootstrap, a port-forward reaches the
+server, which serves plain HTTP:
+
+```sh
+kubectl -n argocd port-forward svc/argocd-server 8080:80 &
+argocd login localhost:8080 --plaintext --username admin --password ...
 ```
 
 ### Syncing
@@ -483,7 +629,41 @@ kubectl delete ns ca-test
 ```
 
 LoadBalancer addresses answer TCP and UDP on the Service's ports only; they
-do not answer ping.
+do not answer ping, and a connection to any other port is dropped, not
+refused.
+
+Istio and the gateway: the node agents on the workers only, the webhooks
+failing open, the gateway at its pinned address, and hello answering through
+it with a certificate that chains to the root, from the garage network and
+from a pod. Until the private zone has its wildcard, `--resolve` stands in
+for it.
+
+```sh
+kubectl -n istio-system get pods -o wide        # istiod, and istio-cni-node and ztunnel on each worker
+kubectl get validatingwebhookconfiguration istio-validator-istio-system \
+  -o jsonpath='{.webhooks[0].failurePolicy} {.webhooks[0].clientConfig.url}{"\n"}'
+kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
+kubectl get httproute -A                         # argocd, hello, https-redirect
+
+kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > /tmp/root.pem
+curl --resolve hello.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://hello.bank.internal/
+curl -sI --resolve hello.bank.internal:80:10.20.0.30 http://hello.bank.internal/   # 301 to https
+curl -s --resolve argocd.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://argocd.bank.internal/api/version
+
+kubectl create ns gw-test
+kubectl label ns gw-test istio.io/dataplane-mode=ambient
+kubectl -n gw-test run curl --image=docker.io/curlimages/curl:8.11.1 --restart=Never \
+  --overrides='{"spec":{"containers":[{"name":"curl","image":"docker.io/curlimages/curl:8.11.1","command":["sleep","3600"],"volumeMounts":[{"name":"ca","mountPath":"/ca"}]}],"volumes":[{"name":"ca","configMap":{"name":"private-ca"}}]}}'
+kubectl -n gw-test wait --for=condition=Ready pod/curl
+kubectl -n gw-test exec curl -- curl -s --cacert /ca/ca.crt \
+  --resolve hello.bank.internal:443:10.20.0.30 https://hello.bank.internal/
+kubectl -n gw-test exec curl -- curl -s http://hello.hello/   # pod to pod over HBONE
+kubectl -n istio-system logs ds/ztunnel | grep 'connection complete'   # one ztunnel's; src.identity and dst.identity
+kubectl delete ns gw-test
+```
+
+hello answers with the request it received: `X-Forwarded-Proto: https`, and
+`RemoteAddr` the gateway pod's address, which ztunnel preserves.
 
 On a fresh cluster, `cilium-dbg status` can report `Cluster health: 2/3`
 for the first probe round, about two minutes: an agent probes a node's health

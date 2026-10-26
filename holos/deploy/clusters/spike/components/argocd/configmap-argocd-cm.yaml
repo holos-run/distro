@@ -115,7 +115,7 @@ data:
   timeout.hard.reconciliation: 0s
   timeout.reconciliation: 30s
   timeout.reconciliation.jitter: 0s
-  url: https://argocd.spike.bank.internal
+  url: https://argocd.bank.internal
 kind: ConfigMap
 metadata:
   labels:

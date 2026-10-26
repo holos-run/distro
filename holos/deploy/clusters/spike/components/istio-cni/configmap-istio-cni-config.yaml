@@ -1,0 +1,37 @@
+# Source: cni/templates/configmap-cni.yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: istio-cni-config
+  namespace: "istio-system"
+  labels:
+    app: istio-cni
+    release: istio-cni
+    istio.io/rev: default
+    install.operator.istio.io/owning-resource: unknown
+    operator.istio.io/component: "Cni"
+    app.kubernetes.io/name: istio-cni
+    app.kubernetes.io/managed-by: "Helm"
+    app.kubernetes.io/instance: "istio-cni"
+    app.kubernetes.io/part-of: "istio"
+    app.kubernetes.io/version: "1.31.3"
+    helm.sh/chart: cni-1.31.3
+data:
+  CURRENT_AGENT_VERSION: "1.31.3"
+  AMBIENT_ENABLED: "true"
+  AMBIENT_ENABLEMENT_SELECTOR: "- podSelector:\n    matchLabels:\n      istio.io/dataplane-mode: ambient\n- namespaceSelector:\n    matchLabels:\n      istio.io/dataplane-mode: ambient\n  podSelector:\n    matchExpressions:\n    - key: istio.io/dataplane-mode\n      operator: NotIn\n      values:\n      - none"
+  AMBIENT_DNS_CAPTURE: "true"
+  AMBIENT_IPV6: "true"
+  AMBIENT_RECONCILE_POD_RULES_ON_STARTUP: "true"
+  ENABLE_AMBIENT_DETECTION_RETRY: "false"
+  ISTIO_OWNED_CNI_CONFIG: "false"
+  CHAINED_CNI_PLUGIN: "true"
+  EXCLUDE_NAMESPACES: "kube-system"
+  REPAIR_ENABLED: "true"
+  REPAIR_LABEL_PODS: "false"
+  REPAIR_DELETE_PODS: "false"
+  REPAIR_REPAIR_PODS: "true"
+  REPAIR_INIT_CONTAINER_NAME: "istio-validation"
+  REPAIR_BROKEN_POD_LABEL_KEY: "cni.istio.io/uninitialized"
+  REPAIR_BROKEN_POD_LABEL_VALUE: "true"
+  NATIVE_NFTABLES: "false"

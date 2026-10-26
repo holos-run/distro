@@ -44,6 +44,17 @@ webhookServices: {
 		namespace: "cert-manager"
 		component: "cert-manager"
 	}
+	// istiod's webhooks: the validator of Istio's own resources (the istiod
+	// component's istio-validator-istio-system and istio-base's
+	// istiod-default-validator) and the sidecar injector, which ambient leaves
+	// idle. The Service's port 443 is istiod's 15017. Its serving certificate
+	// is istiod's own, signed by istiod's self-signed mesh CA, and carries the
+	// hostname through ISTIOD_CUSTOM_HOST. istiod patches the caBundle of all
+	// three configurations itself.
+	istiod: {
+		namespace: Istio.namespace
+		component: "istiod"
+	}
 	// trust-manager's webhook validates Bundles. Its serving certificate is
 	// Secret cert-manager/trust-manager-tls, issued by the chart's
 	// Certificate from its self-signed Issuer, with the hostname added to the
