@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+    name: cert-manager-webhook
+    namespace: cert-manager
+spec:
+    hostnames:
+        - cert-manager-webhook.cert-manager.webhooks.treasury.bank.internal
+    parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ingress
+          namespace: istio-ingress
+          sectionName: webhooks
+    rules:
+        - backendRefs:
+            - name: cert-manager-webhook
+              port: 443

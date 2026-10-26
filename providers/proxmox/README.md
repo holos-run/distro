@@ -96,7 +96,7 @@ each VM gets a network-config version 2 snippet, the shape the garage's
 maintenance-mode Talos VMs already boot with:
 
 ```yaml
-# Written by talosvm for cluster spike, VM spike-cp-1.
+# Written by talosvm for cluster treasury, VM treasury-cp-1.
 version: 2
 ethernets:
   net0:
@@ -357,11 +357,11 @@ scp root@r620a.lan:/etc/pve/pve-root-ca.pem ~/.config/holos/pve-root-ca.pem
 set -a; . ~/.config/holos/proxmox.env; set +a
 
 go run ./providers/proxmox/cmd/talosvm check
-go run ./providers/proxmox/cmd/talosvm create  -cluster spike -dry-run
-go run ./providers/proxmox/cmd/talosvm create  -cluster spike
-go run ./providers/proxmox/cmd/talosvm list    -cluster spike
-go run ./providers/proxmox/cmd/talosvm destroy -cluster spike        # prints the calls only
-go run ./providers/proxmox/cmd/talosvm destroy -cluster spike -yes   # sends them
+go run ./providers/proxmox/cmd/talosvm create  -cluster treasury -dry-run
+go run ./providers/proxmox/cmd/talosvm create  -cluster treasury
+go run ./providers/proxmox/cmd/talosvm list    -cluster treasury
+go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury        # prints the calls only
+go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury -yes   # sends them
 ```
 
 `create -dry-run` and `destroy` without `-yes` print the exact Proxmox API
@@ -399,7 +399,7 @@ whole; unknown fields are an error. `-cluster`, `-first-address` and
 
 ```json
 {
-  "cluster": "spike",
+  "cluster": "treasury",
   "talosVersion": "v1.14.4",
   "nodes": [],
   "diskStorage": "local-zfs",

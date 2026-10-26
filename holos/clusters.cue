@@ -145,17 +145,17 @@ sites: garage: {
 	resolvers: ["192.168.2.1"]
 }
 
-// spike is the first garage cluster: spike-cp-1 at 10.20.0.50 and
-// spike-general-1 to -3 at .51 to .53 on the k8s vnet. It takes the first
+// treasury is the first garage cluster: treasury-cp-1 at 10.20.0.50 and
+// treasury-general-1 to -3 at .51 to .53 on the k8s vnet. It takes the first
 // four addresses of the ingress range.
-clusters: spike: {
+clusters: treasury: {
 	site: sites.garage
 	loadBalancer: {
 		start: "10.20.0.30"
 		stop:  "10.20.0.33"
 	}
-	// Every webhook answers through the gateway's webhooks listener, so the
-	// cluster enforces. A rebuild starts with this false (README.md,
-	// "Admission webhooks").
-	webhooks: enforcing: true
+	// The cluster is built from scratch, so webhooks.enforcing is left at its
+	// default, false. A later change sets it true once every webhook answers
+	// through the gateway's webhooks listener (README.md, "Admission
+	// webhooks").
 }
