@@ -7,3 +7,4 @@ run. Supersede rather than edit accepted records.
 | ADR | Title |
 | --- | --- |
 | [0001](0001-talos-cluster-profile.md) | Talos cluster profile |
+| [0002](0002-oidc-id-tokens.md) | OIDC ID tokens, never access tokens |

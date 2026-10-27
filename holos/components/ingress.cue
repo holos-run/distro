@@ -44,6 +44,7 @@ IngressGateway: {
 		argocd:   _
 		hello:    _
 		keycloak: _
+		secrets:  _
 	}
 
 	// listeners are the Gateway's listener names. https terminates TLS for
