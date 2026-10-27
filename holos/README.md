@@ -441,9 +441,49 @@ syncs a commit only if it is signed by one of them:
 Argo CD checks the commit at `main`'s head. Their public keys are in
 `signing-keys/` and the `argocd` component puts them in Argo CD's keyring
 (`argocd-gpg-keys-cm`). A head signed by any other key, or not signed, stops
-every `Application` with a `ComparisonError`: `signed with unallowed key`.
+every `Application` with a `ComparisonError`, and nothing syncs until a
+commit signed by a listed key is on top. A key outside the keyring reports
+`signed with key not in keyring (key_id=<long key ID>)`; one in the keyring
+but not in `signatureKeys` reports `signed with unallowed key`.
 To add a key, export it with `gpg --armor --export <long key ID>` into
 `signing-keys/<long key ID>.asc` and add it to `ArgoCD.signingKeys`.
+
+#### Developing with two signing keys
+
+Sign every commit, and keep a second key that the platform does not trust.
+GitHub shows both as Verified, because both are on the author's GitHub
+account, but Argo CD syncs only the first. The second key makes the refusal
+testable: a commit signed with it is a signed commit from a known author that
+the platform must still refuse, which is a sharper test than an unsigned one,
+and it leaves `commit.gpgsign` on for every other commit. It also keeps work
+that must not reach the cluster, such as a commit to a branch that may later
+be pushed to `main` by mistake, signed without it being deployable.
+
+Jeff's test key is `8627879688494E44`, an ed25519 signing key with no
+passphrase, on his GitHub account and deliberately not in `signing-keys/` or
+`ArgoCD.signingKeys`. The trusted key stays the default
+(`user.signingkey 7716CCA9F8F7BE25`), and a commit names the test key with
+`-S`:
+
+```sh
+# Make a passphrase-less signing key in gpg-agent's keyring; the private key
+# never leaves it.
+gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key \
+  "Name (untrusted test key) <email>" ed25519 sign never
+gpg --armor --export <long key ID>   # the public key, for GitHub's SSH and GPG keys
+
+# Test the refusal, then recover with a commit signed by the trusted key.
+git commit --allow-empty -S<test key ID> -m 'Test the refusal of an untrusted key'
+git push origin main
+kubectl -n argocd get applications   # every one reports a ComparisonError
+git commit --allow-empty -S -m 'Recover from the untrusted key test'
+git push origin main
+```
+
+Run the two pushes back to back, because the refusal stops GitOps for the
+whole cluster until the second lands. This was run for the milestone's login
+through Keycloak: all 25 `Application`s refused the test key's head within a
+minute.
 
 Nothing secret is rendered. On first start the server writes its session
 signing key (`server.secretkey`), a self-signed TLS certificate and the
