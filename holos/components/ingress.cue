@@ -41,8 +41,9 @@ IngressGateway: {
 	// hosts maps each service the gateway routes to its hostname.
 	hosts: [NAME=string]: "\(NAME).\(domain)"
 	hosts: {
-		argocd: _
-		hello:  _
+		argocd:   _
+		hello:    _
+		keycloak: _
 	}
 
 	// listeners are the Gateway's listener names. https terminates TLS for

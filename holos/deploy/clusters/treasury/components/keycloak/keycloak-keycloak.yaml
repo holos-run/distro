@@ -1,0 +1,43 @@
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+    name: keycloak
+    namespace: keycloak
+spec:
+    automountServiceAccountToken: false
+    bootstrapAdmin:
+        user:
+            secret: keycloak-admin
+    db:
+        database: keycloak
+        host: keycloak-db-rw
+        passwordSecret:
+            key: password
+            name: keycloak-db
+        port: 5432
+        usernameSecret:
+            key: username
+            name: keycloak-db
+        vendor: postgres
+    hostname:
+        hostname: https://keycloak.bank.internal
+    http:
+        httpEnabled: true
+        httpPort: 8080
+    ingress:
+        enabled: false
+    instances: 1
+    proxy:
+        headers: xforwarded
+    resources:
+        limits:
+            memory: 2Gi
+        requests:
+            cpu: 500m
+            memory: 1Gi
+    serviceMonitor:
+        enabled: false
+    truststores:
+        private-ca:
+            configMap:
+                name: private-ca

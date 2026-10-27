@@ -2,6 +2,7 @@ package holos
 
 import (
 	"encoding/json"
+	"list"
 
 	core "github.com/holos-run/holos/api/core/v1alpha6:core"
 )
@@ -113,36 +114,59 @@ holos: core.#BuildPlan & {
 	patch: string
 }
 
-// #FileArtifact renders a vendored manifest file into OutputDir, one file
-// per resource. file is relative to the component's directory. Documents
-// that are not Kubernetes objects, such as a release file's comment-only
-// license header, are dropped.
+// #FileArtifact renders vendored manifest files into OutputDir, one file per
+// resource. file, or files for more than one, is relative to the component's
+// directory. Documents that are not Kubernetes objects, such as a release
+// file's comment-only license header, are dropped.
 //
-// patches, if any, are Kustomize patches applied to the file, which routes
-// it through kubectl kustomize before it is sliced, so the vendored file
-// stays as released.
+// resources, if set, are rendered beside the files; namespace, if set, is
+// Kustomize's namespace: it is given to every namespaced resource, replacing
+// any namespace one already names, and to the ServiceAccount subjects of
+// role bindings, which suits a release whose manifests name no namespace
+// and are meant for kubectl apply -n; and patches, if any, are
+// Kustomize patches applied to all of them. More than one file, or any of
+// these, routes the files through kubectl kustomize before they are sliced,
+// so the vendored files stay as released.
 #FileArtifact: {
-	file: string
+	file?: string
+	files: [string, ...string]
+	if file != _|_ {
+		files: [file]
+	}
+	resources?: #Resources
+	namespace?: string
 	patches: [...#KustomizePatch]
 
-	let Kustomized = len(patches) > 0
-	let SliceInput = [if Kustomized {"kustomize-output.yaml"}, "file-output.yaml"][0]
+	let HasResources = resources != _|_
+	let Kustomized = len(files) > 1 || HasResources || namespace != _|_ || len(patches) > 0
+	let Outputs = [for I, _ in files {[if I == 0 {"file-output.yaml"}, "file-output-\(I).yaml"][0]}]
+	let SliceInput = [if Kustomized {"kustomize-output.yaml"}, Outputs[0]][0]
 
 	artifact: core.#Artifact & {
 		artifact: OutputDir
-		generators: [{
-			kind:   "File"
-			output: "file-output.yaml"
-			"file": source: file
-		}]
+		generators: [
+			for I, F in files {
+				kind:   "File"
+				output: Outputs[I]
+				"file": source: F
+			},
+			if HasResources {
+				kind:        "Resources"
+				output:      "resources.yaml"
+				"resources": resources
+			},
+		]
 		transformers: [
 			if Kustomized {
 				kind: "Kustomize"
-				inputs: ["file-output.yaml"]
+				inputs: list.Concat([Outputs, [if HasResources {"resources.yaml"}]])
 				output: "kustomize-output.yaml"
 				kustomize: kustomization: {
 					"resources": inputs
 					"patches":   patches
+					if namespace != _|_ {
+						"namespace": namespace
+					}
 				}
 			},
 			{

@@ -18,6 +18,19 @@ package holos
 //	generator: spec: {length: 48, secretKeys: ["access-key", "secret-key"]}
 //	generator: {kind: "UUID", spec: {}}
 //
+// Set username to make the Secret a login, for a consumer that reads a
+// kubernetes.io/basic-auth Secret, such as CloudNativePG's initdb or the
+// Keycloak Operator's bootstrap admin:
+//
+//	username: "keycloak"
+//
+// The Secret is then of type kubernetes.io/basic-auth, with the username,
+// as written here, under username beside the generated password under
+// password. The ExternalSecret writes it through its target template, so it
+// is written once and immutable like any other; the username is in git and
+// the password is not. A username needs the default generator, a Password
+// with the one key, password.
+//
 // The Secret survives a delete and re-create of its ExternalSecret or its
 // generator, and is regenerated only when the cluster is rebuilt (Q47).
 // Three layers hold it (Q48):
@@ -51,6 +64,9 @@ package holos
 	name: string
 	// namespace is where all three live.
 	namespace: string
+	// username, if set, is the login's fixed username, and the Secret is
+	// kubernetes.io/basic-auth (above).
+	username?: string
 
 	// generator is the generator resource the ExternalSecret reads, a
 	// namespaced kind from generators.external-secrets.io. spec is the
@@ -75,9 +91,20 @@ package holos
 		}
 	}
 
+	// The template reads the generator's password key, so with a username
+	// the generator is a Password with no other keys.
+	if username != _|_ {
+		generator: {
+			kind: "Password"
+			spec: secretKeys?: ["password"]
+		}
+	}
+
 	let Name = name
 	let Namespace = namespace
 	let Generator = generator
+	let Username = username
+	let Login = username != _|_
 	let Metadata = {
 		name:      Name
 		namespace: Namespace
@@ -100,6 +127,20 @@ package holos
 					name:           Name
 					creationPolicy: "Orphan"
 					immutable:      true
+					// The template replaces the generator's output with
+					// the Secret's whole data: the username as written,
+					// and the generated password.
+					if Login {
+						template: {
+							type:          "kubernetes.io/basic-auth"
+							engineVersion: "v2"
+							mergePolicy:   "Replace"
+							data: {
+								username: Username
+								password: "{{ .password }}"
+							}
+						}
+					}
 				}
 				dataFrom: [{
 					sourceRef: generatorRef: {

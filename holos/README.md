@@ -99,10 +99,14 @@ old one and every webhook call is refused. Then change the router's
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
 | `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `substrate` and `quay` buckets and users |
+| `keycloak-operator` | The Keycloak Operator 26.8.1 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
+| `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
 committed, so a render needs no network and reads the same chart everywhere.
+A component installed from release manifests rather than a chart vendors
+them in the same place, unmodified, and renders them with `#FileArtifact`.
 
 ### Cilium
 
@@ -555,7 +559,8 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   address its Service can take; the request makes a mismatch show as a
   Pending Service with a reason rather than a different address.
 - **Hostnames.** Every service is `<service>.<privateDomain>` (interview
-  Q40), `hello.bank.internal`, `argocd.bank.internal`, named in
+  Q40), `hello.bank.internal`, `argocd.bank.internal`,
+  `keycloak.bank.internal`, named in
   `IngressGateway.hosts`, one label under the zone and no cluster name.
 - **Listeners.** `https` on 443 for `*.bank.internal`, terminating TLS with
   the `wildcard` `Certificate` from `ClusterIssuer` `private-ca` (Secret
@@ -787,6 +792,7 @@ resources: (#GeneratedSecret & {
 	namespace: "rustfs"
 	// generator: spec: {length: 48, secretKeys: ["access-key", "secret-key"]}
 	// generator: {kind: "UUID", spec: {}}
+	// username: "keycloak"
 }).resources
 ```
 
@@ -795,6 +801,13 @@ the key `password`, and an `ExternalSecret` of the same name with
 `refreshPolicy: CreatedOnce`, `target.creationPolicy: Orphan` and
 `target.immutable: true`, which writes Secret `<name>` once. Both carry
 `argocd.argoproj.io/sync-options: Prune=false,Delete=false`.
+
+With `username` set, the Secret is a login for a consumer that reads a
+`kubernetes.io/basic-auth` Secret, such as CloudNativePG's `initdb` or the
+Keycloak Operator's bootstrap admin: the `ExternalSecret`'s
+`target.template` gives it that type and the data `username`, as written,
+and `password`, from the generator. The username is in git; the password is
+not. It needs the default generator, a `Password` with the one key.
 
 The rule (Q47): a generated secret survives a delete and re-create of its
 `ExternalSecret` or its generator, by hand or by Argo CD, and is
@@ -981,6 +994,135 @@ kubectl -n rustfs exec s3-test -- sh -c 'echo hi > /tmp/x &&
   rc cp /tmp/x s/substrate/x && rc cat s/substrate/x && rc rm s/substrate/x
   rc ls s/quay/; rc anonymous set public s/substrate'   # hi, then AccessDenied twice
 kubectl -n rustfs delete pod s3-test     # it names rustfs-substrate, so it must not outlive the check
+```
+
+### Keycloak
+
+Keycloak is the platform's one identity provider (interview Q11), at
+`https://keycloak.bank.internal`, which is also the issuer every token
+carries: `https://keycloak.bank.internal/realms/<realm>`. Pods and the
+laptop resolve the name alike, to the gateway, so a client in the cluster
+calls the same URL a browser does. This is the server and its database; the
+realm, clients, groups and mappers are holos-controller's, and the master
+realm holds only the admin.
+
+Two components, so Argo CD applies the CRDs before the resource that uses
+them:
+
+- `keycloak-operator` is the Keycloak Operator 26.8.1 from the release's
+  manifests, `kubernetes/` at tag 26.8.1 of
+  https://github.com/keycloak/keycloak-k8s-resources, vendored unmodified
+  in `components/keycloak-operator/vendor/26.8.1/` and rendered with
+  `#FileArtifact`, which gives the namespace-less manifests the namespace as
+  `kubectl apply -n keycloak` would. It holds all four CRDs, `Keycloak`,
+  `KeycloakRealmImport`, `KeycloakOIDCClient` and `KeycloakSAMLClient`: the
+  operator starts a controller for each, and one without its CRD stops it.
+  The CRDs carry `Prune=false,Delete=false`, since deleting one deletes
+  every resource of its kind. The operator watches its own namespace only,
+  registers no admission webhook, and gets a restricted security context
+  the release leaves out. This component renders the namespace, `keycloak`,
+  in the mesh (`istio.io/dataplane-mode=ambient`).
+- `keycloak` is the `Keycloak` resource, its database, its credentials and
+  its route. The operator runs the server as StatefulSet `keycloak`, one
+  pod, with the `quay.io/keycloak/keycloak` image at the operator's own
+  version: the resource names no image, so the two move together. With a
+  database set it runs `start`, the production mode. The server listens on
+  plain HTTP, 8080, behind the gateway, with its full URL set
+  (`hostname.hostname`) and the gateway's `X-Forwarded` headers trusted
+  (`proxy.headers: xforwarded`). From outside the cluster only the gateway
+  reaches the server, but a pod can call `keycloak-service:8080` directly
+  and forge `X-Forwarded-For`, which affects only the client address
+  Keycloak logs, since the hostname is fixed. The operator's own Ingress
+  is off, and
+  `HTTPRoute` `keycloak` sends `keycloak.bank.internal` to Service
+  `keycloak-service:8080`. Health is on the management port, 9000, which
+  the kubelet probes from 169.254.7.127, admitted by `cilium-resources`'
+  policy. The server's truststore adds the private root, from the
+  `private-ca` ConfigMap trust-manager keeps in the namespace (the CR's
+  `truststores` takes a ConfigMap), beside the image's public roots, so an
+  outbound call to a `bank.internal` name, such as an identity broker's
+  discovery through the gateway, verifies.
+
+The database is CloudNativePG `Cluster` `keycloak-db`: one instance, a 10Gi
+`ceph-rbd` volume, PostgreSQL 18.6 pinned by image
+(`ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie`, CloudNativePG
+1.30.1's default, stated), and a bootstrap `initdb` creating database
+`keycloak` owned by `keycloak`. Keycloak connects as the owner to
+`keycloak-db-rw`; the superuser stays disabled. Nothing stands in the way
+of a `backup` stanza later. The `Cluster` carries `Prune=false,Delete=false`:
+it owns its volume, which `ceph-rbd` reclaims with `Delete`, so pruning it
+would drop every realm. It sets `enablePDB: false`: with one instance,
+CloudNativePG's `keycloak-db-primary` budget allows no disruption, and a
+drain or upgrade of the node holding the database would hang forever.
+One instance means downtime on a drain anyway; a hang is worse. The database's pods are in the mesh too, so
+Keycloak reaches PostgreSQL over HBONE.
+
+The operator puts a `NetworkPolicy`, `keycloak-network-policy`, on the
+server's pods, admitting 8080, 9000 and JGroups' ports alone. In the mesh,
+ztunnel delivers a meshed client's connection, the gateway's included, to
+the pod on 15008, HBONE, so that policy alone would drop every request
+through the gateway; the CRD can narrow the policy's sources but not add a
+port. `NetworkPolicy` `keycloak-allow-hbone` admits 15008 to the same pods
+beside it. Should a meshed client get `Connection reset` from Keycloak while
+the pod is Ready, check that it exists. Since 15008 is open to any source,
+a meshed pod reaches every port in the Keycloak pod through ztunnel, so the
+operator's per-port policy constrains only clients outside the mesh; an
+Istio `AuthorizationPolicy` would be the control for meshed ones.
+
+Both credentials are generated in the cluster with `#GeneratedSecret`
+(Generated secrets, above), with a fixed username, so each is a
+`kubernetes.io/basic-auth` Secret with `username` and `password`:
+
+- `keycloak-admin`, username `admin`, the bootstrap admin. The operator
+  gives it to the server, which creates the user in the master realm on its
+  first start, against an empty database. Keycloak marks a bootstrap admin
+  temporary and says so in the admin console; the mark changes nothing else.
+- `keycloak-db`, username `keycloak`, the database's owner, which `initdb`
+  creates and Keycloak connects as.
+
+Read the admin's credential, to log in at
+`https://keycloak.bank.internal/admin/`:
+
+```sh
+kubectl -n keycloak get secret keycloak-admin -o json | jq '.data | map_values(@base64d)'
+```
+
+Both are immutable and written once, so rotating either follows the
+procedure in Generated secrets, with the `keycloak` Application paused. The
+operator owns StatefulSet `keycloak` and puts back any change to it, so
+stop the server by setting the `Keycloak` resource's `spec.instances` to 0,
+not by scaling the StatefulSet; the sync that turns automation back on sets
+it to 1 again. Each Secret then needs one more thing:
+
+- `keycloak-db`: nothing more by hand. CloudNativePG's instance manager
+  reads the `initdb` Secret through the API, not a mount, and sets the
+  owner's password in PostgreSQL to the new one when the Secret changes, so
+  the database needs no restart; Keycloak, stopped, starts with the new one.
+- `keycloak-admin`: the server reads it only to create the admin in an
+  empty master realm, so a new Secret changes nothing in Keycloak by
+  itself. Read the old password before deleting the Secret, and once the
+  server is back, log in with it and set the admin's password to the new
+  Secret's.
+
+Neither rotation has been exercised on a cluster yet.
+
+Check the server, the route and the admin, from the claude VM and from a
+pod, without printing a credential:
+
+```sh
+kubectl -n keycloak get cluster,keycloak,pods,pvc   # healthy, Ready, keycloak-db-1 Bound on ceph-rbd
+kubectl -n keycloak get pod keycloak-0 -o jsonpath='{.spec.containers[0].args}'   # ends in start
+kubectl -n keycloak get secret keycloak-admin keycloak-db \
+  -o custom-columns='NAME:.metadata.name,TYPE:.type,IMMUTABLE:.immutable,OWNER:.metadata.ownerReferences'
+kubectl -n keycloak get configmap private-ca -o jsonpath='{.data.ca\.crt}' > root.pem
+curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/.well-known/openid-configuration |
+  jq -r .issuer                                     # https://keycloak.bank.internal/realms/master
+u=$(kubectl -n keycloak get secret keycloak-admin -o jsonpath='{.data.username}' | base64 -d)
+p=$(kubectl -n keycloak get secret keycloak-admin -o jsonpath='{.data.password}' | base64 -d)
+curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" \
+  --data-urlencode "password=$p" | jq 'has("access_token")'   # true
+unset u p
 ```
 
 ## Render
