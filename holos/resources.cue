@@ -68,6 +68,14 @@ import (
 	// trust-manager's Bundle has no generated CUE schema here either.
 	Bundle?: [_]: {apiVersion: "trust.cert-manager.io/v1alpha1", ...}
 
+	// Nor do NetworkPolicy, CloudNativePG's Cluster or the Keycloak
+	// Operator's Keycloak. All three are namespaced, so metadata is opened
+	// as it is for External Secrets' kinds above. Keycloak's version is the
+	// storage version of the 26.8.1 CRD; v2alpha1 is deprecated.
+	NetworkPolicy?: [_]: {apiVersion: "networking.k8s.io/v1", metadata: {...}, ...}
+	Cluster?: [_]: {apiVersion: "postgresql.cnpg.io/v1", metadata: {...}, ...}
+	Keycloak?: [_]: {apiVersion: "k8s.keycloak.org/v2beta1", metadata: {...}, ...}
+
 	Gateway?: [_]: gwv1.#Gateway & {
 		spec: gatewayClassName: string | *"istio"
 	}

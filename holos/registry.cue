@@ -96,6 +96,14 @@ registry: [
 	// ceph-csi-rbd and external-secrets; its Job registers the consumers'
 	// buckets and users once RustFS is up.
 	{name: "rustfs"},
+	// keycloak-operator is the Keycloak Operator, its CRDs and the keycloak
+	// namespace. It needs only the mesh's node agents.
+	{name: "keycloak-operator"},
+	// keycloak is the identity provider: its CloudNativePG cluster, its
+	// generated Secrets, the Keycloak resource and its route. It needs the
+	// CRDs of cloudnative-pg, external-secrets and keycloak-operator, a
+	// ceph-rbd volume and the Gateway, so it comes after all of them.
+	{name: "keycloak"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits
