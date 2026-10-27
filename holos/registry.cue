@@ -65,6 +65,12 @@ registry: [
 	// for their configuration and certificates.
 	{name: "istio-cni"},
 	{name: "ztunnel"},
+	// cloudnative-pg is the CloudNativePG operator, its CRDs and its
+	// webhooks; each consumer writes its own Cluster. Its webhook
+	// certificate is a cert-manager Certificate from the private-ca
+	// ClusterIssuer, and its webhook's TLSRoute is in its namespace, so it
+	// comes after private-ca and before ingress-gateway.
+	{name: "cloudnative-pg"},
 	// ingress-gateway is the ingress Gateway, its wildcard certificate and
 	// the routes of components that come before it. It needs the Gateway API
 	// CRDs, the private-ca ClusterIssuer and istiod's istio GatewayClass.

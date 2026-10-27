@@ -1,0 +1,85 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: cnpg-system/cnpg-webhook
+  labels:
+    app.kubernetes.io/instance: cloudnative-pg
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: cloudnative-pg
+    app.kubernetes.io/version: 1.30.1
+    helm.sh/chart: cloudnative-pg-0.29.1
+  name: cnpg-mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-backup
+  failurePolicy: Fail
+  name: mbackup.cnpg.io
+  rules:
+  - apiGroups:
+    - postgresql.cnpg.io
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - backups
+  sideEffects: None
+  timeoutSeconds: 3
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-cluster
+  failurePolicy: Fail
+  name: mcluster.cnpg.io
+  rules:
+  - apiGroups:
+    - postgresql.cnpg.io
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - clusters
+  sideEffects: None
+  timeoutSeconds: 3
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-database
+  failurePolicy: Fail
+  name: mdatabase.cnpg.io
+  rules:
+  - apiGroups:
+    - postgresql.cnpg.io
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - databases
+  sideEffects: None
+  timeoutSeconds: 3
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-scheduledbackup
+  failurePolicy: Fail
+  name: mscheduledbackup.cnpg.io
+  rules:
+  - apiGroups:
+    - postgresql.cnpg.io
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - scheduledbackups
+  sideEffects: None
+  timeoutSeconds: 3

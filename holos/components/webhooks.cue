@@ -15,8 +15,8 @@ import "encoding/yaml"
 //   - sets timeoutSeconds to the cluster's short webhook timeout.
 //
 // caBundle is left alone: cert-manager's cainjector fills it from the
-// configuration's inject-ca-from-secret annotation whether clientConfig names
-// a Service or a URL.
+// configuration's inject-ca-from-secret or inject-ca-from annotation whether
+// clientConfig names a Service or a URL, and istiod fills its own.
 #WebhookPatch: {
 	kind: "ValidatingWebhookConfiguration" | "MutatingWebhookConfiguration"
 	name: string

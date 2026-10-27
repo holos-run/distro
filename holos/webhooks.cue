@@ -48,6 +48,17 @@ webhookServices: {
 		namespace: "cert-manager"
 		component: "cert-manager"
 	}
+	// CloudNativePG's webhooks validate and mutate its own resources:
+	// Clusters, Backups, ScheduledBackups, Databases and Poolers. Its serving
+	// certificate is Secret cnpg-system/cnpg-webhook-tls, issued by the
+	// cloudnative-pg component's Certificate from the private-ca
+	// ClusterIssuer with the hostname in its dnsNames. WEBHOOK_CERT_DIR
+	// turns off the operator's own certificate and caBundle handling, so
+	// cainjector alone fills the caBundle.
+	"cnpg-webhook-service": {
+		namespace: "cnpg-system"
+		component: "cloudnative-pg"
+	}
 	// istiod's webhooks: the validator of Istio's own resources (the istiod
 	// component's istio-validator-istio-system and istio-base's
 	// istiod-default-validator) and the sidecar injector, which ambient leaves
