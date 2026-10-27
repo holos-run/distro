@@ -92,6 +92,7 @@ old one and every webhook call is refused. Then change the router's
 | `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks reached through the gateway and the private root as its JWKS trust |
 | `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
 | `ztunnel` | Ambient's node proxy on every worker |
+| `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks reached through the gateway; no `Cluster` |
 | `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, and the admission webhooks' TLS passthrough listener and `TLSRoute`s |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
@@ -176,7 +177,9 @@ from. A new entry also needs its hostname on the webhook's serving
 certificate, and its host entry applied to a running control plane with
 `talosctl`: Argo CD does not reach the machine config. cert-manager's
 cainjector fills each configuration's `caBundle`; it does so for a URL as it
-does for a Service. istiod fills its own (see Istio below).
+does for a Service. istiod fills its own (see Istio below). CloudNativePG
+would fill its own too, with a CA of its own, and is told not to
+(CloudNativePG, below).
 
 A webhook call costs little: a server-side dry run of a `Certificate` takes
 about 110 ms, a `ConfigMap`'s about 160 ms. While nothing answers on 9443 the
@@ -217,16 +220,30 @@ metadata: {name: bad, namespace: default}
 spec: {action: CUSTOM, rules: [{}]}
 YAML
 # admission webhook "validation.istio.io" denied the request: ... `provider.name` must not be empty
+kubectl create --dry-run=server -v=8 -f - <<'YAML' 2>&1 | grep -o 'admission webhook [^:]*: [^:]*'
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: bad, namespace: default}
+spec:
+  instances: 1
+  storage: {size: 1Gi}
+  postgresql: {parameters: {listen_addresses: "*"}}
+YAML
+# admission webhook \"vcluster.cnpg.io\" denied the request: Cluster.postgresql.cnpg.io \"bad\" is invalid
 kubectl -n kube-system logs kube-apiserver-treasury-cp-1 --since=10m | grep -c 'failing open'   # 0
 ```
 
 A `Bundle` with two kinds of source is refused too, but by the CRD's own
 validation, before any webhook is called, so it proves nothing about the
-path. From the garage network each hostname answers on the Gateway's address
-with the webhook's own certificate, and a name no route matches is reset:
+path. kubectl rewrites CloudNativePG's refusal, a `422 Invalid`, as `The
+Cluster "bad" is invalid: ... Can't set fixed configuration parameter`,
+without the webhook's name; `-v=8` shows the API server's message, which
+names it. From the garage network each hostname answers on the Gateway's
+address with the webhook's own certificate, and a name no route matches is
+reset:
 
 ```sh
-for h in cert-manager-webhook.cert-manager istiod.istio-system trust-manager.cert-manager; do
+for h in cert-manager-webhook.cert-manager cnpg-webhook-service.cnpg-system istiod.istio-system trust-manager.cert-manager; do
   echo | openssl s_client -connect 10.20.0.30:9443 -servername $h.webhooks.treasury.bank.internal 2>/dev/null |
     openssl x509 -noout -ext subjectAltName
 done
@@ -234,10 +251,10 @@ done
 
 With `Fail`, every webhook depends on the Gateway and on istiod, which
 programs it: while the gateway's Pods are down, a request a webhook matches
-is refused, such as any write of a cert-manager resource, a `Bundle` or an
-Istio resource. Pods and other core objects are not matched (the sidecar
-injector matches only Pods that ask for a sidecar), so the gateway and
-istiod can always be restarted.
+is refused, such as any write of a cert-manager resource, a `Bundle`, an
+Istio resource or a CloudNativePG resource. Pods and other core objects are
+not matched (the sidecar injector matches only Pods that ask for a sidecar),
+so the gateway and istiod can always be restarted.
 
 #### Building a cluster with enforcement
 
@@ -529,9 +546,10 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   mode: the gateway reads the SNI and forwards the connection, and the
   webhook's Pods terminate TLS. It accepts only `TLSRoute`s, and only from the
   namespaces of the Services in `webhooks.cue` (`cert-manager`,
-  `istio-system`), selected by `kubernetes.io/metadata.name`. This component
-  renders one `TLSRoute` per entry from the registry, in the entry's own
-  namespace, matching its hostname and forwarding to the Service's port.
+  `cnpg-system`, `istio-system`), selected by `kubernetes.io/metadata.name`.
+  This component renders one `TLSRoute` per entry from the registry, in the
+  entry's own namespace, matching its hostname and forwarding to the
+  Service's port.
   Being in the backend's namespace, a route needs no `ReferenceGrant`; routes
   in `istio-ingress` would need one in each webhook namespace, more objects
   for the same result, since only platform namespaces can attach either way.
@@ -618,6 +636,70 @@ overlay), label `local-path-storage` privileged (its helper pods mount the
 node's directory as a hostPath), and keep the provisioner off the control
 plane. Its class is `WaitForFirstConsumer` and not the default: a volume is a
 directory on one node, and its pod is pinned there.
+
+### CloudNativePG
+
+`cloudnative-pg` is the operator alone, 1.30.1 from the `cloudnative-pg`
+chart 0.29.1, in `cnpg-system`, watching every namespace. It renders no
+`Cluster`: each consumer writes its own, in its own namespace, and its
+volume comes from the default class, `ceph-rbd`. The operator is a
+Deployment with no tolerations, so the control plane's taint keeps it, and
+every PostgreSQL pod it makes, on the workers. Its pods meet the restricted
+Pod Security standard, so `cnpg-system` needs no label. The chart's
+PodMonitor and Grafana dashboard are off, its defaults: there is no
+Prometheus Operator.
+
+Its webhooks follow the platform's model (Admission webhooks, above), but
+not with the operator's own certificate. By default the operator makes a CA,
+Secret `cnpg-ca-secret`, and a serving certificate for the Service's
+cluster names only, Secret `cnpg-webhook-cert`, and every hour writes that
+CA into both configurations' `caBundle`; it has no setting to add a DNS
+name. `WEBHOOK_CERT_DIR`, set on the Deployment, turns all of that off: the
+operator serves `apiserver.crt` and `apiserver.key` from the directory and
+leaves the configurations alone. The component mounts Secret
+`cnpg-system/cnpg-webhook-tls` there, from `Certificate` `cnpg-webhook`,
+which `private-ca` issues for the Service's `.svc` name and the webhook
+hostname. The configurations carry `cert-manager.io/inject-ca-from:
+cnpg-system/cnpg-webhook`, so cainjector writes the private root into
+their `caBundle`, and nothing else writes it. The root does not change when
+the certificate is renewed, and the operator reloads the files when the
+kubelet updates them. The operator reads the variable before its
+ConfigMap, so it cannot go in `config.data`.
+
+The component comes before `ingress-gateway` in the registry: its
+`TLSRoute`, which `ingress-gateway` renders, is in `cnpg-system`, so the
+namespace must exist first. It needs only cert-manager and `private-ca`.
+
+Check that a one-instance `Cluster` comes up on `ceph-rbd`, takes a
+connection with its app credentials, and leaves no volume once deleted:
+
+```sh
+kubectl -n cnpg-system get pods -o wide   # one operator, on a worker
+kubectl -n cnpg-system get secrets        # cnpg-webhook-tls only
+kubectl create ns cnpg-test
+kubectl -n cnpg-test apply -f - <<'EOF'
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: pg}
+spec:
+  instances: 1
+  storage: {size: 1Gi}
+  bootstrap: {initdb: {database: app, owner: app}}
+EOF
+kubectl -n cnpg-test wait --for=condition=Ready --timeout=6m cluster/pg
+img=ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+kubectl -n cnpg-test run psql --image=$img --restart=Never --overrides='{"spec":{
+  "securityContext":{"runAsNonRoot":true,"runAsUser":26,"seccompProfile":{"type":"RuntimeDefault"}},
+  "containers":[{"name":"psql","image":"'$img'",
+    "command":["sh","-c","psql \"$PGURI\" -Atc \"select current_user, current_database()\""],
+    "env":[{"name":"PGURI","valueFrom":{"secretKeyRef":{"name":"pg-app","key":"uri"}}}],
+    "securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
+kubectl -n cnpg-test wait --for=jsonpath='{.status.phase}'=Succeeded pod/psql
+kubectl -n cnpg-test logs psql            # app|app
+PV=$(kubectl -n cnpg-test get pvc pg-1 -o jsonpath='{.spec.volumeName}')
+kubectl delete ns cnpg-test
+kubectl wait --for=delete --timeout=2m pv/$PV
+```
 
 ## Render
 
@@ -925,7 +1007,7 @@ kubectl get validatingwebhookconfiguration istio-validator-istio-system \
 kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
 kubectl get ciliumloadbalancerippools            # treasury: 0 available; treasury-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
-kubectl get tlsroute -A                          # cert-manager-webhook, trust-manager, istiod
+kubectl get tlsroute -A                          # cert-manager-webhook, trust-manager, cnpg-webhook-service, istiod
 kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
   -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy'   # Fail everywhere
 

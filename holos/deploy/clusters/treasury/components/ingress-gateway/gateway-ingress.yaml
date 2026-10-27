@@ -47,6 +47,7 @@ spec:
                           operator: In
                           values:
                             - cert-manager
+                            - cnpg-system
                             - istio-system
           hostname: '*.webhooks.treasury.bank.internal'
           name: webhooks
