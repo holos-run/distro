@@ -1,6 +1,9 @@
 package holos
 
-import "strings"
+import (
+	"encoding/yaml"
+	"strings"
+)
 
 // Argo CD syncs the platform from the deploy/ tree of holos-run/distro, this
 // component included, once it has been applied by hand (README.md,
@@ -49,14 +52,53 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		redisSecretInit: image: tag: ArgoCDImage
 		redis: image: tag:           "8.6.4-alpine@sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763"
 
-		// Login is the local admin, whose initial password the server
-		// generates into Secret argocd-initial-admin-secret, until Keycloak
-		// gives Argo CD an OIDC client. No Dex.
+		// Login is through Keycloak, the realm's argocd client, and the
+		// local admin, whose initial password the server generates into
+		// Secret argocd-initial-admin-secret, stays until the milestone's
+		// login through Keycloak has passed. No Dex: Argo CD talks to
+		// Keycloak itself (oidc.config below).
 		dex: enabled: false
+
+		// The server checks Keycloak's certificate, the private CA's, when
+		// it fetches the issuer's discovery document and keys and when it
+		// redeems a code from the CLI. Rather than oidc.config's rootCA,
+		// which would put the root, minted in the cluster, into git, the
+		// server trusts the private-ca ConfigMap trust-manager keeps in
+		// the namespace, beside the image's public roots: Go reads every
+		// file in each SSL_CERT_DIR directory, after its bundle file. With
+		// rootCA unset, Argo CD's OIDC client uses that system pool. Go
+		// reads the pool once, at start. The mount is optional because
+		// argocd syncs in an early wave and trust-manager makes the
+		// ConfigMap later: a required mount would hold the server in
+		// ContainerCreating, and the root, waiting for argocd to report
+		// Healthy, would never reach trust-manager. On a rebuilt cluster
+		// the server is therefore restarted once private-ca-bundle is
+		// Healthy (README, Bootstrap Argo CD).
+		server: {
+			volumes: [{name: "private-ca", configMap: {name: PrivateCA.bundle, optional: true}}]
+			volumeMounts: [{name: "private-ca", mountPath: "/etc/ssl/private-ca", readOnly: true}]
+			env: [{name: "SSL_CERT_DIR", value: "/etc/ssl/certs:/etc/ssl/private-ca"}]
+		}
 
 		configs: {
 			cm: {
 				"admin.enabled": true
+
+				// Keycloak's realm holos, through the public argocd client
+				// with PKCE, S256 (interview Q51): the UI and the CLI keep
+				// no secret, so there is none here. Its groups scope is a
+				// realm default, but a client may still ask for it by name;
+				// it puts the user's groups, by full path, in the groups
+				// claim (Q6), which the policy below and scopes read. url,
+				// the base of the redirects, is the chart's, from
+				// global.domain.
+				"oidc.config": yaml.Marshal({
+					name:                     "Keycloak"
+					issuer:                   Keycloak.issuer
+					clientID:                 Keycloak.clients.argocd
+					enablePKCEAuthentication: true
+					requestedScopes: ["openid", "profile", "email", Keycloak.groupsClaim]
+				})
 
 				// GitHub cannot reach the garage to deliver a webhook
 				// (interview Q38), so Argo CD polls: every Application checks
@@ -144,6 +186,17 @@ holos: spec: artifacts: [(#HelmArtifact & {
 					hs.message = "Waiting for ExternalSecret"
 					return hs
 					"""
+			}
+
+			// /platform/owners, the group the keycloak-realm component makes
+			// and puts jeff in, is admin; nobody else from Keycloak gets a
+			// role (policy.default stays empty). A group is matched by the
+			// full path the groups claim carries, leading slash and all.
+			// scopes, the claims a policy line's subject is matched
+			// against, is the chart's default, [groups], stated.
+			rbac: {
+				"policy.csv": "g, /platform/owners, role:admin\n"
+				scopes:       "[\(Keycloak.groupsClaim)]"
 			}
 
 			// Diff against the API server's dry run of a server-side apply,

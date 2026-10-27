@@ -65,6 +65,9 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 						// The component's OutputDir (components/component.cue).
 						path: "holos/deploy/clusters/\(Cluster.name)/components/\(C.name)"
 					}
+					if len(C.ignoreDifferences) > 0 {
+						ignoreDifferences: C.ignoreDifferences
+					}
 					syncPolicy: {
 						// Every commit on main is synced as it is seen, and a
 						// change made by hand is reverted. Pruning deletes only

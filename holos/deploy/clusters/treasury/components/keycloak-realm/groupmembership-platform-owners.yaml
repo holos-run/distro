@@ -1,0 +1,12 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: GroupMembership
+metadata:
+    name: platform-owners
+    namespace: keycloak
+spec:
+    groupRef:
+        name: platform-owners
+    instanceRef:
+        name: holos
+    members:
+        - email: jeff@bank.internal

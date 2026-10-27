@@ -69,12 +69,20 @@ import (
 	Bundle?: [_]: {apiVersion: "trust.cert-manager.io/v1alpha1", ...}
 
 	// Nor do NetworkPolicy, CloudNativePG's Cluster or the Keycloak
-	// Operator's Keycloak. All three are namespaced, so metadata is opened
-	// as it is for External Secrets' kinds above. Keycloak's version is the
-	// storage version of the 26.8.1 CRD; v2alpha1 is deprecated.
+	// Operator's Keycloak and KeycloakRealmImport. All are namespaced, so
+	// metadata is opened as it is for External Secrets' kinds above. The
+	// Keycloak kinds' version is the storage version of the 26.8.1 CRDs;
+	// v2alpha1 is deprecated.
 	NetworkPolicy?: [_]: {apiVersion: "networking.k8s.io/v1", metadata: {...}, ...}
 	Cluster?: [_]: {apiVersion: "postgresql.cnpg.io/v1", metadata: {...}, ...}
 	Keycloak?: [_]: {apiVersion: "k8s.keycloak.org/v2beta1", metadata: {...}, ...}
+	KeycloakRealmImport?: [_]: {apiVersion: "k8s.keycloak.org/v2beta1", metadata: {...}, ...}
+
+	// holos-controller's keycloak.holos.run kinds, v1alpha1, the one version
+	// its 0.22.0 CRDs serve (components/holos-controller). Namespaced too.
+	Instance?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
+	Group?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
+	GroupMembership?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
 
 	Gateway?: [_]: gwv1.#Gateway & {
 		spec: gatewayClassName: string | *"istio"

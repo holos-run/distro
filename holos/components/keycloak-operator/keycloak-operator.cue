@@ -20,9 +20,11 @@ import "encoding/yaml"
 //	kubernetes.yml                                sha256:2b95907f094e7a274647ba2db22bcc2f9397e33836768990dc4e4b39437e2cba
 //
 // All four CRDs, the release's kustomization.yml's list. The platform uses
-// Keycloak alone, and holos-controller, not the operator, owns the realm and
-// its clients; but the 26.8.1 operator starts a controller for each of the
-// four kinds, and one whose CRD is missing stops the operator at startup.
+// Keycloak and KeycloakRealmImport, which imports the realm once
+// (keycloak-realm), and holos-controller, not the operator, reconciles the
+// realm's clients and groups after that; but the 26.8.1 operator starts a
+// controller for each of the four kinds, and one whose CRD is missing stops
+// the operator at startup.
 //
 // kubernetes.yml names no namespace, as the release's kustomization.yml
 // sets it, so namespace below does the same. The operator's image and the

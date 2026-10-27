@@ -5,10 +5,10 @@ package holos
 // the Keycloak resource here, with its own one-instance CloudNativePG cluster,
 // behind the ingress gateway at keycloak.<privateDomain>. That URL is the
 // issuer every token carries, https://keycloak.bank.internal/realms/<realm>,
-// and pods and the laptop resolve it alike, to the gateway. The realm, its
-// clients, groups and mappers are holos-controller's; this component is the
-// server and its database alone, and the master realm its bootstrap admin
-// logs in to.
+// and pods and the laptop resolve it alike, to the gateway. The realm, holos,
+// is keycloak-realm's, imported once and then reconciled in part by
+// holos-controller; this component is the server and its database alone, and
+// the master realm its bootstrap admin logs in to.
 //
 // The gateway terminates TLS with the private CA's wildcard and reaches the
 // server over HBONE, as it does hello, so Keycloak serves plain HTTP in the
@@ -45,7 +45,8 @@ let Owner = "keycloak"
 // Admin is the bootstrap admin's username. The operator's own default is
 // temp-admin, for an admin meant to be replaced by hand. This one is not: it
 // is the platform's lasting admin of the master realm, its credential
-// generated and kept in the cluster, which holos-controller logs in with. The
+// generated and kept in the cluster. holos-controller does not use it: it
+// logs in to the realm holos as its own client, svc-holos-controller. The
 // server still flags any bootstrap admin as temporary and says so in the
 // admin console; the flag changes nothing else.
 let Admin = "admin"

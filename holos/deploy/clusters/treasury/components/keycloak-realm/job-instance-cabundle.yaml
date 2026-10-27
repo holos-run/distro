@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+    annotations:
+        argocd.argoproj.io/hook: PostSync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    name: instance-cabundle
+    namespace: keycloak
+spec:
+    activeDeadlineSeconds: 300
+    backoffLimit: 6
+    template:
+        spec:
+            containers:
+                - command:
+                    - /bin/sh
+                    - -c
+                    - |-
+                      set -eu
+                      ca=$(base64 < /private-ca/ca.crt | tr -d '\n')
+                      kubectl -n keycloak patch instances.keycloak.holos.run holos --type=merge --field-manager=instance-cabundle -p "{\"spec\":{\"caBundle\":\"$ca\"}}"
+                  env:
+                    - name: HOME
+                      value: /tmp
+                  image: docker.io/alpine/kubectl:1.37.1@sha256:a5d0fbecab3f7b6c2ab7398f1daa73a3e0ed6ece18556d21698233e9e3759cc7
+                  name: patch
+                  resources:
+                    limits:
+                        memory: 128Mi
+                    requests:
+                        cpu: 10m
+                        memory: 32Mi
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                        drop:
+                            - ALL
+                    readOnlyRootFilesystem: true
+                  volumeMounts:
+                    - mountPath: /private-ca
+                      name: private-ca
+                      readOnly: true
+                    - mountPath: /tmp
+                      name: tmp
+            restartPolicy: OnFailure
+            securityContext:
+                runAsGroup: 65534
+                runAsNonRoot: true
+                runAsUser: 65534
+                seccompProfile:
+                    type: RuntimeDefault
+            serviceAccountName: instance-cabundle
+            volumes:
+                - configMap:
+                    name: private-ca
+                  name: private-ca
+                - emptyDir: {}
+                  name: tmp

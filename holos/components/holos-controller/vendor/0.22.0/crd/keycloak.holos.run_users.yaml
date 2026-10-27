@@ -1,0 +1,313 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: users.keycloak.holos.run
+spec:
+  group: keycloak.holos.run
+  names:
+    categories:
+    - holos
+    - keycloak
+    kind: User
+    listKind: UserList
+    plural: users
+    singular: user
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.email
+      name: Email
+      type: string
+    - jsonPath: .spec.instanceRef.name
+      name: Instance
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .status.lastValidatedTime
+      name: Validated
+      priority: 1
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          User is the Schema for the users API. It pre-provisions a user
+          by email and configures the IdP link for first-login auto-link (ADR-20).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              UserSpec defines the desired state of a User: a user
+              pre-provisioned by email (only when necessary) and the IdP link that lets first
+              federated login auto-link the existing record (ADR-20). Group membership is
+              managed separately by GroupMembership.
+            properties:
+              adopt:
+                description: |-
+                  Adopt opts in to taking ownership of a pre-existing Keycloak user of the
+                  same email (the claim model, mirroring ADR-19's Organization). Default
+                  false: a user this CR did not create and does not already own is a Conflict
+                  (Ready=False, reason Conflict) and is never silently seized — Keycloak realm
+                  users are a single global namespace while this CR is Kubernetes-namespaced.
+                  Set adopt: true to deliberately claim such a user. When this resource is
+                  deleted, an adopted user is released unless deletionPolicy is Delete.
+                type: boolean
+              deletionPolicy:
+                description: |-
+                  DeletionPolicy controls how the controller handles the Keycloak user when
+                  this resource is deleted. Delete removes the user by the UUID recorded in
+                  status. Orphan leaves the user and any controller-added federated-identity
+                  link untouched. When omitted, a user this resource created is deleted, while
+                  an adopted user is released after pruning the federated-identity link added
+                  by this resource.
+                enum:
+                - Delete
+                - Orphan
+                type: string
+              email:
+                description: |-
+                  Email is the user's email address (e.g. bob@example.com). It is required
+                  and is the key the first-login auto-link matches on, so it must be the
+                  email the IdP asserts. It is immutable: email is the user's durable
+                  identity, so changing it would retarget reconciliation and finalization to a
+                  different Keycloak user, risking cross-user mutation or deletion.
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: email is immutable
+                  rule: self == oldSelf
+              identityProviderLink:
+                description: |-
+                  IdentityProviderLink optionally configures the federated-identity link so
+                  first federated login auto-links this pre-created record instead of creating
+                  a duplicate. When omitted the user is provisioned without a managed IdP
+                  link.
+                properties:
+                  alias:
+                    description: |-
+                      Alias is the Keycloak identity-provider alias to link the user to (the IdP
+                      configured on the realm, e.g. an upstream OIDC/SAML broker).
+                    minLength: 1
+                    type: string
+                  userId:
+                    description: |-
+                      UserID is the user identifier at the upstream identity provider (the
+                      federated identity's subject). When omitted the link is keyed by email via
+                      the first-broker-login auto-link flow rather than a pre-known subject.
+                    type: string
+                  userName:
+                    description: |-
+                      UserName is the username at the upstream identity provider, recorded on the
+                      federated-identity link. Optional; informational when the subject (UserID)
+                      is the authoritative key.
+                    type: string
+                required:
+                - alias
+                type: object
+              instanceRef:
+                description: |-
+                  InstanceRef references the Instance this user is provisioned in. A
+                  cross-namespace reference (Namespace set to a different namespace) is gated
+                  by a security.holos.run ReferenceGrant in the instance's namespace. It is
+                  immutable: retargeting a provisioned user to another instance would create a
+                  second Keycloak user in the new realm and orphan the original (the finalizer
+                  can no longer reach it), so the target realm is fixed for the user's life.
+                properties:
+                  name:
+                    description: Name of the Instance resource to target.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the Instance. When omitted the instance is resolved
+                      in the referring resource's own namespace. When set to a different
+                      namespace, the cross-namespace reference must be authorized by a
+                      security.holos.run ReferenceGrant in the target namespace.
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: instanceRef is immutable
+                  rule: self == oldSelf
+              username:
+                description: |-
+                  Username optionally sets the Keycloak username. When omitted the controller
+                  derives one (conventionally the email), so set it only to pin a specific
+                  username. It is immutable: the username is applied only at user creation, so
+                  editing it after the user exists would silently diverge the CR from Keycloak
+                  (the reconciler does not rename an existing user). Recreate the resource to
+                  change the pinned username.
+                type: string
+                x-kubernetes-validations:
+                - message: username is immutable
+                  rule: self == oldSelf
+            required:
+            - email
+            - instanceRef
+            type: object
+          status:
+            description: |-
+              UserStatus defines the observed state of a User, following the
+              Gateway-API status convention plus the durable ownership markers the claim
+              model requires (mirroring ADR-19).
+            properties:
+              adopted:
+                description: |-
+                  Adopted records whether this CR adopted a pre-existing Keycloak user of the
+                  same email rather than creating it. An adopted user is released, never
+                  deleted, on CR removal — so adoption is non-destructive to a record the
+                  platform did not create.
+                type: boolean
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the user's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              created:
+                description: |-
+                  Created records whether this CR created the Keycloak user (true) versus
+                  adopted a pre-existing record of the same email (false). It is the
+                  controller-managed owner record persisted on status; the finalizer deletes
+                  the Keycloak user only when Created is true.
+                type: boolean
+              lastDriftTime:
+                description: |-
+                  LastDriftTime is the last time the controller remediated out-of-band drift.
+                  It is set with LastMutationReason=DriftRemediation and preserved across
+                  later spec-driven mutations.
+                format: date-time
+                type: string
+              lastMutatedTime:
+                description: |-
+                  LastMutatedTime is the last time the controller actually changed Keycloak
+                  for this user, such as creating the user or adding/removing a federated
+                  identity link.
+                format: date-time
+                type: string
+              lastMutationReason:
+                description: |-
+                  LastMutationReason classifies the cause of the last remote mutation. It is
+                  written together with lastMutatedTime.
+                enum:
+                - SpecChange
+                - DriftRemediation
+                type: string
+              lastValidatedTime:
+                description: |-
+                  LastValidatedTime is the last time the controller successfully read
+                  Keycloak and confirmed or restored the declared user state. It is not
+                  advanced on failed remote reads or failed verification, so stale values
+                  remain visible.
+                format: date-time
+                type: string
+              managedIdentityProvider:
+                description: |-
+                  ManagedIdentityProvider records the federated-identity link this CR created,
+                  encoded as "<alias>|<upstreamUserId>" (the IdP alias and the upstream subject
+                  from spec.identityProviderLink), so on switch or CR removal the prune deletes
+                  exactly the link this CR added — and only when the current link still points
+                  at that subject, never a link recreated out of band to a different subject.
+                  Empty when no managed link exists (no spec.identityProviderLink, or an
+                  email-only auto-link entry that is realm-flow-driven and not an Admin-API link
+                  this CR owns). The controller manages this value; do not hand-edit it.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent generation observed for this
+                  User by the controller.
+                format: int64
+                type: integer
+              userID:
+                description: |-
+                  UserID is the Keycloak UUID of the user this CR owns or adopted. It is the
+                  durable handle the reconciler resolves the IdP link against, and the
+                  finalizer deletes (when Created) — recorded so a re-run
+                  targets exactly the user this CR provisioned even if the email lookup were
+                  to drift.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

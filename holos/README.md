@@ -101,6 +101,8 @@ old one and every webhook call is refused. Then change the router's
 | `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `substrate` and `quay` buckets and users |
 | `keycloak-operator` | The Keycloak Operator 26.8.1 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
 | `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
+| `holos-controller` | holos-controller 0.22.0 from aavis-ops' manifests, vendored, in the ambient namespace `holos-controller`, with its eight CRDs; no resources of its kinds |
+| `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -417,8 +419,11 @@ entry in the registry, for its cluster:
   annotation cannot hold the Gateway API's 429KB HTTPRoute CRD. Diffs are
   server-side too (`controller.diff.server.side`), so a field another
   manager owns, such as the `caBundle` cert-manager's cainjector writes into
-  each webhook configuration, is not a difference, and no `Application` needs
-  `ignoreDifferences`.
+  each webhook configuration, is not a difference. The one
+  `ignoreDifferences`, a registry entry's (`registry.cue`), is
+  `keycloak-realm`'s, for the `Instance`'s `caBundle`, which its `PostSync`
+  Job writes under its own field manager: the server-side diff already
+  leaves that field alone, and the entry says so where a reader looks.
 - `cilium-resources` also has `SkipDryRunOnMissingResource=true`: its kinds
   exist once the Cilium operator has registered their CRDs, after `cilium`
   is synced.
@@ -451,8 +456,9 @@ This component therefore renders Helm hooks (`enableHooks`): Argo CD runs
 them as `PreSync` hooks, and applied by hand the Job runs once and deletes
 itself a minute after it finishes.
 
-Login is the local `admin` until Keycloak gives Argo CD a client; Dex is
-off. Argo CD is at https://argocd.bank.internal, `global.domain`, through the
+Login is through Keycloak, realm `holos`, client `argocd`, or as the local
+`admin`, which stays until the milestone's login through Keycloak has passed
+(Logging in, below); Dex is off. Argo CD is at https://argocd.bank.internal, `global.domain`, through the
 ingress gateway, which terminates TLS with the private CA's wildcard and
 sends plain HTTP to the server: `server.insecure` is set, so the server
 serves no TLS of its own, on either of its Service's ports. The `HTTPRoute`
@@ -1003,8 +1009,8 @@ Keycloak is the platform's one identity provider (interview Q11), at
 carries: `https://keycloak.bank.internal/realms/<realm>`. Pods and the
 laptop resolve the name alike, to the gateway, so a client in the cluster
 calls the same URL a browser does. This is the server and its database; the
-realm, clients, groups and mappers are holos-controller's, and the master
-realm holds only the admin.
+realm `holos` is `keycloak-realm`'s (The realm, below), and the master realm
+holds only the admin.
 
 Two components, so Argo CD applies the CRDs before the resource that uses
 them:
@@ -1125,6 +1131,147 @@ curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/protocol/
 unset u p
 ```
 
+### The realm
+
+The platform's realm is `holos`, issuer
+`https://keycloak.bank.internal/realms/holos`. holos-controller 0.22.0 has no
+kind for a realm, a client scope or a protocol mapper, nor a field for the
+device grant, so the realm comes in two halves (interview Q50):
+
+- A `KeycloakRealmImport`, `holos` in `keycloak`, creates the realm with
+  what the controller cannot reconcile:
+  - the `groups` client scope, whose `oidc-group-membership-mapper` writes
+    each user's groups by full path (`/platform/owners`) into the claim
+    `groups` of the ID token, the access token and userinfo (Q6). It is a
+    realm default default scope, so every client gets it, the controller's
+    included. An import that lists any client scope gets none of Keycloak's
+    built-in ones, so those are listed too, as the master realm of a fresh
+    26.8.1 has them (`components/keycloak-realm/client-scopes.json`).
+  - the public client `kubectl`, with the device grant, and the standard
+    flow for kubelogin's loopback redirects. PKCE is not required on it:
+    Keycloak 26.8.1 then demands a `code_challenge` on the device grant too,
+    which not every device-flow client sends.
+  - the public client `argocd`, with PKCE S256 required (Q51), redirects
+    `/auth/callback` and `/pkce/verify` on `https://argocd.bank.internal` and
+    `http://localhost:8085/auth/callback` for the CLI.
+  - the confidential client `svc-holos-controller`, client credentials only,
+    whose service account holds the `realm-management` roles
+    `manage-clients`, `manage-users`, `query-clients` and `query-groups`.
+    Not `manage-realm`: aavis-ops grants it only for a `Group`'s
+    `custodians`, which need fine-grained admin permissions, and nothing
+    here uses them, so the realm leaves `adminPermissionsEnabled` off.
+  - the user `jeff`, `jeff@bank.internal`.
+- holos-controller's resources, in `keycloak` beside the import: the
+  `Instance` `holos`, the `Group` `platform-owners` at path
+  `platform/owners`, and the `GroupMembership` `platform-owners` putting
+  `jeff@bank.internal` in it. The controller finds a member by email among
+  the realm's users, so the imported user needs no `User` resource. All three
+  are in the `Instance`'s namespace, so there is no `ReferenceGrant`. The
+  controller creates the parent group `/platform`, which it does not own.
+
+Two components. `holos-controller` is the manager, from aavis-ops at tag
+`holos-controller-v0.22.0`: all eight CRDs (`keycloak.holos.run`,
+`quay.holos.run`, `security.holos.run`; the manager starts a controller for
+every kind) with `Prune=false,Delete=false`, its RBAC and its Deployment,
+vendored unmodified in `components/holos-controller/vendor/0.22.0/`, with the
+image set to `ghcr.io/holos-run/holos-controller:holos-controller-v0.22.0`
+pinned by digest. It registers no webhook. `keycloak-realm`, after it, is
+everything above plus the credential, so the CRDs are established before
+Argo CD applies the resources.
+
+The realm's two secrets are generated in `keycloak` (Generated secrets,
+above), because the import's placeholders read Secrets in the import's own
+namespace: `svc-holos-controller`, username the client ID, password the
+client's secret, and `holos-user-jeff`, username `jeff`. The import's
+`spec.placeholders` hands their passwords to the import Job as environment
+variables, which Keycloak puts in place of `${SVC_HOLOS_CONTROLLER_CLIENT_SECRET}`
+and `${JEFF_PASSWORD}`, so neither value is in the resource or in git.
+
+holos-controller reads its credential from its own namespace, from the
+downward API's `POD_NAMESPACE`, whatever the `Instance`'s namespace. An
+`ExternalSecret` there, `holos-controller-keycloak-creds`, copies
+`svc-holos-controller` into the keys the controller reads, `clientId` and
+`clientSecret`, through `SecretStore` `keycloak`, External Secrets'
+`kubernetes` provider, which authenticates as ServiceAccount
+`keycloak-secret-reader` and may `get` that one Secret in `keycloak`. The
+value is generated once, in one place; the copy is not immutable and follows
+its source hourly, or at once with
+`kubectl -n holos-controller annotate externalsecret holos-controller-keycloak-creds force-sync=$(date +%s) --overwrite`.
+
+The `Instance` names `https://keycloak.bank.internal`, through the gateway,
+whose certificate is the private CA's. The root is minted in the cluster, so
+it is not rendered (Q52): the `PostSync` Job `instance-cabundle`, in
+`keycloak`, base64-encodes `ca.crt` of the namespace's `private-ca`
+ConfigMap into the `Instance`'s `spec.caBundle` with a merge patch, as field
+manager `instance-cabundle`, after every sync of `keycloak-realm`. Its Role
+may `get` and `patch` that one `Instance`. Argo CD's server-side apply does
+not own the field and leaves it, and the `Application` ignores it. Until the
+Job has run, as on the first sync, the `Instance` and everything naming it
+report `x509: certificate signed by unknown authority`. To run it by hand,
+`argocd app sync keycloak-realm`, or apply
+`deploy/clusters/<cluster>/components/keycloak-realm/job-instance-cabundle.yaml`
+and delete the Job once it completes.
+
+**The import is one-shot.** The operator runs the import as Job `holos`
+with `--override false`, from the server's image straight into the
+database; a realm that exists is left as it is, and the `KeycloakRealmImport`
+reports `Done`. So a change to the realm in `keycloak-realm.cue` renders and
+syncs, but changes nothing in Keycloak. To apply one, re-import, which
+drops the realm: every session, the users' passwords other than the
+imported ones, and every client and group the controller made, until it
+makes them again. With automation paused on `keycloak-realm` (and on the
+root, `argocd-apps`, which would turn it back on):
+
+```sh
+# 1. Let the controller remove what it made: its finalizers delete the
+#    groups, memberships and clients in Keycloak. Deleting the realm first
+#    would leave its resources reporting errors with finalizers stuck.
+kubectl -n keycloak delete groupmembership,group --all     # and any Client or User in other namespaces
+# 2. The import, then the realm, with the master admin's token.
+kubectl -n keycloak delete keycloakrealmimport holos
+t=$(curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
+curl -s --cacert root.pem -X DELETE -H "Authorization: Bearer $t" https://keycloak.bank.internal/admin/realms/holos -w '%{http_code}\n'  # 204
+# 3. Turn automation back on; the sync re-creates the import, the groups and
+#    the memberships, and its PostSync Job runs again.
+```
+
+`u` and `p` are the master admin's, as in the check under Keycloak, above.
+The generated Secrets are kept, so the controller's credential and jeff's
+password survive a re-import. This procedure was run once on treasury. The
+import Job's completed pod names both Secrets, so rotating either (Generated
+secrets, above) needs that pod gone first, and a re-import after, since the
+realm holds the values it was imported with.
+
+jeff's password, to log in at `https://keycloak.bank.internal/realms/holos/account`
+or to Argo CD:
+
+```sh
+kubectl -n keycloak get secret holos-user-jeff -o jsonpath='{.data.password}' | base64 -d
+```
+
+Check the realm, the controller and a token, without printing a secret
+(`root.pem`, `u` and `p` as under Keycloak, above):
+
+```sh
+curl -s --cacert root.pem https://keycloak.bank.internal/realms/holos/.well-known/openid-configuration |
+  jq -r .issuer                                  # https://keycloak.bank.internal/realms/holos
+kubectl -n keycloak get keycloakrealmimport holos \
+  -o jsonpath='{.status.conditions[?(@.type=="Done")].status}'   # True
+kubectl -n holos-controller get deploy,externalsecret,secretstore   # 1/1, SecretSynced, Valid
+kubectl -n keycloak get instance,group,groupmembership             # READY True
+t=$(curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
+a=https://keycloak.bank.internal/admin/realms/holos
+uid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/users?email=jeff@bank.internal&exact=true" | jq -r '.[0].id')
+cid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/clients?clientId=kubectl" | jq -r '.[0].id')
+curl -s --cacert root.pem -H "Authorization: Bearer $t" \
+  "$a/clients/$cid/evaluate-scopes/generate-example-id-token?userId=$uid&scope=openid" |
+  jq -c '{aud, groups}'                          # {"aud":"kubectl","groups":["/platform/owners"]}
+curl -s --cacert root.pem https://keycloak.bank.internal/realms/holos/protocol/openid-connect/auth/device \
+  -d client_id=kubectl -d scope=openid | jq 'has("device_code")'   # true
+```
+
 ## Render
 
 From this directory:
@@ -1197,7 +1344,15 @@ kubectl -n argocd get applications -w
 ```
 
 The `Application`s appear one at a time in registry order, and each reaches
-`Synced` and `Healthy` within a few minutes. The workers turn `Ready` once the Cilium agents are up;
+`Synced` and `Healthy` within a few minutes. Once `private-ca-bundle` is
+`Healthy`, restart the server so it reads the private root, which it needs to
+log in through Keycloak (Logging in, below): its `private-ca` mount is
+optional because the server starts before trust-manager writes the
+ConfigMap, and Go reads the trust pool only at start.
+
+```sh
+kubectl -n argocd rollout restart deploy/argocd-server
+``` The workers turn `Ready` once the Cilium agents are up;
 the control plane stays `NotReady`.
 
 The hand applies use Argo CD's own field manager, `argocd-controller`, so
@@ -1214,8 +1369,20 @@ above from a fixed checkout.
 
 ### Logging in
 
-The local `admin`, with a browser at https://argocd.bank.internal or with
-the argocd CLI, once the laptop trusts the private root (The private CA,
+Through Keycloak, as a member of `/platform/owners`, which the `argocd-rbac-cm`
+policy makes `role:admin`: in a browser at https://argocd.bank.internal,
+**Log in via Keycloak**, or with the CLI, `argocd login argocd.bank.internal
+--grpc-web --sso`, which opens a browser and listens on `localhost:8085`.
+Argo CD's `oidc.config` names the realm's issuer, the public client `argocd`
+with PKCE and the scopes `openid profile email groups`, and no secret (The
+realm, above). The server checks Keycloak's certificate against the private
+root without it being in git: it mounts the namespace's `private-ca`
+ConfigMap and adds it to Go's system trust with `SSL_CERT_DIR`, so
+`oidc.config` has no `rootCA`. Groups are matched by full path, leading
+slash included. Nobody else from Keycloak gets a role.
+
+Or as the local `admin`, kept until the milestone's login through Keycloak
+has passed, once the laptop trusts the private root (The private CA,
 above). The gateway serves HTTP/1.1 to the server, so the CLI needs
 `--grpc-web`; without it the CLI warns and falls back to it.
 

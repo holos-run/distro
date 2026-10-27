@@ -1,0 +1,10 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Instance
+metadata:
+    name: holos
+    namespace: keycloak
+spec:
+    credentialsSecretRef:
+        name: holos-controller-keycloak-creds
+    realm: holos
+    url: https://keycloak.bank.internal

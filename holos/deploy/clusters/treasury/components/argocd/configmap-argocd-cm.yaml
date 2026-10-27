@@ -5,6 +5,16 @@ data:
   application.resourceTrackingMethod: annotation
   application.sync.impersonation.enabled: "false"
   exec.enabled: "false"
+  oidc.config: |
+    name: Keycloak
+    issuer: https://keycloak.bank.internal/realms/holos
+    clientID: argocd
+    enablePKCEAuthentication: true
+    requestedScopes:
+      - openid
+      - profile
+      - email
+      - groups
   resource.customizations.health.argoproj.io_Application: |-
     hs = {}
     hs.status = "Progressing"
