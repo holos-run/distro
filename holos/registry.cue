@@ -91,6 +91,11 @@ registry: [
 	{name: "ceph-csi-rbd"},
 	// local-path is the node-local fallback StorageClass, not the default.
 	{name: "local-path"},
+	// rustfs is the S3 store, RustFS standalone. It claims a ceph-rbd
+	// volume and generates its keys with ExternalSecrets, so it comes after
+	// ceph-csi-rbd and external-secrets; its Job registers the consumers'
+	// buckets and users once RustFS is up.
+	{name: "rustfs"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits

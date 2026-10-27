@@ -98,6 +98,7 @@ old one and every webhook call is refused. Then change the router's
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
+| `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `substrate` and `quay` buckets and users |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -819,16 +820,43 @@ it (Q48):
   one re-created without `target.immutable` onto an existing Secret. Every
   other `Ready=False` is `Degraded`, a missing generator's included.
 
-To rotate a generated secret, delete the Secret by hand, then the
-`ExternalSecret`. Deleting the Secret alone writes nothing: with `Orphan`
-and `CreatedOnce`, an `ExternalSecret` that has synced never writes again.
-The `ExternalSecret` Argo CD re-creates (or `kubectl apply` does) has not
-synced, and writes a new Secret at once. Restart the workloads that read
-it.
+To rotate a generated secret, first stop every pod that names it, on
+every node, and wait until they are gone; then delete the Secret by hand,
+then the `ExternalSecret`; then start the pods again.
+
+- **Stop the pods first.** The kubelet does not watch an immutable Secret.
+  It keeps the copy it fetched for as long as any pod on the node names
+  the Secret, running or finished, and gives that copy to every new pod
+  there. A pod started on such a node after the rotation gets the old
+  value, while pods on other nodes get the new one. A rolling restart is
+  not enough, and neither is a `Recreate` Deployment: its new pod can
+  start before the kubelet has let go of the old one. Scale the
+  workloads to 0, delete finished Job pods, and wait for the pods to be
+  deleted.
+- **Pause Argo CD first.** Self-heal puts a scaled-down workload back at
+  once. Turn automation off on the root, `argocd-apps`, so it does not
+  restore the next one, and then on the component's `Application`; a
+  sync of `argocd-apps` turns both back on.
+- **Delete the Secret, then the `ExternalSecret`.** Deleting the Secret
+  alone writes nothing: with `Orphan` and `CreatedOnce`, an
+  `ExternalSecret` that has synced never writes again. The
+  `ExternalSecret` Argo CD re-creates (or `kubectl apply` does) has not
+  synced, and writes a new Secret at once.
 
 ```sh
+for a in argocd-apps <app>; do
+  kubectl -n argocd patch application $a --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'
+done
+kubectl -n <ns> scale deploy/<workload> --replicas=0
+kubectl -n <ns> delete job --field-selector status.successful=1
+kubectl -n <ns> wait --for=delete pod -l <workload's selector> --timeout=5m
+kubectl get pods -A -o json | jq -r --arg s <name> '.items[] | select(
+  ([.spec.containers[], .spec.initContainers[]? | (.env[]?.valueFrom.secretKeyRef.name,
+    .envFrom[]?.secretRef.name)] + [.spec.volumes[]?.secret.secretName]) | index($s)) |
+  "\(.metadata.namespace)/\(.metadata.name)"'   # nothing, in <ns>
 kubectl -n <ns> delete secret <name>
-kubectl -n <ns> delete externalsecret <name>   # Argo CD re-creates it, with a new password
+kubectl -n <ns> delete externalsecret <name>
+argocd app sync argocd-apps   # automation back on; <app> then syncs: a new ExternalSecret, and replicas back
 ```
 
 Check the mechanism with a throwaway generated secret, rendered from the
@@ -864,6 +892,95 @@ kubectl -n eso-test get externalsecret eso-test -o yaml |
   kubectl -n argocd exec -i $P -- sh -c 'cat > /tmp/es.yaml'
 kubectl -n argocd exec $P -- argocd admin settings resource-overrides health /tmp/es.yaml \
   --load-cluster-settings --namespace argocd                       # STATUS: Healthy
+```
+
+### RustFS
+
+`rustfs` is the base's one S3 store: RustFS 1.0.4 from the `rustfs` chart
+1.0.4 (https://charts.rustfs.com), in standalone mode, a Deployment of one
+pod and one 50Gi claim on `ceph-rbd`, so the store follows its pod to any
+worker. The image is pinned by tag. The S3 API is the ClusterIP Service
+`rustfs-svc.rustfs.svc:9000`, path-style, region `us-east-1`; the console
+listens on 9001 in the cluster only. No route reaches either from outside.
+The claim carries `Prune=false,Delete=false`: `ceph-rbd` reclaims with
+`Delete`, so pruning it would drop every bucket. Logs go to stdout, not to
+a second volume, and RustFS's check for a newer release is off. RustFS
+logs that its storage class has no parity, which is so for one drive: the
+redundancy is Ceph's.
+
+`rustfs` is in the mesh (`istio.io/dataplane-mode=ambient`), like `hello`:
+a client in the mesh reaches it over HBONE, and one outside, such as
+Substrate's `ate-system`, in plaintext through ztunnel.
+
+Every key is generated in the cluster with `#GeneratedSecret` (Generated
+secrets, above), each a `Password` generator with two `secretKeys`, 32
+letters and digits each:
+
+- `rustfs-root`, keys `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`, the root
+  user. The chart passes the Secret whole to RustFS (`secret.existingSecret`).
+- `rustfs-substrate` and `rustfs-quay`, keys `access-key` and `secret-key`,
+  one per consumer. The access key is the user's name in RustFS.
+
+Job `rustfs-register` registers them with RustFS's own client, `rc`
+(`rustfs/rc`), whose `admin` commands speak RustFS's IAM API. For each
+consumer it creates the bucket, writes a policy of the same name, adds
+the user with the Secret's keys (which resets the secret key of a user
+that exists), attaches the policy, and removes any other user holding the
+policy. The policy allows listing the bucket, its location and its
+multipart uploads, and reading, writing and deleting its objects,
+multipart included, and nothing else: a consumer cannot set the bucket's
+policy, open it to anonymous access, or delete it. The Job mints nothing,
+and every step converges. It is an Argo CD `PostSync` hook, so every sync
+of `rustfs` creates it once RustFS is `Healthy`; on a rebuilt cluster,
+whose keys are new, it makes users that match. Its delete policy is
+`BeforeHookCreation,HookSucceeded`: it is deleted, with its pod, as soon
+as it succeeds, so no finished pod keeps a node's copy of the Secrets
+alive (below). A failed Job stays, for its logs, until the next sync. The consumers' copies, in their own namespaces, come
+from the per-namespace stores, not from here.
+
+To rotate a consumer's key, rotate its Secret as above. Only the Job's
+pods name it, and they are gone once it succeeds, so there is nothing to
+scale down or pause: check that no pod names it, rotate, and sync
+`rustfs` (`argocd app sync rustfs`). The Job adds the new user and
+removes the old one, whose access key no longer matches, so the old key
+stops working at once; then rotate the consumer's copy.
+
+```sh
+kubectl -n rustfs get pods                      # rustfs only; no rustfs-register
+kubectl -n rustfs delete secret rustfs-substrate
+kubectl -n rustfs delete externalsecret rustfs-substrate
+argocd app sync rustfs
+```
+
+To rotate the root, follow the whole procedure above for `rustfs-root`,
+with the `rustfs` Application and `deploy/rustfs` scaled to 0. IAM and
+the buckets live on the volume, not in the root's keys, so the users
+survive it. Afterwards the pod's keys match the Secret's:
+
+```sh
+for k in RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY; do
+  [ "$(kubectl -n rustfs get secret rustfs-root -o jsonpath="{.data.$k}" | base64 -d)" = \
+    "$(kubectl -n rustfs exec deploy/rustfs -c rustfs -- printenv $k)" ] && echo "$k matches"
+done
+```
+
+Check the store, the Job and the policies, with a pod holding the
+consumers' keys:
+
+```sh
+kubectl -n rustfs get pods,pvc          # rustfs Running; rustfs-data Bound on ceph-rbd
+kubectl -n rustfs get secret -o custom-columns='NAME:.metadata.name,IMMUTABLE:.immutable,OWNER:.metadata.ownerReferences'
+kubectl -n rustfs run s3-test --image=docker.io/rustfs/rc:v0.1.36 --restart=Never \
+  --overrides='{"spec":{"containers":[{"name":"s3-test","image":"docker.io/rustfs/rc:v0.1.36",
+    "command":["sleep","3600"],"env":[
+      {"name":"AK","valueFrom":{"secretKeyRef":{"name":"rustfs-substrate","key":"access-key"}}},
+      {"name":"SK","valueFrom":{"secretKeyRef":{"name":"rustfs-substrate","key":"secret-key"}}},
+      {"name":"RC_HOST_s","value":"http://$(AK):$(SK)@rustfs-svc.rustfs.svc:9000"}]}]}}'
+kubectl -n rustfs wait --for=condition=Ready pod/s3-test
+kubectl -n rustfs exec s3-test -- sh -c 'echo hi > /tmp/x &&
+  rc cp /tmp/x s/substrate/x && rc cat s/substrate/x && rc rm s/substrate/x
+  rc ls s/quay/; rc anonymous set public s/substrate'   # hi, then AccessDenied twice
+kubectl -n rustfs delete pod s3-test     # it names rustfs-substrate, so it must not outlive the check
 ```
 
 ## Render
