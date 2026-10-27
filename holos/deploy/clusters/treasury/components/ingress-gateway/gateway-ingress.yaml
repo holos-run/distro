@@ -48,6 +48,7 @@ spec:
                           values:
                             - cert-manager
                             - cnpg-system
+                            - external-secrets
                             - istio-system
           hostname: '*.webhooks.treasury.bank.internal'
           name: webhooks

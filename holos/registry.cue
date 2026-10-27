@@ -71,6 +71,13 @@ registry: [
 	// ClusterIssuer, and its webhook's TLSRoute is in its namespace, so it
 	// comes after private-ca and before ingress-gateway.
 	{name: "cloudnative-pg"},
+	// external-secrets is the External Secrets operator, its CRDs and its
+	// webhook; components generate their own secrets with it
+	// (#GeneratedSecret). Its webhook certificate is a cert-manager
+	// Certificate from the private-ca ClusterIssuer, and its webhook's
+	// TLSRoute is in its namespace, so it comes after private-ca and before
+	// ingress-gateway.
+	{name: "external-secrets"},
 	// ingress-gateway is the ingress Gateway, its wildcard certificate and
 	// the routes of components that come before it. It needs the Gateway API
 	// CRDs, the private-ca ClusterIssuer and istiod's istio GatewayClass.

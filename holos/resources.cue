@@ -15,8 +15,6 @@ import (
 	gwv1 "gateway.networking.k8s.io/gateway/v1"
 	app "argoproj.io/application/v1alpha1"
 	ap "argoproj.io/appproject/v1alpha1"
-	es "external-secrets.io/externalsecret/v1beta1"
-	ss "external-secrets.io/secretstore/v1beta1"
 )
 
 #Resources: {
@@ -34,7 +32,6 @@ import (
 	ConfigMap?: [_]:          corev1.#ConfigMap
 	CronJob?: [_]:            batchv1.#CronJob
 	Deployment?: [_]:         appsv1.#Deployment
-	ExternalSecret?: [_]:     es.#ExternalSecret
 	HTTPRoute?: [_]:          hrv1.#HTTPRoute
 	Job?: [_]:                batchv1.#Job
 	Namespace?: [_]:          corev1.#Namespace
@@ -43,7 +40,6 @@ import (
 	RoleBinding?: [_]:        rbacv1.#RoleBinding
 	Issuer?: [_]:             issuer.#Issuer
 	Secret?: [_]:             corev1.#Secret
-	SecretStore?: [_]:        ss.#SecretStore
 	Service?: [_]:            corev1.#Service
 	ServiceAccount?: [_]:     corev1.#ServiceAccount
 	StatefulSet?: [_]:        appsv1.#StatefulSet
@@ -54,6 +50,14 @@ import (
 	CiliumClusterwideNetworkPolicy?: [_]: {apiVersion: "cilium.io/v2", ...}
 	CiliumL2AnnouncementPolicy?: [_]: {apiVersion: "cilium.io/v2alpha1", ...}
 	CiliumLoadBalancerIPPool?: [_]: {apiVersion: "cilium.io/v2", ...}
+
+	// External Secrets' generated schemas here are from 0.10, which served
+	// v1beta1; 2.x serves only v1, and generators v1alpha1. These entries
+	// pin the served API versions and leave the rest to the API server's
+	// validation.
+	ExternalSecret?: [_]: {apiVersion: "external-secrets.io/v1", ...}
+	SecretStore?: [_]: {apiVersion: "external-secrets.io/v1", ...}
+	Password?: [_]: {apiVersion: "generators.external-secrets.io/v1alpha1", ...}
 
 	// trust-manager's Bundle has no generated CUE schema here either.
 	Bundle?: [_]: {apiVersion: "trust.cert-manager.io/v1alpha1", ...}

@@ -93,6 +93,7 @@ old one and every webhook call is refused. Then change the router's
 | `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
 | `ztunnel` | Ambient's node proxy on every worker |
 | `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks reached through the gateway; no `Cluster` |
+| `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook reached through the gateway; no store, no `ExternalSecret` |
 | `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, and the admission webhooks' TLS passthrough listener and `TLSRoute`s |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
@@ -178,8 +179,8 @@ certificate, and its host entry applied to a running control plane with
 `talosctl`: Argo CD does not reach the machine config. cert-manager's
 cainjector fills each configuration's `caBundle`; it does so for a URL as it
 does for a Service. istiod fills its own (see Istio below). CloudNativePG
-would fill its own too, with a CA of its own, and is told not to
-(CloudNativePG, below).
+and External Secrets would fill their own too, each with a CA of its own,
+and are told not to (CloudNativePG and External Secrets, below).
 
 A webhook call costs little: a server-side dry run of a `Certificate` takes
 about 110 ms, a `ConfigMap`'s about 160 ms. While nothing answers on 9443 the
@@ -230,6 +231,24 @@ spec:
   postgresql: {parameters: {listen_addresses: "*"}}
 YAML
 # admission webhook \"vcluster.cnpg.io\" denied the request: Cluster.postgresql.cnpg.io \"bad\" is invalid
+kubectl create --dry-run=server -f - <<'YAML'
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata: {name: bad, namespace: default}
+spec:
+  target: {creationPolicy: Merge, deletionPolicy: Delete}
+  dataFrom: [{sourceRef: {generatorRef: {kind: Password, name: bad}}}]
+YAML
+# admission webhook "validate.externalsecret.external-secrets.io" denied the request: deletionPolicy=Delete must not be used ...
+kubectl create --dry-run=server -f - <<'YAML'
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata: {name: bad}
+spec:
+  provider: {fake: {data: []}}
+  conditions: [{namespaceRegexes: ["("]}]
+YAML
+# admission webhook "validate.clustersecretstore.external-secrets.io" denied the request: failed to compile 0th namespace regex ...
 kubectl -n kube-system logs kube-apiserver-treasury-cp-1 --since=10m | grep -c 'failing open'   # 0
 ```
 
@@ -243,7 +262,7 @@ address with the webhook's own certificate, and a name no route matches is
 reset:
 
 ```sh
-for h in cert-manager-webhook.cert-manager cnpg-webhook-service.cnpg-system istiod.istio-system trust-manager.cert-manager; do
+for h in cert-manager-webhook.cert-manager cnpg-webhook-service.cnpg-system external-secrets-webhook.external-secrets istiod.istio-system trust-manager.cert-manager; do
   echo | openssl s_client -connect 10.20.0.30:9443 -servername $h.webhooks.treasury.bank.internal 2>/dev/null |
     openssl x509 -noout -ext subjectAltName
 done
@@ -252,7 +271,8 @@ done
 With `Fail`, every webhook depends on the Gateway and on istiod, which
 programs it: while the gateway's Pods are down, a request a webhook matches
 is refused, such as any write of a cert-manager resource, a `Bundle`, an
-Istio resource or a CloudNativePG resource. Pods and other core objects are
+Istio resource or a CloudNativePG resource, and any write or delete of an
+`ExternalSecret` or a store. Pods and other core objects are
 not matched (the sidecar injector matches only Pods that ask for a sidecar),
 so the gateway and istiod can always be restarted.
 
@@ -377,7 +397,8 @@ entry in the registry, for its cluster:
   the next. Once created, each `Application` polls `main` and syncs on its
   own, so a later merge syncs the components it touches in parallel, and a
   component whose dependency is not ready yet relies on its retry. The
-  `AppProject` is wave -1.
+  `AppProject` is wave -1. `argocd-cm` also overrides Argo CD's health check
+  for `ExternalSecret`, for generated secrets (External Secrets, below).
 - Every `Application` syncs automatically, with `prune` and `selfHeal`: a
   change made by hand is reverted, and an object the render no longer has is
   deleted. Pruning considers only objects carrying the `Application`'s
@@ -546,7 +567,8 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   mode: the gateway reads the SNI and forwards the connection, and the
   webhook's Pods terminate TLS. It accepts only `TLSRoute`s, and only from the
   namespaces of the Services in `webhooks.cue` (`cert-manager`,
-  `cnpg-system`, `istio-system`), selected by `kubernetes.io/metadata.name`.
+  `cnpg-system`, `external-secrets`, `istio-system`), selected by
+  `kubernetes.io/metadata.name`.
   This component renders one `TLSRoute` per entry from the registry, in the
   entry's own namespace, matching its hostname and forwarding to the
   Service's port.
@@ -699,6 +721,149 @@ kubectl -n cnpg-test logs psql            # app|app
 PV=$(kubectl -n cnpg-test get pvc pg-1 -o jsonpath='{.spec.volumeName}')
 kubectl delete ns cnpg-test
 kubectl wait --for=delete --timeout=2m pv/$PV
+```
+
+### External Secrets
+
+`external-secrets` is the External Secrets operator, ESO, alone: v2.14.0
+from the `external-secrets` chart 2.14.0, in `external-secrets`, watching
+every namespace. It renders no `SecretStore` and no `ExternalSecret`: a
+component generates its own secrets with `#GeneratedSecret`, below, and the
+stores that read from outside the cluster come with the Secrets Manager. The
+controller and the webhook are one replica each, Deployments with no
+tolerations, so the control plane's taint keeps them on the workers. Their
+pods meet the restricted Pod Security standard, so `external-secrets` needs
+no label. The ServiceMonitor, the Grafana dashboard and the Bitwarden SDK
+server are off, their defaults.
+
+Its webhook validates `ExternalSecret`s, `SecretStore`s and
+`ClusterSecretStore`s, on create, update and delete, and follows the
+platform's model (Admission webhooks, above), but not with the chart's own
+certificate. By default the chart deploys a cert-controller that makes a CA
+and a serving certificate for the Service's cluster names only, into Secret
+`external-secrets-webhook`, and writes that CA into both configurations'
+`caBundle` and the CRDs'. The component sets `certController.create: false`
+and `webhook.certManager.enabled: true`, which drops the cert-controller
+and that Secret from the output and puts `cert-manager.io/inject-ca-from:
+external-secrets/external-secrets-webhook` on both configurations, so
+cainjector writes the private root into their `caBundle` and nothing else
+writes it. The chart's own `Certificate` has no setting for another DNS
+name, so it is off too, and the component renders `Certificate`
+`external-secrets-webhook`, which `private-ca` issues for the Service's
+`.svc` name and the webhook hostname into the Secret the webhook mounts.
+The webhook mints and rotates nothing: it serves the Secret's files,
+reloads them when the kubelet updates them, and every five minutes checks
+they chain to `ca.crt` and are valid for the `.svc` name at now plus
+`--lookahead-interval`. Its default, 90 days, is longer than the
+certificate's whole life, so the webhook would stop five minutes after it
+started; the component sets one hour, the margin its readiness check
+uses.
+
+No CRD has a conversion webhook: since 2.0 each serves one version, and
+the chart renders no `spec.conversion` (`crds.conversion.enabled` is
+false, its default, which would only add an `inject-ca-from` annotation).
+The chart puts `argocd.argoproj.io/sync-options: Prune=false,Delete=false`
+on every CRD (`crds.annotations`): Argo CD ignores
+`helm.sh/resource-policy: keep`, and deleting a CRD deletes every resource
+of its kind, generated secrets' `ExternalSecret`s and generators with it.
+
+The component comes before `ingress-gateway` in the registry: its
+`TLSRoute`, which `ingress-gateway` renders, is in `external-secrets`, so
+the namespace must exist first. It needs only cert-manager and
+`private-ca`.
+
+#### Generated secrets
+
+A secret the platform can mint for itself, such as a database or an admin
+password, is generated in the cluster by an ESO generator, not made by hand
+or by a Job (interview Q46). `#GeneratedSecret`
+(`components/generated-secret.cue`) renders one from a name, a namespace
+and, optionally, the generator's kind and spec:
+
+```cue
+resources: (#GeneratedSecret & {
+	name:      "rustfs-root"
+	namespace: "rustfs"
+	// generator: spec: {length: 48, secretKeys: ["access-key", "secret-key"]}
+	// generator: {kind: "UUID", spec: {}}
+}).resources
+```
+
+It renders a `Password` generator, by default 32 letters and digits under
+the key `password`, and an `ExternalSecret` of the same name with
+`refreshPolicy: CreatedOnce`, `target.creationPolicy: Orphan` and
+`target.immutable: true`, which writes Secret `<name>` once. Both carry
+`argocd.argoproj.io/sync-options: Prune=false,Delete=false`.
+
+The rule (Q47): a generated secret survives a delete and re-create of its
+`ExternalSecret` or its generator, by hand or by Argo CD, and is
+regenerated only when the cluster is rebuilt, so nothing backs it up
+outside the cluster. It lives in its consumer's namespace, which nothing
+here protects: deleting the namespace deletes the Secret. Three layers hold
+it (Q48):
+
+- The Secret has no owner reference, so deleting the `ExternalSecret`
+  leaves it, and it is immutable, so the API server refuses any change to
+  its data. A re-created `ExternalSecret` finds it; ESO, seeing an
+  immutable target, leaves its data alone and reports it synced. The new
+  password the generator makes is discarded.
+- Argo CD never prunes or deletes the `ExternalSecret` or the generator,
+  so a rename or a deleted `Application` does not re-create them in the
+  first place.
+- Argo CD's health check for `ExternalSecret`, in the `argocd` component,
+  is its built-in one except that the `Ready=False` ESO sets only because
+  the target is immutable, reason `SecretImmutable` and message `could not
+  update secret, target is immutable: unable to update secret <target>:
+  secret is immutable`, is `Healthy`. ESO 2.14 sets it only for an
+  `ExternalSecret` that would change an immutable Secret's data, such as
+  one re-created without `target.immutable` onto an existing Secret. Every
+  other `Ready=False` is `Degraded`, a missing generator's included.
+
+To rotate a generated secret, delete the Secret by hand, then the
+`ExternalSecret`. Deleting the Secret alone writes nothing: with `Orphan`
+and `CreatedOnce`, an `ExternalSecret` that has synced never writes again.
+The `ExternalSecret` Argo CD re-creates (or `kubectl apply` does) has not
+synced, and writes a new Secret at once. Restart the workloads that read
+it.
+
+```sh
+kubectl -n <ns> delete secret <name>
+kubectl -n <ns> delete externalsecret <name>   # Argo CD re-creates it, with a new password
+```
+
+Check the mechanism with a throwaway generated secret, rendered from the
+definition:
+
+```sh
+cue export ./components --out text -e 'yaml.MarshalStream([for K, V in
+  (#GeneratedSecret & {name: "eso-test", namespace: "eso-test"}).resources
+  for R in V {R}])' > es.yaml
+```
+
+Then:
+
+```sh
+kubectl -n external-secrets get pods -o wide     # controller and webhook, on workers
+kubectl -n external-secrets get secrets          # external-secrets-webhook only
+kubectl create ns eso-test
+kubectl apply --server-side -f es.yaml
+kubectl -n eso-test wait --for=condition=Ready externalsecret/eso-test
+kubectl -n eso-test get secret eso-test -o jsonpath='{.immutable} {.metadata.ownerReferences}{"\n"}'   # true, no owner
+kubectl -n eso-test get secret eso-test -o jsonpath='{.data.password}' | sha256sum
+kubectl -n eso-test delete externalsecret eso-test
+kubectl apply --server-side -f es.yaml           # Ready, SecretSynced; the same sha256sum
+kubectl -n eso-test delete externalsecret,password --all
+kubectl delete ns eso-test                       # the Secret, orphaned on purpose, goes with it
+```
+
+Check a health result with Argo CD's own Lua, from the server's Pod:
+
+```sh
+P=$(kubectl -n argocd get pod -l app.kubernetes.io/name=argocd-server -o name)
+kubectl -n eso-test get externalsecret eso-test -o yaml |
+  kubectl -n argocd exec -i $P -- sh -c 'cat > /tmp/es.yaml'
+kubectl -n argocd exec $P -- argocd admin settings resource-overrides health /tmp/es.yaml \
+  --load-cluster-settings --namespace argocd                       # STATUS: Healthy
 ```
 
 ## Render
@@ -1007,7 +1172,7 @@ kubectl get validatingwebhookconfiguration istio-validator-istio-system \
 kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
 kubectl get ciliumloadbalancerippools            # treasury: 0 available; treasury-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
-kubectl get tlsroute -A                          # cert-manager-webhook, trust-manager, cnpg-webhook-service, istiod
+kubectl get tlsroute -A                          # cert-manager-webhook, trust-manager, cnpg-webhook-service, external-secrets-webhook, istiod
 kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
   -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy'   # Fail everywhere
 
