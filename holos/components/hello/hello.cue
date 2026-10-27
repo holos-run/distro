@@ -19,10 +19,6 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		Deployment: (Name): {
 			metadata: namespace: Name
-			// A label on the Deployment alone, not its pods, so changing it
-			// rolls nothing out: the milestone's test of a change through
-			// git (README, Syncing).
-			metadata: labels: "holos.run/gitops-test": "signed"
 			spec: {
 				selector: matchLabels: Labels
 				template: {
