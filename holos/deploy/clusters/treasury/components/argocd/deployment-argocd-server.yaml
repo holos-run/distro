@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/cm: 2b7cc3f1bd414d2c4c86075b71928e73e8a59ac7bc902d5e86e0e2cdb58acf5b
+        checksum/cm: 603890b21f4f49af390b020f3399439b867173258620da2f48f9f7906dfdb477
         checksum/cmd-params: c31282ad3f73d2caee1ed74caa2cf0a37088b89596a84f023a67ad9228351442
       labels:
         app.kubernetes.io/component: server
@@ -48,6 +48,8 @@ spec:
         - --port=8080
         - --metrics-port=8083
         env:
+        - name: SSL_CERT_DIR
+          value: /etc/ssl/certs:/etc/ssl/private-ca
         - name: ARGOCD_SERVER_NAME
           value: argocd-server
         - name: GRPC_ENABLE_TXT_SERVICE_CONFIG
@@ -401,6 +403,9 @@ spec:
           seccompProfile:
             type: RuntimeDefault
         volumeMounts:
+        - mountPath: /etc/ssl/private-ca
+          name: private-ca
+          readOnly: true
         - mountPath: /app/config/ssh
           name: ssh-known-hosts
         - mountPath: /app/config/tls
@@ -423,6 +428,10 @@ spec:
       serviceAccountName: argocd-server
       terminationGracePeriodSeconds: 30
       volumes:
+      - configMap:
+          name: private-ca
+          optional: true
+        name: private-ca
       - emptyDir: {}
         name: plugins-home
       - emptyDir: {}

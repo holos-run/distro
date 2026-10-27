@@ -1,0 +1,9 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Group
+metadata:
+    name: platform-owners
+    namespace: keycloak
+spec:
+    instanceRef:
+        name: holos
+    path: platform/owners

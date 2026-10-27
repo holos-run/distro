@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    name: instance-cabundle
+    namespace: keycloak
+rules:
+    - apiGroups:
+        - keycloak.holos.run
+      resourceNames:
+        - holos
+      resources:
+        - instances
+      verbs:
+        - get
+        - patch

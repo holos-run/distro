@@ -20,6 +20,10 @@ registry: [...#Registration]
 	// syncOptions are added to the Application's sync options, after the
 	// ones every Application has.
 	syncOptions: [...string]
+	// ignoreDifferences are the Application's: fields Argo CD neither
+	// reports out of sync nor heals, such as one a Job writes after the
+	// sync.
+	ignoreDifferences: [...{...}]
 }
 
 registry: [
@@ -104,6 +108,28 @@ registry: [
 	// CRDs of cloudnative-pg, external-secrets and keycloak-operator, a
 	// ceph-rbd volume and the Gateway, so it comes after all of them.
 	{name: "keycloak"},
+	// holos-controller reconciles the realm's groups, memberships, users and
+	// clients from keycloak.holos.run resources: its CRDs, its RBAC and its
+	// manager. It needs only the mesh; its credential and resources are
+	// keycloak-realm's, after it, so its CRDs are established first.
+	{name: "holos-controller"},
+	// keycloak-realm is the realm holos: the KeycloakRealmImport and its
+	// generated Secrets, holos-controller's credential, the Instance, the
+	// platform's groups and memberships, and the PostSync Job that writes
+	// the private root into the Instance's caBundle (interview Q52). Argo CD
+	// ignores the field it writes, which no render carries. The names are
+	// HolosController.instance's (components/keycloak.cue), which the
+	// platform, rendering from here, does not load.
+	{
+		name: "keycloak-realm"
+		ignoreDifferences: [{
+			group:     "keycloak.holos.run"
+			kind:      "Instance"
+			name:      "holos"
+			namespace: "keycloak"
+			jsonPointers: ["/spec/caBundle"]
+		}]
+	},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits
