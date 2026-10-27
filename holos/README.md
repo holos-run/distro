@@ -1422,6 +1422,18 @@ ConfigMap and adds it to Go's system trust with `SSL_CERT_DIR`, so
 `oidc.config` has no `rootCA`. Groups are matched by full path, leading
 slash included. Nobody else from Keycloak gets a role.
 
+That member is the realm's one user, `jeff` (`jeff@bank.internal`), imported
+with the realm and put in `/platform/owners` by holos-controller (The realm,
+above). Log in as `jeff`, with the generated password from the `keycloak`
+namespace:
+
+```sh
+kubectl -n keycloak get secret holos-user-jeff -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+Argo CD's **User Info** page, or `argocd account get-user-info`, then shows
+`/platform/owners` under Groups, with the leading slash.
+
 Or as the local `admin`, kept until the milestone's login through Keycloak
 has passed, once the laptop trusts the private root (The private CA,
 above). The gateway serves HTTP/1.1 to the server, so the CLI needs
