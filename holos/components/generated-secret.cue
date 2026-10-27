@@ -38,10 +38,14 @@ package holos
 //     would change an immutable Secret's data, such as one re-created
 //     without target.immutable; every other error is Degraded.
 //
-// To rotate, delete the Secret by hand, then the ExternalSecret: an
-// ExternalSecret that has synced never writes again, even with its Secret
-// gone, but the one Argo CD re-creates has not (README.md, External
-// Secrets).
+// To rotate, first make sure no pod on any node names the Secret: scale its
+// workloads to 0 and delete finished Job pods, and wait for the pods to be
+// gone. The kubelet does not watch an immutable Secret; it keeps the copy it
+// fetched for as long as any pod on the node names it, and gives that copy,
+// the old value, to every new pod there. Then delete the Secret by hand, then
+// the ExternalSecret: an ExternalSecret that has synced never writes again,
+// even with its Secret gone, but the one Argo CD re-creates has not. Then
+// start the workloads again (README.md, External Secrets).
 #GeneratedSecret: {
 	// name is the Secret's, the ExternalSecret's and the generator's.
 	name: string
@@ -52,7 +56,9 @@ package holos
 	// namespaced kind from generators.external-secrets.io. spec is the
 	// kind's spec, from its CRD in the external-secrets component's chart.
 	generator: {
-		kind: *"Password" | "ACRAccessToken" | "BeyondtrustWorkloadCredentialsDynamicSecret" | "CloudsmithAccessToken" | "ECRAuthorizationToken" | "Fake" | "GCRAccessToken" | "GithubAccessToken" | "GitlabDeployToken" | "Grafana" | "MFA" | "QuayAccessToken" | "SSHKey" | "STSSessionToken" | "UUID" | "VaultDynamicSecret" | "Webhook"
+		// #GeneratorKinds is in resources.cue, beside the entries that let
+		// each kind render.
+		kind: *"Password" | or(#GeneratorKinds)
 		spec: {...}
 
 		// A Password is 32 characters from letters and digits, about 187

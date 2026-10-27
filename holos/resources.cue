@@ -54,10 +54,16 @@ import (
 	// External Secrets' generated schemas here are from 0.10, which served
 	// v1beta1; 2.x serves only v1, and generators v1alpha1. These entries
 	// pin the served API versions and leave the rest to the API server's
-	// validation.
-	ExternalSecret?: [_]: {apiVersion: "external-secrets.io/v1", ...}
-	SecretStore?: [_]: {apiVersion: "external-secrets.io/v1", ...}
-	Password?: [_]: {apiVersion: "generators.external-secrets.io/v1alpha1", ...}
+	// validation. metadata is opened too: the pattern above closes it to
+	// name alone, and these kinds are namespaced, so without it a
+	// #GeneratedSecret's resources fail to unify with a component's own
+	// #Resources and #HelmArtifact silently drops them all. Every generator
+	// kind #GeneratedSecret accepts gets the same entry.
+	ExternalSecret?: [_]: {apiVersion: "external-secrets.io/v1", metadata: {...}, ...}
+	SecretStore?: [_]: {apiVersion: "external-secrets.io/v1", metadata: {...}, ...}
+	for K in #GeneratorKinds {
+		(K)?: [_]: {apiVersion: "generators.external-secrets.io/v1alpha1", metadata: {...}, ...}
+	}
 
 	// trust-manager's Bundle has no generated CUE schema here either.
 	Bundle?: [_]: {apiVersion: "trust.cert-manager.io/v1alpha1", ...}
@@ -66,3 +72,8 @@ import (
 		spec: gatewayClassName: string | *"istio"
 	}
 }
+
+// #GeneratorKinds are the namespaced generator kinds of
+// generators.external-secrets.io that ESO 2.14 serves, the kinds
+// #GeneratedSecret (components/generated-secret.cue) accepts.
+#GeneratorKinds: ["ACRAccessToken", "BeyondtrustWorkloadCredentialsDynamicSecret", "CloudsmithAccessToken", "ECRAuthorizationToken", "Fake", "GCRAccessToken", "GithubAccessToken", "GitlabDeployToken", "Grafana", "MFA", "Password", "QuayAccessToken", "SSHKey", "STSSessionToken", "UUID", "VaultDynamicSecret", "Webhook"]
