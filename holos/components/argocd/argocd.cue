@@ -97,6 +97,53 @@ holos: spec: artifacts: [(#HelmArtifact & {
 					end
 					return hs
 					"""
+
+				// Argo CD's built-in check for ExternalSecret (v3.5.6,
+				// resource_customizations/external-secrets.io/ExternalSecret),
+				// which the first Ready condition decides, with one
+				// exception: the Ready=False ESO 2.14 sets only because the
+				// target Secret is immutable and the ExternalSecret would
+				// change its data is Healthy. A generated secret
+				// (#GeneratedSecret) is immutable on purpose, and an
+				// ExternalSecret re-created onto it must not hold up a sync
+				// or a rebuild for keeping it. The match is the reason,
+				// SecretImmutable, and the whole message ESO writes for it
+				// (msgErrorUpdateImmutable, then errUpdate wrapping
+				// ErrSecretImmutable) for this ExternalSecret's target, built
+				// by concatenation: Argo CD's Lua has no string library.
+				// Every other Ready=False is Degraded, as before.
+				"resource.customizations.health.external-secrets.io_ExternalSecret": """
+					local hs = {}
+					local target = obj.metadata.name
+					if obj.spec ~= nil and obj.spec.target ~= nil and obj.spec.target.name ~= nil and obj.spec.target.name ~= "" then
+					  target = obj.spec.target.name
+					end
+					local immutable = "could not update secret, target is immutable: unable to update secret " .. target .. ": secret is immutable"
+					if obj.status ~= nil then
+					  if obj.status.conditions ~= nil then
+					    for i, condition in ipairs(obj.status.conditions) do
+					      if condition.type == "Ready" and condition.status == "False" then
+					        if condition.reason == "SecretImmutable" and condition.message == immutable then
+					          hs.status = "Healthy"
+					          hs.message = "Secret " .. target .. " is immutable and kept as it is"
+					          return hs
+					        end
+					        hs.status = "Degraded"
+					        hs.message = condition.message
+					        return hs
+					      end
+					      if condition.type == "Ready" and condition.status == "True" then
+					        hs.status = "Healthy"
+					        hs.message = condition.message
+					        return hs
+					      end
+					    end
+					  end
+					end
+					hs.status = "Progressing"
+					hs.message = "Waiting for ExternalSecret"
+					return hs
+					"""
 			}
 
 			// Diff against the API server's dry run of a server-side apply,

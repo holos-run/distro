@@ -59,6 +59,17 @@ webhookServices: {
 		namespace: "cnpg-system"
 		component: "cloudnative-pg"
 	}
+	// External Secrets' webhook validates its ExternalSecrets, SecretStores
+	// and ClusterSecretStores. Its serving certificate is Secret
+	// external-secrets/external-secrets-webhook, issued by the
+	// external-secrets component's Certificate from the private-ca
+	// ClusterIssuer with the hostname in its dnsNames. The chart's
+	// cert-controller, which would mint a certificate of its own and write
+	// the caBundle, is not deployed, so cainjector alone fills the caBundle.
+	"external-secrets-webhook": {
+		namespace: "external-secrets"
+		component: "external-secrets"
+	}
 	// istiod's webhooks: the validator of Istio's own resources (the istiod
 	// component's istio-validator-istio-system and istio-base's
 	// istiod-default-validator) and the sidecar injector, which ambient leaves
