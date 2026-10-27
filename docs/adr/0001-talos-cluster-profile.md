@@ -158,9 +158,9 @@ For control plane nodes (`patches/controlplane.yaml`):
 Per node, written by the script:
 
 - `topology.kubernetes.io/region`: the Proxmox cluster name, and
-  `topology.kubernetes.io/zone`: the Proxmox node the VM was created on. The
-  Proxmox CSI plugin needs only these two labels, so no Proxmox cloud
-  controller manager is installed.
+  `topology.kubernetes.io/zone`: the Proxmox node the VM was created on. They
+  were set for the Proxmox CSI plugin, which Ceph RBD replaced; nothing reads
+  them now, and they stay as the standard topology labels.
 - `holos.run/nodepool`: the worker's pool, from its `talosvm-pool-<name>` tag.
   "Node pool" is the word GKE and Karpenter use for the same thing.
 

@@ -117,8 +117,16 @@ holos: core.#BuildPlan & {
 // per resource. file is relative to the component's directory. Documents
 // that are not Kubernetes objects, such as a release file's comment-only
 // license header, are dropped.
+//
+// patches, if any, are Kustomize patches applied to the file, which routes
+// it through kubectl kustomize before it is sliced, so the vendored file
+// stays as released.
 #FileArtifact: {
 	file: string
+	patches: [...#KustomizePatch]
+
+	let Kustomized = len(patches) > 0
+	let SliceInput = [if Kustomized {"kustomize-output.yaml"}, "file-output.yaml"][0]
 
 	artifact: core.#Artifact & {
 		artifact: OutputDir
@@ -127,12 +135,23 @@ holos: core.#BuildPlan & {
 			output: "file-output.yaml"
 			"file": source: file
 		}]
-		transformers: [{
-			kind: "Command"
-			inputs: ["file-output.yaml"]
-			output: OutputDir
-			command: args: ["holos", "kubectl-slice", "--skip-non-k8s", "-f", "\(BuildContext.tempDir)/file-output.yaml", "-o", "\(BuildContext.tempDir)/\(OutputDir)"]
-		}]
+		transformers: [
+			if Kustomized {
+				kind: "Kustomize"
+				inputs: ["file-output.yaml"]
+				output: "kustomize-output.yaml"
+				kustomize: kustomization: {
+					"resources": inputs
+					"patches":   patches
+				}
+			},
+			{
+				kind: "Command"
+				inputs: [SliceInput]
+				output: OutputDir
+				command: args: ["holos", "kubectl-slice", "--skip-non-k8s", "-f", "\(BuildContext.tempDir)/\(SliceInput)", "-o", "\(BuildContext.tempDir)/\(OutputDir)"]
+			},
+		]
 	}
 }
 

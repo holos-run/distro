@@ -1,0 +1,27 @@
+allowVolumeExpansion: true
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+  labels:
+    app: ceph-csi-rbd
+    chart: ceph-csi-rbd-3.17.1
+    heritage: Helm
+    release: ceph-csi-rbd
+  name: ceph-rbd
+parameters:
+  clusterID: c9eeedfd-1b9d-4796-aff3-1e6a0e994ff1
+  csi.storage.k8s.io/controller-expand-secret-name: ceph-client-k8s
+  csi.storage.k8s.io/controller-expand-secret-namespace: ceph-csi-rbd
+  csi.storage.k8s.io/controller-publish-secret-name: ceph-client-k8s
+  csi.storage.k8s.io/controller-publish-secret-namespace: ceph-csi-rbd
+  csi.storage.k8s.io/fstype: ext4
+  csi.storage.k8s.io/node-stage-secret-name: ceph-client-k8s
+  csi.storage.k8s.io/node-stage-secret-namespace: ceph-csi-rbd
+  csi.storage.k8s.io/provisioner-secret-name: ceph-client-k8s
+  csi.storage.k8s.io/provisioner-secret-namespace: ceph-csi-rbd
+  imageFeatures: layering,exclusive-lock,object-map,fast-diff
+  pool: k8s-rbd
+provisioner: rbd.csi.ceph.com
+reclaimPolicy: Delete

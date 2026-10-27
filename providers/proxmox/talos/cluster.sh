@@ -130,8 +130,8 @@ gen() {
   while read -r node; do
     name=$(jq -r .name <<<"$node")
     role=$(jq -r .role <<<"$node")
-    # Topology labels for the Proxmox CSI: region is the Proxmox cluster,
-    # zone the Proxmox node the VM runs on. Workers also carry their pool.
+    # Standard topology labels: region is the Proxmox cluster, zone the
+    # Proxmox node the VM runs on. Workers also carry their pool.
     jq -r --arg pool "$POOL_LABEL" '
       "apiVersion: v1alpha1",
       "kind: KubeNodeConfig",

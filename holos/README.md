@@ -94,6 +94,8 @@ old one and every webhook call is refused. Then change the router's
 | `ztunnel` | Ambient's node proxy on every worker |
 | `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, and the admission webhooks' TLS passthrough listener and `TLSRoute`s |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
+| `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
+| `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -552,6 +554,71 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
 - `istio-ingress` is not in ambient: the gateway is its own mesh proxy and
   reaches an ambient workload over HBONE through the workload's ztunnel.
 
+### Storage
+
+Ceph RBD is the default StorageClass and the answer for every volume.
+`ceph-csi-rbd` runs ceph-csi's RBD driver against the Ceph cluster the
+Proxmox hosts already run (Tentacle, three monitors on the hosts'
+10.15.15.0/24 mesh, size-3 pools), so a volume is replicated across the
+hosts, survives losing one, and follows its pod to any worker.
+`clusters.cue` has the Ceph cluster as the site's (`ceph.fsid`,
+`ceph.monitors`) and the pool and Ceph user as the cluster's (`ceph.pool`,
+`ceph.user`): `treasury` uses pool `k8s-rbd` as `client.k8s`, whose caps are
+`profile rbd` on that pool. The driver creates nothing on the Ceph side.
+
+The `ceph-rbd` class is the cluster default: ext4, image features
+`layering,exclusive-lock,object-map,fast-diff`, volume expansion on, reclaim
+policy `Delete`, and `Immediate` binding, since an image attaches to any
+node. Volumes are `ReadWriteOnce`. There is no CephFS, no snapshot controller
+and no `VolumeSnapshotClass`; the provisioner's `csi-snapshotter` sidecar,
+which the chart always renders, is patched out until CNPG backups need it.
+
+- ceph-csi is 3.17.1, not the latest, 3.18.1: from 3.18.0 its image is built
+  on Rocky Linux 10, whose glibc needs x86-64-v3, and the garage's Xeon
+  E5-2670 hosts have no AVX2, so the plugin exits with `Fatal glibc error:
+  CPU does not support x86-64-v3`. 3.17.1 is on CentOS Stream 9 with
+  Tentacle's client libraries.
+- The monitors are listed by their v1 addresses, port 6789, which the kernel
+  RBD client maps with by default. RBD is built into the Talos kernel, so the
+  node plugin loads no module; the chart's read-only `/lib/modules` mount is
+  unused. kubelet's directory is Talos's `/var/lib/kubelet`, the chart's
+  default.
+- The node plugin runs privileged with host networking and kubelet's plugin
+  paths, so the component labels `ceph-csi-rbd`
+  `pod-security.kubernetes.io/enforce=privileged`. The node plugin's
+  DaemonSet and the provisioner carry Cilium's affinity,
+  `holos.run/pod-network NotIn [none]`; the provisioner's three replicas take
+  one worker each, by the chart's required pod anti-affinity.
+- ceph-csi registers no admission webhook and no APIService.
+
+The Ceph user's key is never in git, since the repository is public. It is
+in Secret `ceph-csi-rbd/ceph-client-k8s` (`Cluster.ceph.secret`), made by
+hand, which the class's provisioner, controller-expand, controller-publish
+and node-stage secret parameters name. No `Application` tracks it, so Argo CD
+neither prunes nor reverts it; it moves to the management namespace once
+external-secrets is in. A rebuilt cluster needs it before anything can claim
+a volume (Bootstrap Argo CD, below). To make it on a running cluster, without
+the key reaching the terminal:
+
+```sh
+ssh root@r620a ceph auth get-key client.k8s |
+  kubectl -n ceph-csi-rbd create secret generic ceph-client-k8s \
+    --from-literal=userID=k8s --from-file=userKey=/dev/stdin
+```
+
+Without it the driver's pods run and `Application` `ceph-csi-rbd` reports
+`Healthy`, but every claim on `ceph-rbd` stays `Pending`.
+
+local-path is installed beside it but not used without a compelling reason:
+the garage models GKE and EKS, whose clusters provision network block
+storage and ship no host-path provisioner. `local-path` vendors the v0.0.37
+release manifest unmodified, and Kustomize patches put its volumes in
+`/var/local-path-provisioner` (Talos's `/opt`, the release's default, is an
+overlay), label `local-path-storage` privileged (its helper pods mount the
+node's directory as a hostPath), and keep the provisioner off the control
+plane. Its class is `WaitForFirstConsumer` and not the default: a volume is a
+directory on one node, and its pod is pinned there.
+
 ## Render
 
 From this directory:
@@ -607,6 +674,13 @@ kubectl apply --server-side --field-manager=argocd-controller -f $d/argocd/
 kubectl wait --for=condition=Established crd/applications.argoproj.io crd/appprojects.argoproj.io
 kubectl -n argocd rollout status deploy/argocd-repo-server
 kubectl -n argocd rollout status sts/argocd-application-controller
+
+# The Ceph key's Secret, which nothing renders (Storage, above), in the
+# namespace ceph-csi-rbd's Application later takes over.
+kubectl apply --server-side --field-manager=argocd-controller -f $d/ceph-csi-rbd/namespace-ceph-csi-rbd.yaml
+ssh root@r620a ceph auth get-key client.k8s |
+  kubectl -n ceph-csi-rbd create secret generic ceph-client-k8s \
+    --from-literal=userID=k8s --from-file=userKey=/dev/stdin
 
 # The AppProject and the root alone: the root creates the other
 # Applications wave by wave. Applying the whole directory would create them
@@ -789,6 +863,49 @@ kubectl -n ca-test get secret test-tls -o jsonpath='{.data.tls\.crt}' | base64 -
 kubectl -n ca-test get configmap private-ca -o jsonpath='{.data.ca\.crt}' > $t/root.pem
 openssl verify -CAfile $t/root.pem $t/leaf.pem
 kubectl delete ns ca-test
+```
+
+Storage: `ceph-rbd` the only default class, the driver's pods on the
+workers only, and a volume written on one worker read back on another, its
+image in the pool while the claim exists and gone once it is deleted.
+
+```sh
+kubectl get sc                             # ceph-rbd (default), local-path
+kubectl -n ceph-csi-rbd get pods -o wide   # a nodeplugin and a provisioner on each worker
+kubectl create ns storage-test
+kubectl -n storage-test apply -f - <<'EOF'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: rbd}
+spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 1Gi}}}
+EOF
+# pod <name> <node> <command>: a pod on that node with the claim at /data.
+pod() {
+  kubectl -n storage-test apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata: {name: $1}
+spec:
+  nodeName: $2
+  containers:
+  - name: c
+    image: docker.io/library/busybox:1.37.0
+    command: [sh, -c, '$3; sleep 3600']
+    volumeMounts: [{name: d, mountPath: /data}]
+  volumes: [{name: d, persistentVolumeClaim: {claimName: rbd}}]
+EOF
+}
+pod writer treasury-general-1 'hostname > /data/x'
+kubectl -n storage-test wait --for=condition=Ready --timeout=2m pod/writer
+ssh root@r620a rbd ls k8s-rbd              # csi-vol-...
+kubectl -n storage-test delete pod writer
+pod reader treasury-general-3 'cat /data/x'
+kubectl -n storage-test wait --for=condition=Ready --timeout=2m pod/reader
+kubectl -n storage-test logs reader        # writer, the pod that wrote it on general-1
+PV=$(kubectl -n storage-test get pvc rbd -o jsonpath='{.spec.volumeName}')
+kubectl delete ns storage-test
+kubectl wait --for=delete --timeout=2m pv/$PV   # the image goes with the PV
+ssh root@r620a rbd ls k8s-rbd              # empty
 ```
 
 LoadBalancer addresses answer TCP and UDP on the Service's ports only; they
