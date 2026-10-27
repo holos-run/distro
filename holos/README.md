@@ -1344,16 +1344,17 @@ kubectl -n argocd get applications -w
 ```
 
 The `Application`s appear one at a time in registry order, and each reaches
-`Synced` and `Healthy` within a few minutes. Once `private-ca-bundle` is
-`Healthy`, restart the server so it reads the private root, which it needs to
-log in through Keycloak (Logging in, below): its `private-ca` mount is
-optional because the server starts before trust-manager writes the
-ConfigMap, and Go reads the trust pool only at start.
+`Synced` and `Healthy` within a few minutes. The workers turn `Ready` once
+the Cilium agents are up; the control plane stays `NotReady`. Once
+`private-ca-bundle` is `Healthy`, restart the server so it reads the private
+root, which it needs to log in through Keycloak (Logging in, below): its
+`private-ca` mount is optional because the server starts before
+trust-manager writes the ConfigMap, and Go reads the trust pool only at
+start.
 
 ```sh
 kubectl -n argocd rollout restart deploy/argocd-server
-``` The workers turn `Ready` once the Cilium agents are up;
-the control plane stays `NotReady`.
+```
 
 The hand applies use Argo CD's own field manager, `argocd-controller`, so
 Argo CD's first sync finds itself the objects' only manager. Under any other
