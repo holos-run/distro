@@ -2,8 +2,8 @@
 # token holos@pve!distro (privsep 0) talosvm uses.
 #
 # This file is the authoritative list. preflight.sh sets the role to exactly
-# these privileges, and talosvm embeds this file and refuses to create or
-# destroy while the token lacks one of them. When talosvm starts calling a new
+# these privileges, and talosvm embeds this file and refuses to create,
+# restart or destroy while the token lacks one of them. When talosvm starts calling a new
 # Proxmox API endpoint, or sends a new parameter to one it already calls, look
 # up what that needs and add it here with the call that needs it; when a call
 # goes away, remove what only it needed.
@@ -19,7 +19,7 @@
 
 VM.Allocate              # POST /nodes/{node}/qemu (create); DELETE /nodes/{node}/qemu/{vmid}
 VM.Audit                 # GET /cluster/resources?type=vm; GET /nodes/{node}/{qemu,lxc}/{vmid}/config to find addresses in use
-VM.PowerMgmt             # POST /nodes/{node}/qemu/{vmid}/status/start; POST /nodes/{node}/qemu/{vmid}/status/stop
+VM.PowerMgmt             # POST /nodes/{node}/qemu/{vmid}/status/start; POST /nodes/{node}/qemu/{vmid}/status/stop; POST /nodes/{node}/qemu/{vmid}/status/shutdown (restart -mode power-cycle)
 VM.Config.CPU            # POST /nodes/{node}/qemu cpu, sockets, cores
 VM.Config.Memory         # POST /nodes/{node}/qemu memory, balloon
 VM.Config.HWType         # POST /nodes/{node}/qemu machine, scsihw, serial0=socket

@@ -22,9 +22,11 @@ type Runner struct {
 	Config  Config
 	Out     io.Writer
 	// DryRun makes create and destroy print the calls they would send and
-	// send none of them. Everything before that, reading Proxmox and posting
-	// the schematic to Image Factory, still happens, since none of it changes
-	// anything and the printed calls are only exact because of it.
+	// send none of them, and restart print every node's steps and take
+	// none. Everything before that, reading Proxmox and the cluster and
+	// posting the schematic to Image Factory, still happens, since none of
+	// it changes anything and the printed calls are only exact because of
+	// it.
 	DryRun bool
 	// SnippetsDir is the local mount of SnippetStorage's snippets directory.
 	SnippetsDir string
@@ -35,8 +37,8 @@ func (r *Runner) logf(format string, a ...any) {
 }
 
 // Check fails unless the token holds every privilege in the preflight list on
-// /, where preflight.sh grants the role. It runs before create and destroy
-// change anything, so a role that has drifted from the list fails with the
+// /, where preflight.sh grants the role. It runs before create, restart and
+// destroy change anything, so a role that has drifted from the list fails with the
 // names of what is missing instead of a 403 halfway through.
 func (r *Runner) Check(ctx context.Context) error {
 	have, err := r.PVE.Permissions(ctx, "/")
@@ -251,19 +253,46 @@ func (r *Runner) send(ctx context.Context, calls []Call) error {
 			r.logf("done %d/%d %s", i+1, len(calls), c.What)
 			continue
 		}
-		var upid string
-		if err := r.PVE.Do(ctx, c.Method, c.Path, c.Params, &upid); err != nil {
-			return fmt.Errorf("call %d/%d, %s: %w", i+1, len(calls), c.What, err)
-		}
-		wctx, cancel := context.WithTimeout(ctx, c.Timeout)
-		err := r.PVE.WaitTask(wctx, upid)
-		cancel()
-		if err != nil {
+		if err := r.call(ctx, c); err != nil {
 			return fmt.Errorf("call %d/%d, %s: %w", i+1, len(calls), c.What, err)
 		}
 		r.logf("done %d/%d %s", i+1, len(calls), c.What)
 	}
 	return nil
+}
+
+// call sends one API call and waits, for at most its timeout, for the task
+// it starts.
+func (r *Runner) call(ctx context.Context, c Call) error {
+	var upid string
+	if err := r.PVE.Do(ctx, c.Method, c.Path, c.Params, &upid); err != nil {
+		return err
+	}
+	wctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+	return r.PVE.WaitTask(wctx, upid)
+}
+
+// vmAddress returns a VM's node address, or "" when it has none in the
+// node subnet. The address is in the VM's network snippet, so it is found
+// only while the snippets mount is there to read.
+func (r *Runner) vmAddress(ctx context.Context, v pve.Resource) (string, error) {
+	conf, err := r.PVE.GuestConfig(ctx, v)
+	if err != nil {
+		return "", err
+	}
+	as := GuestAddresses(conf)
+	if path, ok := SnippetFileForVolume(r.SnippetsDir, r.Config.SnippetStorage, CustomNetworkVolume(conf)); ok {
+		if text, found, err := readSnippet(path); err == nil && found {
+			as = append(as, SnippetAddresses(text)...)
+		}
+	}
+	for _, a := range as {
+		if NodeSubnet.Contains(a) && a != Gateway {
+			return a.String(), nil
+		}
+	}
+	return "", nil
 }
 
 // VM is one row of list output. Region and Zone are the Proxmox cluster and
@@ -298,24 +327,11 @@ func (r *Runner) List(ctx context.Context, asJSON bool) error {
 	}
 	rows := []VM{}
 	for _, v := range OwnedVMs(guests, r.Config.Cluster) {
-		conf, err := r.PVE.GuestConfig(ctx, v)
+		// The list leaves the address blank when the snippets mount is
+		// not there to read.
+		addr, err := r.vmAddress(ctx, v)
 		if err != nil {
 			return err
-		}
-		// The address is in the VM's network snippet; the list leaves it
-		// blank when the snippets mount is not there to read.
-		addr := ""
-		as := GuestAddresses(conf)
-		if path, ok := SnippetFileForVolume(r.SnippetsDir, r.Config.SnippetStorage, CustomNetworkVolume(conf)); ok {
-			if text, found, err := readSnippet(path); err == nil && found {
-				as = append(as, SnippetAddresses(text)...)
-			}
-		}
-		for _, a := range as {
-			if NodeSubnet.Contains(a) && a != Gateway {
-				addr = a.String()
-				break
-			}
 		}
 		rows = append(rows, VM{
 			Name: v.Name, VMID: v.VMID, Region: region, Zone: v.Node,

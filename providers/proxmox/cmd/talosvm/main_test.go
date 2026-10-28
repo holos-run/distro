@@ -47,6 +47,13 @@ func TestRunRejects(t *testing.T) {
 		{"manual address", []string{"create", "-cluster", "treasury", "-first-address", "10.20.0.22"}, full, "reserved (manual)"},
 		{"secret in token ID", []string{"list", "-cluster", "treasury"}, map[string]string{"PROXMOX_URL": "https://r620a:8006", "PROXMOX_TOKEN_ID": "0b1c2d3e-secret", "PROXMOX_TOKEN_SECRET": "holos@pve!distro"}, "want USER@REALM!TOKENID"},
 		{"credentials in URL", []string{"list", "-cluster", "treasury"}, map[string]string{"PROXMOX_URL": "https://u:0b1c2d3e-secret@r620a:8006", "PROXMOX_TOKEN_ID": "a@pve!b", "PROXMOX_TOKEN_SECRET": "x"}, "without credentials"},
+		{"restart mode", []string{"restart", "-cluster", "treasury", "-mode", "halt"}, full, `mode "halt"`},
+		{"restart no cluster", []string{"restart", "-kubectl", "/bin/true"}, full, "cluster is required"},
+		{"restart node twice", []string{"restart", "-cluster", "treasury", "-nodes", "treasury-general-1,treasury-general-1"}, full, "named twice"},
+		{"restart daemonset", []string{"restart", "-cluster", "treasury", "-require-daemonsets", "cilium"}, full, "want namespace/name"},
+		{"restart shutdown timeout", []string{"restart", "-cluster", "treasury", "-mode", "power-cycle", "-timeout", "1m", "-shutdown-timeout", "5m"}, full, "less than the timeout"},
+		{"restart no kubectl", []string{"restart", "-cluster", "treasury", "-kubectl", "/nonexistent/kubectl"}, full, "-kubectl"},
+		{"restart no talosctl", []string{"restart", "-cluster", "treasury", "-kubectl", "/bin/true", "-talosctl", "/nonexistent/talosctl"}, full, "-talosctl"},
 		{"off subnet", []string{"create", "-cluster", "treasury", "-first-address", "192.168.2.50"}, full, "outside the node subnet"},
 	} {
 		err := run(context.Background(), tc.args, io.Discard, io.Discard, env(tc.env))

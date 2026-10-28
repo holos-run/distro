@@ -1784,16 +1784,27 @@ done
 
 `certificates` is a string, so patching again replaces it: after a
 rebuild, run the same loop with the new root. containerd reads the trust store once, when it starts, so the
-patch alone does not reach it: reboot the workers one at a time, each
-back `Ready` before the next, after the first patch and after every
-rebuild's.
+patch alone does not reach it: restart the workers with `talosvm restart`,
+after the first patch and after every rebuild's. It reboots them one at a
+time, each cordoned while it goes down, and moves to the next only once the
+last is back `Ready` with its Cilium and ztunnel pods and every Deployment
+and StatefulSet that ran on it, Keycloak and Quay among them, is available
+again; it deletes the Failed pods a reboot leaves behind, those the
+kubelet's node shutdown `Terminated` and those it refused with
+`NodeShutdown`. A
+reboot inside the guest is enough for the trust store, so the default
+`-mode reboot`
+([Restarting nodes](../providers/proxmox/README.md#restarting-nodes) has the
+rest):
 
 ```sh
-for n in $(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' \
-    -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'); do
-  talosctl -n $n reboot --wait
-  kubectl wait --for=condition=Ready node --all -l '!node-role.kubernetes.io/control-plane' --timeout=10m
-done
+# From the repository's root.
+set -a; . ~/.config/holos/proxmox.env; set +a
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -dry-run   # the steps of each worker
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury
+kubectl -n argocd get applications                                          # every one Synced and Healthy
 ```
 
 #### Rotation
@@ -2001,7 +2012,8 @@ kubectl -n argocd rollout restart deploy/argocd-server
 The root then waits on `quay`, next to last, whose credential is a platform
 secret made by `cmd/quay-bootstrap` against the running Quay: once Quay's
 pod is up, run the steps under Bringing Quay up, and patch the workers'
-trust (Trusting the root on the workers), both under Quay, above.
+trust and restart them with `talosvm restart` (Trusting the root on the
+workers), both under Quay, above.
 
 The hand applies use Argo CD's own field manager, `argocd-controller`, so
 Argo CD's first sync finds itself the objects' only manager. Under any other

@@ -1,8 +1,9 @@
-// Command talosvm creates, lists and destroys the Talos VMs of one cluster on
-// Proxmox VE.
+// Command talosvm creates, lists, restarts and destroys the Talos VMs of one
+// cluster on Proxmox VE.
 //
 //	go run ./providers/proxmox/cmd/talosvm create  -cluster <name> [-config file] [-snippets-dir dir] [-dry-run]
 //	go run ./providers/proxmox/cmd/talosvm list    -cluster <name> [-json]
+//	go run ./providers/proxmox/cmd/talosvm restart -cluster <name> [-mode reboot|power-cycle] [-nodes a,b] [-timeout 15m] [-dry-run]
 //	go run ./providers/proxmox/cmd/talosvm destroy -cluster <name> [-yes]
 //	go run ./providers/proxmox/cmd/talosvm check
 //
@@ -13,6 +14,16 @@
 // into the garage NFS export, mounted at -snippets-dir on the machine that
 // runs talosvm, because the Proxmox API cannot upload them. See
 // providers/proxmox/README.md.
+//
+// restart restarts the cluster's workers one at a time, or the nodes -nodes
+// names: it cordons each, reboots Talos (-mode reboot, the default) or shuts
+// the VM down and starts it through Proxmox (-mode power-cycle, which a
+// changed VM config such as new memory needs), waits until the node is back
+// and Ready with its Cilium and ztunnel pods, uncordons it, deletes the
+// Failed pods the restart left on it, and waits until every Deployment and
+// StatefulSet that had a pod there is available again before the next node.
+// It drives kubectl and talosctl, which act with the kubeconfig and
+// talosconfig KUBECONFIG and TALOSCONFIG name.
 //
 // The Proxmox endpoint and API token come from the environment, never from
 // the config file or a flag, so the secret stays out of shell history and out
@@ -32,8 +43,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +59,7 @@ const usage = `usage: talosvm <command> [flags]
 commands:
   create   create and start the VMs the config asks for that do not exist yet
   list     list this cluster's VMs, their addresses and Proxmox nodes
+  restart  restart the workers, or -nodes, one at a time, and wait for each to be back
   destroy  print, or with -yes send, the calls that delete this cluster's VMs
   check    check that the API token holds every privilege talosvm needs
 
@@ -99,6 +113,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	var dryRun, asJSON, yes *bool
 	var firstAddress *string
 	var workers *int
+	var mode, nodes, requireDS, kubectlPath, talosctlPath *string
+	var timeout, shutdownTimeout *time.Duration
 	switch cmd {
 	case "create":
 		dryRun = fs.Bool("dry-run", false, "print the API calls create would send and send none")
@@ -106,6 +122,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		workers = fs.Int("workers", -1, "worker count of the first pool; overrides the config")
 	case "list":
 		asJSON = fs.Bool("json", false, "print JSON instead of a table")
+	case "restart":
+		dryRun = fs.Bool("dry-run", false, "print each node's steps and change nothing")
+		mode = fs.String("mode", talosvm.ModeReboot, "reboot (talosctl reboot, for changes inside the guest) or power-cycle (Proxmox shutdown and start, for a changed VM config)")
+		nodes = fs.String("nodes", "", "comma-separated VMs to restart, in order (default every worker, by name); may name the control plane")
+		timeout = fs.Duration("timeout", talosvm.DefaultRestartTimeout, "time one node may take, from cordon to its workloads being available")
+		shutdownTimeout = fs.Duration("shutdown-timeout", talosvm.DefaultShutdownTimeout, "power-cycle: time the guest has to shut down before Proxmox stops it hard")
+		requireDS = fs.String("require-daemonsets", strings.Join(talosvm.DefaultRequiredDaemonSets, ","), "comma-separated namespace/name DaemonSets a worker must have a Ready pod of, before and after")
+		kubectlPath = fs.String("kubectl", "kubectl", "kubectl to run; it uses KUBECONFIG")
+		talosctlPath = fs.String("talosctl", "talosctl", "talosctl to run; it uses TALOSCONFIG")
 	case "destroy":
 		yes = fs.Bool("yes", false, "send the calls; without it destroy only prints them")
 	case "check":
@@ -149,6 +174,35 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 			return err
 		}
 	}
+	var ro talosvm.RestartOptions
+	if cmd == "restart" {
+		ro = talosvm.RestartOptions{
+			Mode:              *mode,
+			Nodes:             splitList(*nodes),
+			Timeout:           *timeout,
+			ShutdownTimeout:   *shutdownTimeout,
+			RequireDaemonSets: splitList(*requireDS),
+		}
+		if err := ro.Validate(); err != nil {
+			return err
+		}
+		if cfg.Cluster == "" {
+			return errors.New("cluster is required: name the cluster with -cluster or in the config")
+		}
+		// Find the programs before anything changes, rather than after
+		// the first node is cordoned. A dry run never runs talosctl.
+		tools := talosvm.ExecTools{}
+		var err error
+		if tools.KubectlPath, err = exec.LookPath(*kubectlPath); err != nil {
+			return fmt.Errorf("-kubectl: %w", err)
+		}
+		if *mode == talosvm.ModeReboot && !*dryRun {
+			if tools.TalosctlPath, err = exec.LookPath(*talosctlPath); err != nil {
+				return fmt.Errorf("-talosctl: %w", err)
+			}
+		}
+		ro.Tools = tools
+	}
 
 	endpoint := getenv("PROXMOX_URL")
 	if u, err := url.Parse(endpoint); endpoint == "" || err != nil || u.Scheme != "https" || u.Host == "" {
@@ -182,6 +236,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		return r.Create(ctx)
 	case "list":
 		return r.List(ctx, *asJSON)
+	case "restart":
+		r.DryRun = *dryRun
+		return r.Restart(ctx, ro)
 	case "destroy":
 		r.DryRun = !*yes
 		return r.Destroy(ctx)
@@ -192,4 +249,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		fmt.Fprintln(stdout, "the token holds every privilege in providers/proxmox/preflight/privileges.txt")
 		return nil
 	}
+}
+
+// splitList splits a comma-separated flag, dropping empty entries, so an
+// empty flag is an empty list.
+func splitList(s string) []string {
+	var out []string
+	for _, f := range strings.Split(s, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
