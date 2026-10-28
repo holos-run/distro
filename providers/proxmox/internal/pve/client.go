@@ -2,14 +2,16 @@
 //
 // It covers only what talosvm needs: reading cluster resources, nodes, guest
 // configuration and the token's own permissions, asking for a free VMID, and
-// sending the calls that fetch an ISO and create, start, shut down, stop and
-// delete a VM, then waiting on the tasks those calls start. The API is plain
+// sending the calls that fetch an ISO and create, resize, start, shut down,
+// stop and delete a VM, then waiting on the tasks those calls start. The API is plain
 // JSON over HTTPS with an API token in one header, so the standard library is
 // enough and the module keeps no dependencies.
 //
 // Every response wraps its payload in {"data": ...}. Calls that change the
 // cluster return a UPID, the ID of an asynchronous task, and the change is only
-// done when that task stops with exit status OK; WaitTask polls for that.
+// done when that task stops with exit status OK; WaitTask polls for that. The
+// one exception is PUT /nodes/{node}/qemu/{vmid}/config, which is synchronous:
+// the change is done when the call returns, and the answer is null.
 package pve
 
 import (
@@ -300,6 +302,51 @@ func (c *Client) GuestConfig(ctx context.Context, r Resource) (map[string]string
 	return out, nil
 }
 
+// PendingItem is one key of GET /nodes/{node}/qemu/{vmid}/pending. Value is
+// what the VM's config holds now. A change to a running VM that Proxmox
+// cannot hotplug, such as new memory without memory hotplug, waits in
+// Pending, with HasPending set, until the VM is next started; Delete is
+// nonzero when the key is to be removed instead.
+type PendingItem struct {
+	Key        string
+	Value      string
+	Pending    string
+	HasPending bool
+	Delete     int
+}
+
+// GuestPending returns a VM's config keys with their pending changes. Like
+// GuestConfig it needs only VM.Audit, and values are kept as text.
+func (c *Client) GuestPending(ctx context.Context, r Resource) ([]PendingItem, error) {
+	if r.Type != "qemu" {
+		return nil, fmt.Errorf("guest %d is a %q, not a qemu VM", r.VMID, r.Type)
+	}
+	path := "/nodes/" + url.PathEscape(r.Node) + "/qemu/" + strconv.Itoa(r.VMID) + "/pending"
+	var raw []map[string]json.RawMessage
+	if err := c.Do(ctx, http.MethodGet, path, nil, &raw); err != nil {
+		return nil, err
+	}
+	text := func(v json.RawMessage) string {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			return s
+		}
+		return string(v)
+	}
+	out := make([]PendingItem, 0, len(raw))
+	for _, m := range raw {
+		it := PendingItem{Key: text(m["key"]), Value: text(m["value"])}
+		if p, ok := m["pending"]; ok {
+			it.Pending, it.HasPending = text(p), true
+		}
+		if d, ok := m["delete"]; ok {
+			it.Delete, _ = strconv.Atoi(text(d))
+		}
+		out = append(out, it)
+	}
+	return out, nil
+}
+
 // ClusterName returns the Proxmox cluster's name from GET /cluster/status,
 // or the empty string for a single host that is not in a cluster.
 func (c *Client) ClusterName(ctx context.Context) (string, error) {
@@ -377,6 +424,11 @@ func (c *Client) Post(ctx context.Context, path string, params url.Values) (stri
 	var upid string
 	err := c.Do(ctx, http.MethodPost, path, params, &upid)
 	return upid, err
+}
+
+// Put sends a PUT, which Proxmox answers synchronously with no task.
+func (c *Client) Put(ctx context.Context, path string, params url.Values) error {
+	return c.Do(ctx, http.MethodPut, path, params, nil)
 }
 
 // Delete sends a DELETE that starts a task and returns its UPID.

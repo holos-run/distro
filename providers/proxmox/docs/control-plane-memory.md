@@ -1,7 +1,7 @@
 # Control plane memory
 
-Proxmox shows `treasury-cp-1`, the control plane VM with 6 GiB, at 99.82%
-memory used. The guest is not out of memory: about half of it is available.
+Proxmox showed `treasury-cp-1`, then a control plane VM with 6 GiB, at 99.82%
+memory used. The guest was not out of memory: about half of it is available.
 This page says where the memory goes, which number answers which question,
 what normal and alarming look like, and how the default size was chosen, so
 the next person who sees 99.82% can check it in five minutes and the next
@@ -111,7 +111,7 @@ being identical, not by querying the agent.)
 A guest touches a page the first time it uses it, including for page cache,
 and, with no balloon driver (and, we infer, no free page reporting), is not expected to give it back to
 the host. The VM's day graph is consistent with that: 5.2 GB, then 6.4 GB in the
-first hours, flat since. The three 8 GiB workers show 99.96 to 99.98%
+first hours, flat since. The three workers, 8 GiB at the time, showed 99.96 to 99.98%
 for the same reason. The figure measures how much of the VM the guest has ever
 touched, which for any long-running Linux guest tends to 100%, and says
 nothing about pressure. Do not alert on it and do not size from it. Pressure shows in the guest, as
@@ -148,11 +148,17 @@ twice the peak USED plus the 300 MiB the guest does not see, rounded up to a
 whole GiB.
 
 For `treasury`: peak USED 2.47 GiB (2528 MiB); 2 x 2528 + 304 = 5360 MiB, so
-6 GiB. The default stays at 6144 MiB. At that size the node has 2.3 times
+6 GiB. At that size the node has 2.3 times
 its peak working set before the kernel has to reclaim everything it can, and
 the API server's pod, at its peak since boot (3.0 GiB, which includes its
 start-up LISTs and the audit cache), has 2.2 GiB of room under the kubelet's
 5.2 GiB `kubepods` cgroup limit.
+
+The default is 8192 MiB, one step above what the rule gives today. The
+rule sizes for an idle cluster, and the next workloads, Substrate, kagent
+and their controllers, add the watches that grow the API server's heap
+(below). `treasury-cp-1` already runs with 8 GiB, so the default now
+matches the cluster rather than asking a rebuild to shrink it.
 
 The reasoning, and what would change it:
 
@@ -167,11 +173,11 @@ The reasoning, and what would change it:
   LISTs are inside the 3.0 GiB peak since boot but not isolated.
 - The next large sources of watches are Substrate, kagent and their
   controllers. Re-measure after they are installed, with the sampling in this
-  page, before they ship. Raise the default to 8 GiB, the worker size, if
-  peak USED passes 2.8 GiB, or if the API server's anonymous memory floor
-  rises. Ballooning stays off, so the memory is reserved on the host, which
-  has 251 GiB on `r620a`; the host is not the constraint, but a bigger default
-  buys nothing the node uses today.
+  page, before they ship. At 8 GiB the rule holds while peak USED stays
+  under about 3.9 GiB; raise the default again past that, or if the API
+  server's anonymous memory floor keeps rising. Ballooning stays off, so the
+  memory is reserved on the host, which has 251 GiB on `r620a`; the host is
+  not the constraint.
 - A bigger VM does not reduce CPU use. The cores are 17 to 50% busy because
   the API server spends them on the same churn; adding memory would not change
   that.
@@ -179,16 +185,24 @@ The reasoning, and what would change it:
 ### Resizing a running control plane
 
 Changing the default in the provider changes new VMs only. Resizing the
-running `treasury-cp-1` means changing `memory` on the VM in Proxmox and then
-stopping and starting the VM, because the VM has no memory hotplug
-configured; a reboot inside the guest (`talosctl reboot`) keeps the running
-QEMU process and its old memory. `talosvm restart` does that, and waits for
-the node to come back
-([Restarting nodes](../README.md#restarting-nodes)):
+running `treasury-cp-1` means changing `memory` on the VM in Proxmox, which
+`talosvm resize` does from the config, and then stopping and starting the
+VM, because the VM has no memory hotplug configured; a reboot inside the
+guest (`talosctl reboot`) keeps the running QEMU process and its old memory.
+`talosvm restart` does that, and waits for the node to come back
+([Resizing a pool](../README.md#resizing-a-pool),
+[Restarting nodes](../README.md#restarting-nodes)):
 
 ```sh
+go run ./providers/proxmox/cmd/talosvm resize  -cluster treasury -nodes treasury-cp-1
 go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -mode power-cycle -nodes treasury-cp-1
 ```
+
+`-nodes` keeps `resize` to the control plane; without it, `resize` sets
+every VM to the config's size, workers included. Pass the `-config` and
+`-workers` the cluster was made with, if any; without them `resize` skips
+workers beyond the config's count, and it refuses to shrink a VM unless
+given `-shrink`.
 
 With one control plane the Kubernetes API is down until it is back. Prefer
 to leave it until the next rebuild, as with the move to 6 GiB. A worker's

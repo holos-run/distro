@@ -107,13 +107,18 @@ type Config struct {
 // workers, disks on local-zfs, the ISO and snippets on the shared garage NFS
 // storage, and
 // the k8s vnet. The sizes follow the Talos Proxmox guide's minimums with room
-// for the platform: 2 cores and 6 GiB for a control plane, 4 cores and 8 GiB
-// for a worker. A control plane runs etcd and the API server, controller
+// for the platform: 2 cores and 8 GiB for a control plane, 4 cores and 16 GiB
+// for a worker. Workers were 8 GiB until Quay, at 3.6 to 3.8 GiB on its own,
+// left its node at 98% of its memory requests before Substrate and kagent;
+// 16 GiB also leaves two workers room for a third's pods while it restarts.
+// A control plane runs etcd and the API server, controller
 // manager and scheduler. Measured on a running cluster, the node's working set
 // peaked at about 2.5 GiB, mostly the API server's heap, and the rest of the 6
-// GiB was reclaimable page cache; docs/control-plane-memory.md has the
-// measurements, why Proxmox shows 99% used, and the sizing rule to apply when
-// the workload grows. The cluster name is left empty on purpose.
+// GiB it had then was reclaimable page cache. The rule in
+// docs/control-plane-memory.md gives 6 GiB for that peak; the default is 8 GiB
+// for the watches Substrate and kagent add. That page has the measurements,
+// why Proxmox shows 99% used, and the sizing rule to apply when the workload
+// grows. The cluster name is left empty on purpose.
 func Default() Config {
 	return Config{
 		TalosVersion:   DefaultTalosVersion,
@@ -125,9 +130,9 @@ func Default() Config {
 		Nameserver:     "192.168.2.1",
 		SearchDomain:   "lan",
 		FirstAddress:   "10.20.0.50",
-		ControlPlane:   ControlPlane{Count: 1, Size: Size{Cores: 2, MemoryMiB: 6144, DiskGiB: 32}},
+		ControlPlane:   ControlPlane{Count: 1, Size: Size{Cores: 2, MemoryMiB: 8192, DiskGiB: 32}},
 		Pools: []Pool{
-			{Name: "general", Count: 3, Size: Size{Cores: 4, MemoryMiB: 8192, DiskGiB: 64}},
+			{Name: "general", Count: 3, Size: Size{Cores: 4, MemoryMiB: 16384, DiskGiB: 64}},
 		},
 	}
 }

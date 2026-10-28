@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
 
 	"go.holos.run/distro/providers/proxmox/internal/pve"
@@ -21,8 +23,11 @@ type Runner struct {
 	Factory Factory
 	Config  Config
 	Out     io.Writer
-	// DryRun makes create and destroy print the calls they would send and
-	// send none of them, and restart print every node's steps and take
+	// Err, when set, takes warnings that must stay out of Out, such as
+	// list's when Out is JSON for a script.
+	Err io.Writer
+	// DryRun makes create, resize and destroy print the calls they would
+	// send and send none of them, and restart print every node's steps and take
 	// none. Everything before that, reading Proxmox and the cluster and
 	// posting the schematic to Image Factory, still happens, since none of
 	// it changes anything and the printed calls are only exact because of
@@ -36,9 +41,15 @@ func (r *Runner) logf(format string, a ...any) {
 	fmt.Fprintf(r.Out, format+"\n", a...)
 }
 
+func (r *Runner) warnf(format string, a ...any) {
+	if r.Err != nil {
+		fmt.Fprintf(r.Err, "talosvm: warning: "+format+"\n", a...)
+	}
+}
+
 // Check fails unless the token holds every privilege in the preflight list on
-// /, where preflight.sh grants the role. It runs before create, restart and
-// destroy change anything, so a role that has drifted from the list fails with the
+// /, where preflight.sh grants the role. It runs before create, resize,
+// restart and destroy change anything, so a role that has drifted from the list fails with the
 // names of what is missing instead of a 403 halfway through.
 func (r *Runner) Check(ctx context.Context) error {
 	have, err := r.PVE.Permissions(ctx, "/")
@@ -142,6 +153,7 @@ func (r *Runner) Create(ctx context.Context) error {
 	}
 	for _, a := range skip {
 		r.logf("exists   %-24s vmid %d on %s", a.Spec.Name, a.Existing.VMID, a.Existing.Node)
+		r.sizeHint(ctx, a)
 	}
 	nets, err := r.guestNets(ctx, guests)
 	if err != nil {
@@ -212,6 +224,40 @@ func (r *Runner) Create(ctx context.Context) error {
 	return r.send(ctx, calls)
 }
 
+// sizeHint points at what brings an existing VM to the config's size, since
+// create never resizes one. Proxmox reports the size the VM runs with; only
+// when that differs is its pending size read, the same way list and resize
+// read it. A pending size equal to the config's needs only a power cycle; any
+// other needs resize. A pending size that cannot be read is no reason to
+// stop create, so the hint then assumes nothing is pending.
+func (r *Runner) sizeHint(ctx context.Context, a Action) {
+	v, want := *a.Existing, a.Spec.Size
+	cores, mem := int(v.MaxCPU), int(v.MaxMem>>20)
+	if cores == want.Cores && mem == want.MemoryMiB {
+		return
+	}
+	// The size in /cluster/resources lags a power cycle by a few seconds, so
+	// the VM's own config decides whether the config's size is already set.
+	g, err := r.guestSize(ctx, v)
+	if err != nil {
+		r.warnf("reading the pending size of %s: %v", v.Name, err)
+	}
+	pending := err == nil && g.Pending() && g.NextCores == want.Cores && g.NextMemoryMiB == want.MemoryMiB
+	switch {
+	case err == nil && !g.Pending() && g.Cores == want.Cores && g.MemoryMiB == want.MemoryMiB:
+		return
+	case pending && v.Status == "running":
+		r.logf("         runs with %d cores and %d MiB; the config's %d and %d are pending until a power cycle: talosvm restart -cluster %s -mode power-cycle -nodes %s",
+			cores, mem, want.Cores, want.MemoryMiB, r.Config.Cluster, v.Name)
+	case pending:
+		r.logf("         has %d cores and %d MiB; the config's %d and %d are pending until it starts",
+			cores, mem, want.Cores, want.MemoryMiB)
+	default:
+		r.logf("         runs with %d cores and %d MiB, the config asks for %d and %d: talosvm resize -cluster %s sets it",
+			cores, mem, want.Cores, want.MemoryMiB, r.Config.Cluster)
+	}
+}
+
 func (r *Runner) isoPresent(ctx context.Context, node string, img Image) (bool, error) {
 	content, err := r.PVE.Content(ctx, node, r.Config.ISOStorage, "iso")
 	if err != nil {
@@ -262,8 +308,12 @@ func (r *Runner) send(ctx context.Context, calls []Call) error {
 }
 
 // call sends one API call and waits, for at most its timeout, for the task
-// it starts.
+// it starts. A PUT of a VM's config starts no task: it is done when it
+// returns.
 func (r *Runner) call(ctx context.Context, c Call) error {
+	if c.Method == http.MethodPut {
+		return r.PVE.Put(ctx, c.Path, c.Params)
+	}
 	var upid string
 	if err := r.PVE.Do(ctx, c.Method, c.Path, c.Params, &upid); err != nil {
 		return err
@@ -297,7 +347,11 @@ func (r *Runner) vmAddress(ctx context.Context, v pve.Resource) (string, error) 
 
 // VM is one row of list output. Region and Zone are the Proxmox cluster and
 // node, which the Talos patches later turn into the worker's
-// topology.kubernetes.io/region and zone labels.
+// topology.kubernetes.io/region and zone labels. Cores and MemoryMiB are
+// what the VM runs with; PendingCores and PendingMemoryMiB, when set, are a
+// new size resize gave it that takes effect when it is next started. A VM
+// whose pending size could not be read has neither, and shows ? in the
+// table.
 type VM struct {
 	Name      string `json:"name"`
 	VMID      int    `json:"vmid"`
@@ -309,6 +363,10 @@ type VM struct {
 	Status    string `json:"status"`
 	Cores     int    `json:"cores"`
 	MemoryMiB int64  `json:"memoryMiB"`
+
+	PendingCores     int `json:"pendingCores,omitempty"`
+	PendingMemoryMiB int `json:"pendingMemoryMiB,omitempty"`
+	pendingUnknown   bool
 }
 
 // List prints the cluster's VMs as a table, or as JSON for scripts such as
@@ -333,11 +391,26 @@ func (r *Runner) List(ctx context.Context, asJSON bool) error {
 		if err != nil {
 			return err
 		}
-		rows = append(rows, VM{
+		row := VM{
 			Name: v.Name, VMID: v.VMID, Region: region, Zone: v.Node,
 			Role: RoleOf(v), Pool: PoolOf(v), Address: addr, Status: v.Status,
 			Cores: int(v.MaxCPU), MemoryMiB: v.MaxMem >> 20,
-		})
+		}
+		// The pending size is extra; one VM's that cannot be read does
+		// not keep the rest of the list, which scripts depend on, away.
+		switch size, err := r.guestSize(ctx, v); {
+		case err != nil:
+			row.pendingUnknown = true
+			r.warnf("reading the pending size of %s: %v", v.Name, err)
+		default:
+			if size.NextCores != size.Cores {
+				row.PendingCores = size.NextCores
+			}
+			if size.NextMemoryMiB != size.MemoryMiB {
+				row.PendingMemoryMiB = size.NextMemoryMiB
+			}
+		}
+		rows = append(rows, row)
 	}
 	if asJSON {
 		enc := json.NewEncoder(r.Out)
@@ -345,14 +418,27 @@ func (r *Runner) List(ctx context.Context, asJSON bool) error {
 		return enc.Encode(rows)
 	}
 	tw := tabwriter.NewWriter(r.Out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tVMID\tREGION\tNODE\tROLE\tPOOL\tADDRESS\tSTATUS\tCORES\tMEMORY")
+	fmt.Fprintln(tw, "NAME\tVMID\tREGION\tNODE\tROLE\tPOOL\tADDRESS\tSTATUS\tCORES\tMEMORY\tPENDING")
 	for _, v := range rows {
 		pool := v.Pool
 		if pool == "" {
 			pool = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%dMiB\n",
-			v.Name, v.VMID, v.Region, v.Zone, v.Role, pool, v.Address, v.Status, v.Cores, v.MemoryMiB)
+		var pending []string
+		if v.PendingCores != 0 {
+			pending = append(pending, fmt.Sprintf("%d cores", v.PendingCores))
+		}
+		if v.PendingMemoryMiB != 0 {
+			pending = append(pending, fmt.Sprintf("%dMiB", v.PendingMemoryMiB))
+		}
+		switch {
+		case v.pendingUnknown:
+			pending = []string{"?"}
+		case len(pending) == 0:
+			pending = []string{"-"}
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%dMiB\t%s\n",
+			v.Name, v.VMID, v.Region, v.Zone, v.Role, pool, v.Address, v.Status, v.Cores, v.MemoryMiB, strings.Join(pending, ", "))
 	}
 	return tw.Flush()
 }
