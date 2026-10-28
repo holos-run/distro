@@ -1202,7 +1202,10 @@ device grant, so the realm comes in two halves (interview Q50):
     Not `manage-realm`: aavis-ops grants it only for a `Group`'s
     `custodians`, which need fine-grained admin permissions, and nothing
     here uses them, so the realm leaves `adminPermissionsEnabled` off.
-  - the user `jeff`, `jeff@bank.internal`.
+  - the user `jeff`, `jeff@bank.internal`, with the realm role
+    `default-roles-holos`. An imported user gets only the roles it lists, and
+    without that role's `offline_access` Keycloak refuses the Secrets
+    Manager's login, which asks for that scope.
 - holos-controller's resources, in `keycloak` beside the import: the
   `Instance` `holos`, the `Group` `platform-owners` at path
   `platform/owners`, and the `GroupMembership` `platform-owners` putting

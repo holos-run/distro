@@ -300,6 +300,12 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 						User & {
 							enabled:       true
 							emailVerified: true
+							// An imported user gets only the roles
+							// it lists, not the realm's default
+							// role, and without its offline_access
+							// Keycloak refuses the Secrets Manager's
+							// login, which asks for that scope.
+							realmRoles: ["default-roles-\(KC.realm)"]
 							credentials: [{
 								type:      "password"
 								value:     "${JEFF_PASSWORD}"
