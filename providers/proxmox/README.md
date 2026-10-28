@@ -2,8 +2,8 @@
 
 The Proxmox provider puts Talos VMs on the garage's Proxmox VE 9.2 hosts. The
 garage is rebuilt more than once, so the VMs come from a program rather than
-from hand-made VMs, and the program is small: `talosvm create`, `list` and
-`destroy`, plus `check` for the API token.
+from hand-made VMs, and the program is small: `talosvm create`, `list`,
+`restart` and `destroy`, plus `check` for the API token.
 
 `talosvm` stops at VMs booted into Talos maintenance mode with a working
 static network. It does not apply Talos machine configuration; that is the
@@ -273,8 +273,8 @@ role `HolosProvisioner` on `/`. [`preflight/privileges.txt`](preflight/privilege
 is the authoritative list of that role's privileges, one per line with the API
 calls that need it. [`preflight/preflight.sh`](preflight/preflight.sh) sets the
 cluster to exactly that list, and `talosvm` embeds the same file and checks
-the token against it before `create` and `destroy` change anything, so the
-role and the program cannot drift apart. **Whenever `talosvm` calls a new
+the token against it before `create`, `restart` and `destroy` change
+anything, so the role and the program cannot drift apart. **Whenever `talosvm` calls a new
 Proxmox API endpoint, or sends a new parameter, add what it needs to
 `privileges.txt` in the same change**, and run the script again.
 
@@ -360,6 +360,7 @@ go run ./providers/proxmox/cmd/talosvm check
 go run ./providers/proxmox/cmd/talosvm create  -cluster treasury -dry-run
 go run ./providers/proxmox/cmd/talosvm create  -cluster treasury
 go run ./providers/proxmox/cmd/talosvm list    -cluster treasury
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -dry-run
 go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury        # prints the calls only
 go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury -yes   # sends them
 ```
@@ -389,6 +390,112 @@ role, pool, address and status. The cluster and node become the worker's
 `purge` so it also leaves backup jobs, replication and HA. It does not send
 `destroy-unreferenced-disks`, which would scan every storage, including other
 tenants', for disks carrying the same VMID.
+
+### Restarting nodes
+
+`restart` restarts the cluster's workers one at a time, in name order, or
+the VMs `-nodes` names, in that order. It is for a change a node only picks
+up when it starts, such as containerd reading a new trust store or the VM
+getting new memory:
+
+```sh
+set -a; . ~/.config/holos/proxmox.env; set +a
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
+
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -dry-run          # the steps of every node
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury                   # talosctl reboot
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -mode power-cycle # Proxmox shutdown and start
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -nodes treasury-general-2
+```
+
+`-mode reboot`, the default, runs `talosctl reboot`, which is enough for
+anything inside the guest. `-mode power-cycle` shuts the VM down and starts
+it again through the Proxmox API (`status/shutdown`, then `status/start`). A
+changed VM config, such as new memory, applies only this way, because a
+guest reboot keeps the running QEMU process. The shutdown is a clean one,
+through the guest agent, so Talos stops its kubelet and unmounts its volumes
+as on a reboot; `forceStop` makes Proxmox stop the VM hard if it has not shut
+down within `-shutdown-timeout` (5m), so the VM always ends up stopped and is
+then started.
+
+For each node in turn it:
+
+1. cordons it, so nothing new is scheduled there while it goes down, and
+   marks the cordon its own with the annotation `talosvm.holos.run/cordoned`.
+   A node that still reads `Ready` otherwise keeps being sent replacement
+   pods, which its shutting-down kubelet refuses to admit with
+   `NodeShutdown`: this is what left a hundred Failed `cilium-operator` pods
+   on the treasury workers after a hand-run reboot loop;
+2. restarts it in the chosen mode;
+3. waits until it has booted again, which it tells by the node's boot ID
+   changing, so a node that has not gone down yet is never taken for one that
+   is back; then until it is `Ready`; then until every DaemonSet that had a
+   Ready pod on it, Cilium and ztunnel among them, has a Ready pod again
+   that is another pod, or the same pod with new container IDs, since right
+   after a quick reboot the API can still show the old containers Ready;
+4. uncordons it and removes the annotation;
+5. deletes the Failed pods left on it, and prints how many of each kind:
+   those with reason `Terminated` that the kubelet's graceful node shutdown
+   killed (message "Pod was terminated in response to imminent node
+   shutdown.", or a `DisruptionTarget` condition with reason
+   `TerminationByKubelet`), those it refused with `NodeShutdown`, `Evicted`
+   ones, and those whose container status is `ContainerStatusUnknown`. A
+   Failed pod with any other reason or message, such as a Job's pod that
+   exited with `Error`, and every pod that is not Failed, stay;
+6. waits until every Deployment and StatefulSet that had a pod on it, and was
+   available before the restart, is available again. This, not the node
+   alone, is what catches a dependency coming back late, as Keycloak did for
+   Quay. One that was not available before is named and not waited for.
+
+Only then does it move to the next node.
+
+It does not drain. A drain would not keep pods in place either: the
+kubelet's graceful node shutdown stops the node's pods, and their
+controllers recreate Deployment and StatefulSet pods on the other workers,
+which are not cordoned, so pods and their RBD volumes can move, and a
+StatefulSet's new pod can wait in `Multi-Attach` until the old node reports
+the volume unmounted. Step 6 is what waits for those moved and recreated
+workloads. What a drain would add is evicting them first, through
+PodDisruptionBudgets, which the shutdown does not honor; whether to add
+`-drain` is left for later.
+
+It drives `kubectl` and `talosctl` (`-kubectl`, `-talosctl`), which act with
+the kubeconfig and talosconfig `KUBECONFIG` and `TALOSCONFIG` name, and
+reaches Talos at the VM's own address, from its config or its network
+snippet, or the node's `InternalIP` when the snippets mount is not there.
+Before it changes anything it checks the token's privileges and refuses
+unless:
+
+- every node is `Ready`, except a control plane: `treasury-cp-1` is kept off
+  the pod network (Q33) and reads `NotReady` for good. The check runs again
+  before each node;
+- every target is a running VM of the cluster with a Kubernetes node of the
+  same name, and the VM's address and the node's `InternalIP` agree, which
+  also catches a `KUBECONFIG` of another cluster;
+- every target worker has a Ready pod of each `-require-daemonsets`
+  (default `kube-system/cilium,istio-system/ztunnel`).
+
+The control plane is restarted only when `-nodes` names it. With one control
+plane the Kubernetes API is down while it restarts; `restart` waits through
+that for its new boot ID, not for `Ready`.
+
+`-timeout` (15m) bounds one node, from cordon to its workloads being
+available. A failure or a timeout stops the run at that node and does not go
+on to the next. A node that fails before it is uncordoned is left cordoned,
+so nothing is scheduled onto a node that did not come back; the error says
+so, and names the nodes not restarted and the `-nodes` to rerun them with.
+A rerun uncordons a node a failed run left cordoned, which it knows by the
+annotation; a node someone else cordoned, without it, stays cordoned after
+its restart.
+
+A power cycle that fails or times out in the shutdown can leave the VM still
+shutting down, and one that fails in the start leaves it stopped; a rerun
+refuses a stopped VM, so the error says to start it in Proxmox.
+
+`-dry-run` does the same reads and checks and prints every node's steps,
+with the exact `kubectl` and `talosctl` commands and Proxmox calls, and
+changes nothing.
 
 ### Config
 

@@ -24,8 +24,8 @@ import (
 	"go.holos.run/distro/providers/proxmox/preflight"
 )
 
-// fakePVE is just enough of the Proxmox API for create, list, destroy and
-// check. Tasks finish at once. It records every call that is not a GET.
+// fakePVE is just enough of the Proxmox API for create, list, destroy,
+// check and restart. Tasks finish at once. It records every call that is not a GET.
 type fakePVE struct {
 	mu      sync.Mutex
 	vms     []pve.Resource
@@ -34,6 +34,12 @@ type fakePVE struct {
 	privs   []string
 	calls   []string
 	forms   []url.Values
+	// hook, when set, sees every call that is not a GET, as "METHOD path",
+	// before it is answered.
+	hook func(call string)
+	// failCall, when set, fails every call that is not a GET whose path
+	// ends with it.
+	failCall string
 }
 
 func newFake() *fakePVE {
@@ -96,6 +102,13 @@ func (f *fakePVE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		f.calls = append(f.calls, r.Method+" "+path)
 		f.forms = append(f.forms, r.Form)
+		if f.hook != nil {
+			f.hook(r.Method + " " + path)
+		}
+		if f.failCall != "" && strings.HasSuffix(path, f.failCall) {
+			http.Error(w, "VM is locked (shutdown)", http.StatusInternalServerError)
+			return
+		}
 	}
 	switch {
 	case path == "/access/permissions":
@@ -142,6 +155,9 @@ func (f *fakePVE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 6 && parts[5] == "start":
 		f.setStatus(parts[3], "running")
 		reply(upid(parts[1], "qmstart"))
+	case len(parts) == 6 && parts[5] == "shutdown":
+		f.setStatus(parts[3], "stopped")
+		reply(upid(parts[1], "qmshutdown"))
 	case len(parts) == 6 && parts[5] == "stop":
 		f.setStatus(parts[3], "stopped")
 		reply(upid(parts[1], "qmstop"))

@@ -2,8 +2,8 @@
 //
 // It covers only what talosvm needs: reading cluster resources, nodes, guest
 // configuration and the token's own permissions, asking for a free VMID, and
-// sending the calls that fetch an ISO and create, stop and delete a VM, then
-// waiting on the tasks those calls start. The API is plain
+// sending the calls that fetch an ISO and create, start, shut down, stop and
+// delete a VM, then waiting on the tasks those calls start. The API is plain
 // JSON over HTTPS with an API token in one header, so the standard library is
 // enough and the module keeps no dependencies.
 //

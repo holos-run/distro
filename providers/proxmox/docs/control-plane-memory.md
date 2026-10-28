@@ -179,10 +179,21 @@ The reasoning, and what would change it:
 ### Resizing a running control plane
 
 Changing the default in the provider changes new VMs only. Resizing the
-running `treasury-cp-1` means changing `memory` on the VM in Proxmox and
-rebooting the guest (`talosctl reboot`), because the VM has no memory hotplug
-configured; with one control plane the Kubernetes API is down for the reboot.
-Prefer to leave it until the next rebuild, as with the move to 6 GiB.
+running `treasury-cp-1` means changing `memory` on the VM in Proxmox and then
+stopping and starting the VM, because the VM has no memory hotplug
+configured; a reboot inside the guest (`talosctl reboot`) keeps the running
+QEMU process and its old memory. `talosvm restart` does that, and waits for
+the node to come back
+([Restarting nodes](../README.md#restarting-nodes)):
+
+```sh
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -mode power-cycle -nodes treasury-cp-1
+```
+
+With one control plane the Kubernetes API is down until it is back. Prefer
+to leave it until the next rebuild, as with the move to 6 GiB. A worker's
+memory is changed the same way, with `-nodes` naming it, or without
+`-nodes` for every worker in turn.
 
 ## Reading it yourself
 
