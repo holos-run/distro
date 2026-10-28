@@ -6,6 +6,13 @@ as broadly and openly as possible to secure our future.
 
 As with Debian, effective governance is a primary concern of the project.
 
+## Ecosystem
+
+- Holos is built with the invaluable Planboard from [R.I. Pienaar](https://github.com/ripienaar).
+- Configuration is handled by [CUE](https://github.com/cue-lang/cue).
+- Integration tools are written in [Go](https://github.com/golang).
+- Platforms are built and customized with [Kubernetes](https://github.com/kubernetes/kubernetes).
+
 ## Code
 
 The repository is the Go module `go.holos.run/distro`. Providers live under
