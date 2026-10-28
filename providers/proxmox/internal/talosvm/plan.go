@@ -94,7 +94,7 @@ func Specs(c Config, nodes []string) ([]Spec, error) {
 	}
 	for i := range c.ControlPlane.Count {
 		specs = append(specs, Spec{
-			Name: fmt.Sprintf("%s-%s-%d", c.Cluster, controlPlaneName, i+1),
+			Name: vmName(c.Cluster, controlPlaneName, i),
 			Role: RoleControlPlane,
 			Node: place(c.ControlPlane.Nodes),
 			Size: c.ControlPlane.Size,
@@ -103,7 +103,7 @@ func Specs(c Config, nodes []string) ([]Spec, error) {
 	for _, p := range c.Pools {
 		for i := range p.Count {
 			specs = append(specs, Spec{
-				Name: fmt.Sprintf("%s-%s-%d", c.Cluster, p.Name, i+1),
+				Name: vmName(c.Cluster, p.Name, i),
 				Role: RoleWorker,
 				Pool: p.Name,
 				Node: place(p.Nodes),
@@ -116,6 +116,12 @@ func Specs(c Config, nodes []string) ([]Spec, error) {
 		specs[i].MAC = MACFor(c.Cluster, specs[i].Name, 0)
 	}
 	return specs, nil
+}
+
+// vmName is the name of the i-th VM, from 0, of a group: the control plane
+// or a pool.
+func vmName(cluster, group string, i int) string {
+	return fmt.Sprintf("%s-%s-%d", cluster, group, i+1)
 }
 
 // CreateParams is the body of POST /nodes/{node}/qemu for one VM. The
@@ -217,7 +223,8 @@ type Action struct {
 // Reconcile matches specs against the cluster's guests by name. A spec whose
 // name is free is to be created. A spec whose name belongs to one of this
 // cluster's talosvm VMs is skipped, whatever node it is on and whatever its
-// size, since create never changes a VM it already made. A spec whose name is
+// size, since create never changes a VM it already made (resize changes its
+// size). A spec whose name is
 // taken by anything else is an error, and the whole run stops before any
 // change, because creating a second VM with the same name would confuse
 // every later step and taking over the existing one could destroy it later.
@@ -292,9 +299,9 @@ func CheckStorages(c Config, nodes []string, storages []pve.Storage) (isoShared 
 	return isoShared, errors.Join(errs...)
 }
 
-// Call is one Proxmox API call that changes the cluster. Create and destroy
-// build their whole list of calls before sending any, so a dry run prints
-// exactly what a real run sends.
+// Call is one Proxmox API call that changes the cluster. Create, resize and
+// destroy build their whole list of calls before sending any, so a dry run
+// prints exactly what a real run sends.
 type Call struct {
 	// Method is an HTTP method for an API call, or WriteFile or RemoveFile
 	// for a snippet in the mounted snippets directory, where Path is the
@@ -309,13 +316,13 @@ type Call struct {
 	Header string
 	// What says what the call does, for the log.
 	What string
-	// Timeout bounds the task the call starts.
+	// Timeout bounds the task the call starts. A PUT starts none.
 	Timeout time.Duration
 }
 
 // String prints the call as the API sees it: the method and full path, with
-// a DELETE's parameters in the query string and a POST's form fields one per
-// line, sorted.
+// a DELETE's parameters in the query string and a POST's or PUT's form fields
+// one per line, sorted.
 func (c Call) String() string {
 	var b strings.Builder
 	switch c.Method {

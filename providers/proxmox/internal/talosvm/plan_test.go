@@ -59,7 +59,7 @@ func TestCreateParams(t *testing.T) {
 		"cpu":         "host",
 		"sockets":     "1",
 		"cores":       "4",
-		"memory":      "8192",
+		"memory":      "16384",
 		"balloon":     "0",
 		"scsihw":      "virtio-scsi-pci",
 		"scsi0":       "local-zfs:64,discard=on,ssd=1",

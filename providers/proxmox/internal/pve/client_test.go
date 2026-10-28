@@ -259,3 +259,46 @@ func TestClusterNameAndStorages(t *testing.T) {
 		t.Errorf("Storages = %+v, %v", ss, err)
 	}
 }
+
+// The answer mixes strings and numbers, and leaves out pending and delete
+// for a key with no change waiting.
+func TestGuestPending(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api2/json/nodes/r620b/qemu/105/pending" {
+			t.Errorf("got %s %s", r.Method, r.URL)
+		}
+		io.WriteString(w, `{"data":[{"key":"cores","value":4},{"key":"memory","value":"8192","pending":16384},{"key":"onboot","value":1,"delete":1}]}`)
+	})
+	items, err := c.GuestPending(context.Background(), Resource{VMID: 105, Node: "r620b", Type: "qemu"})
+	want := []PendingItem{
+		{Key: "cores", Value: "4"},
+		{Key: "memory", Value: "8192", Pending: "16384", HasPending: true},
+		{Key: "onboot", Value: "1", Delete: 1},
+	}
+	if err != nil || len(items) != len(want) {
+		t.Fatalf("GuestPending = %+v, %v", items, err)
+	}
+	for i := range want {
+		if items[i] != want[i] {
+			t.Errorf("item %d = %+v, want %+v", i, items[i], want[i])
+		}
+	}
+	if _, err := c.GuestPending(context.Background(), Resource{VMID: 150, Type: "lxc"}); err == nil {
+		t.Error("GuestPending accepted a container")
+	}
+}
+
+// A PUT is form encoded like a POST, and its null answer is not a task.
+func TestPutSendsForm(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPut || r.URL.Path != "/api2/json/nodes/r620b/qemu/105/config" ||
+			r.Header.Get("Content-Type") != "application/x-www-form-urlencoded" || string(body) != "memory=16384" {
+			t.Errorf("got %s %s %q", r.Method, r.URL, body)
+		}
+		io.WriteString(w, `{"data":null}`)
+	})
+	if err := c.Put(context.Background(), "/nodes/r620b/qemu/105/config", map[string][]string{"memory": {"16384"}}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -3,13 +3,13 @@
 #
 # This file is the authoritative list. preflight.sh sets the role to exactly
 # these privileges, and talosvm embeds this file and refuses to create,
-# restart or destroy while the token lacks one of them. When talosvm starts calling a new
+# resize, restart or destroy while the token lacks one of them. When talosvm starts calling a new
 # Proxmox API endpoint, or sends a new parameter to one it already calls, look
 # up what that needs and add it here with the call that needs it; when a call
 # goes away, remove what only it needed.
 #
 # One privilege per line, then a comment naming the calls that need it. The
-# references are qemu-server src/PVE/API2/Qemu.pm (create_vm,
+# references are qemu-server src/PVE/API2/Qemu.pm (create_vm, update_vm_api,
 # $check_vm_modify_config_perm), pve-storage src/PVE/API2/Storage/Status.pm
 # (download_url) and pve-manager PVE/API2/Cluster.pm (resources, status).
 #
@@ -18,10 +18,10 @@
 # (the owner of the task).
 
 VM.Allocate              # POST /nodes/{node}/qemu (create); DELETE /nodes/{node}/qemu/{vmid}
-VM.Audit                 # GET /cluster/resources?type=vm; GET /nodes/{node}/{qemu,lxc}/{vmid}/config to find addresses in use
+VM.Audit                 # GET /cluster/resources?type=vm; GET /nodes/{node}/{qemu,lxc}/{vmid}/config to find addresses in use; GET /nodes/{node}/qemu/{vmid}/pending (list, resize)
 VM.PowerMgmt             # POST /nodes/{node}/qemu/{vmid}/status/start; POST /nodes/{node}/qemu/{vmid}/status/stop; POST /nodes/{node}/qemu/{vmid}/status/shutdown (restart -mode power-cycle)
-VM.Config.CPU            # POST /nodes/{node}/qemu cpu, sockets, cores
-VM.Config.Memory         # POST /nodes/{node}/qemu memory, balloon
+VM.Config.CPU            # POST /nodes/{node}/qemu cpu, sockets, cores; PUT /nodes/{node}/qemu/{vmid}/config cores (resize)
+VM.Config.Memory         # POST /nodes/{node}/qemu memory, balloon; PUT /nodes/{node}/qemu/{vmid}/config memory (resize)
 VM.Config.HWType         # POST /nodes/{node}/qemu machine, scsihw, serial0=socket
 VM.Config.Options        # POST /nodes/{node}/qemu name, description, ostype, bios, agent, onboot, tags
 VM.Config.Disk           # POST /nodes/{node}/qemu boot

@@ -24,12 +24,16 @@ import (
 	"go.holos.run/distro/providers/proxmox/preflight"
 )
 
-// fakePVE is just enough of the Proxmox API for create, list, destroy,
-// check and restart. Tasks finish at once. It records every call that is not a GET.
+// fakePVE is just enough of the Proxmox API for create, list, resize,
+// destroy, check and restart. Tasks finish at once. It records every call
+// that is not a GET.
 type fakePVE struct {
 	mu      sync.Mutex
 	vms     []pve.Resource
 	configs map[int]map[string]string
+	// pending holds the config changes a PUT made to a running VM, which a
+	// start applies, as Proxmox does without hotplug.
+	pending map[int]map[string]string
 	isos    []string // volids in the shared garage storage
 	privs   []string
 	calls   []string
@@ -43,7 +47,7 @@ type fakePVE struct {
 }
 
 func newFake() *fakePVE {
-	f := &fakePVE{vms: tenants(), configs: map[int]map[string]string{}, privs: preflight.Names(preflight.Required())}
+	f := &fakePVE{vms: tenants(), configs: map[int]map[string]string{}, pending: map[int]map[string]string{}, privs: preflight.Names(preflight.Required())}
 	f.configs[100] = map[string]string{"ipconfig0": "ip=10.20.0.4/32,gw=10.20.0.1"}
 	f.configs[101] = map[string]string{"ipconfig0": "ip=10.20.0.5/32,gw=10.20.0.1"}
 	f.configs[200] = map[string]string{"cicustom": "network=garage:snippets/" + tenantSnippet, "net0": "virtio=BC:24:11:D1:BA:A5,bridge=k8s"}
@@ -144,15 +148,51 @@ func (f *fakePVE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 5 && parts[4] == "download-url":
 		f.isos = append(f.isos, parts[3]+":iso/"+r.Form.Get("filename"))
 		reply(upid(parts[1], "download"))
+	case len(parts) == 5 && parts[4] == "config" && r.Method == http.MethodPut:
+		id, _ := strconv.Atoi(parts[3])
+		running := slices.ContainsFunc(f.vms, func(v pve.Resource) bool { return v.VMID == id && v.Status == "running" })
+		for k := range r.PostForm {
+			if running {
+				if f.pending[id] == nil {
+					f.pending[id] = map[string]string{}
+				}
+				f.pending[id][k] = r.PostForm.Get(k)
+			} else {
+				f.configs[id][k] = r.PostForm.Get(k)
+			}
+		}
+		if !running {
+			f.applySize(id)
+		}
+		reply(nil)
 	case len(parts) == 5 && parts[4] == "config":
 		id, _ := strconv.Atoi(parts[3])
 		reply(f.configs[id])
+	case len(parts) == 5 && parts[4] == "pending":
+		id, _ := strconv.Atoi(parts[3])
+		var items []map[string]any
+		for k, v := range f.configs[id] {
+			item := map[string]any{"key": k, "value": v}
+			if p, ok := f.pending[id][k]; ok && p != v {
+				item["pending"] = p
+			}
+			items = append(items, item)
+		}
+		reply(items)
 	case len(parts) == 3 && parts[2] == "qemu" && r.Method == http.MethodPost:
 		id, _ := strconv.Atoi(r.Form.Get("vmid"))
 		f.vms = append(f.vms, pve.Resource{VMID: id, Name: r.Form.Get("name"), Node: parts[1], Type: "qemu", Status: "stopped", Tags: r.Form.Get("tags")})
-		f.configs[id] = map[string]string{"cicustom": r.Form.Get("cicustom"), "net0": r.Form.Get("net0")}
+		f.configs[id] = map[string]string{"cicustom": r.Form.Get("cicustom"), "net0": r.Form.Get("net0"),
+			"cores": r.Form.Get("cores"), "memory": r.Form.Get("memory"), "balloon": r.Form.Get("balloon")}
+		f.applySize(id)
 		reply(upid(parts[1], "qmcreate"))
 	case len(parts) == 6 && parts[5] == "start":
+		id, _ := strconv.Atoi(parts[3])
+		for k, v := range f.pending[id] {
+			f.configs[id][k] = v
+		}
+		delete(f.pending, id)
+		f.applySize(id)
 		f.setStatus(parts[3], "running")
 		reply(upid(parts[1], "qmstart"))
 	case len(parts) == 6 && parts[5] == "shutdown":
@@ -166,6 +206,18 @@ func (f *fakePVE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(upid(parts[1], "qmdestroy"))
 	default:
 		http.Error(w, "not faked: "+r.Method+" "+path, http.StatusNotImplemented)
+	}
+}
+
+// applySize sets the VM's maxcpu and maxmem in the resource list from its
+// config, as Proxmox reports the size the VM runs with there.
+func (f *fakePVE) applySize(id int) {
+	cores, _ := strconv.Atoi(f.configs[id]["cores"])
+	mem, _ := strconv.Atoi(f.configs[id]["memory"])
+	for i := range f.vms {
+		if f.vms[i].VMID == id {
+			f.vms[i].MaxCPU, f.vms[i].MaxMem = float64(cores), int64(mem)<<20
+		}
 	}
 }
 

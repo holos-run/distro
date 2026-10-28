@@ -3,7 +3,7 @@
 The Proxmox provider puts Talos VMs on the garage's Proxmox VE 9.2 hosts. The
 garage is rebuilt more than once, so the VMs come from a program rather than
 from hand-made VMs, and the program is small: `talosvm create`, `list`,
-`restart` and `destroy`, plus `check` for the API token.
+`resize`, `restart` and `destroy`, plus `check` for the API token.
 
 `talosvm` stops at VMs booted into Talos maintenance mode with a working
 static network. It does not apply Talos machine configuration; that is the
@@ -39,7 +39,7 @@ The VM settings follow the
 | --- | --- | --- |
 | SCSI controller | VirtIO SCSI (`virtio-scsi-pci`) | VirtIO SCSI single, the Proxmox default, can hang Talos at bootstrap. |
 | CPU | `host`, 1 socket | Passes the host's `vmx` flag through, so Kata gets `/dev/kvm`, and meets Talos's x86-64-v2 requirement. |
-| Memory | fixed, ballooning off; 6 GiB for a control plane, 8 GiB for a worker | The guide disables ballooning; memory a balloon takes back is memory the kubelet has promised to pods. Because nothing reports the guest's use to Proxmox, it shows these VMs at 99% used; [Control plane memory](docs/control-plane-memory.md) explains why that is not a problem and how the control plane's size was chosen. |
+| Memory | fixed, ballooning off; 6 GiB for a control plane, 16 GiB for a worker | The guide disables ballooning; memory a balloon takes back is memory the kubelet has promised to pods. Because nothing reports the guest's use to Proxmox, it shows these VMs at 99% used; [Control plane memory](docs/control-plane-memory.md) explains why that is not a problem and how the control plane's size was chosen. Workers were 8 GiB, which left about 7.2 GiB to the kubelet; Quay alone uses 3.6 to 3.8 GiB, and its node reached 98% of its memory requests before Substrate and kagent. 16 GiB also leaves two workers room for a third's pods while it restarts. |
 | Firmware | OVMF on q35, 4m EFI disk without pre-enrolled keys | The guide's recommendation. Enrolled keys would turn on Secure Boot, which the plain ISO is not signed for. |
 | Disk | `scsi0` on `local-zfs`, `discard=on`, `ssd=1` | |
 | CD-ROM | `ide0`, the Talos ISO from the shared `garage` storage | |
@@ -74,11 +74,13 @@ never ownership. `list` and `destroy` consider only VMs with both the
 made by `talosvm`, are never touched. `create` leaves a VM that already exists
 under its name with those tags as it is, except to start it if it is stopped,
 and refuses to run at all, before changing anything, if any of its names is
-taken by some other VM. It never resizes, moves or readdresses an existing VM:
+taken by some other VM. It never moves or readdresses an existing VM:
 if the config now gives an existing VM another address, for example because a
 rerun forgot the cluster's `-first-address`, `create` refuses with
-"VM X has address P, config says Q". To change a VM, destroy and create the
-cluster again.
+"VM X has address P, config says Q". Nor does it resize one; it points at
+`resize` when a VM's size differs from the config's
+([Resizing a pool](#resizing-a-pool)). To change anything else about a VM,
+destroy and create the cluster again.
 Lowering a pool's count does not remove the extra VMs either; `destroy`
 removes the whole cluster.
 
@@ -273,7 +275,7 @@ role `HolosProvisioner` on `/`. [`preflight/privileges.txt`](preflight/privilege
 is the authoritative list of that role's privileges, one per line with the API
 calls that need it. [`preflight/preflight.sh`](preflight/preflight.sh) sets the
 cluster to exactly that list, and `talosvm` embeds the same file and checks
-the token against it before `create`, `restart` and `destroy` change
+the token against it before `create`, `resize`, `restart` and `destroy` change
 anything, so the role and the program cannot drift apart. **Whenever `talosvm` calls a new
 Proxmox API endpoint, or sends a new parameter, add what it needs to
 `privileges.txt` in the same change**, and run the script again.
@@ -360,12 +362,13 @@ go run ./providers/proxmox/cmd/talosvm check
 go run ./providers/proxmox/cmd/talosvm create  -cluster treasury -dry-run
 go run ./providers/proxmox/cmd/talosvm create  -cluster treasury
 go run ./providers/proxmox/cmd/talosvm list    -cluster treasury
+go run ./providers/proxmox/cmd/talosvm resize  -cluster treasury -dry-run
 go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -dry-run
 go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury        # prints the calls only
 go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury -yes   # sends them
 ```
 
-`create -dry-run` and `destroy` without `-yes` print the exact Proxmox API
+`create -dry-run`, `resize -dry-run` and `destroy` without `-yes` print the exact Proxmox API
 calls, method, path and every parameter, and send none of them, so the first
 real run can be checked by eye. Everything before that still happens: they
 read Proxmox, and `create` posts the schematic to Image Factory, which only
@@ -382,7 +385,8 @@ carries the Talos version and a schematic ID prefix, so an upgrade is a new
 file. VMIDs start at `/cluster/nextid` and skip IDs in use.
 
 `list` prints each VM's name, VMID, Proxmox cluster (region) and node (zone),
-role, pool, address and status. The cluster and node become the worker's
+role, pool, address, status, cores and memory, and under `PENDING` a new
+size `resize` gave a running VM that waits for its next start. The cluster and node become the worker's
 `topology.kubernetes.io/region` and `zone` labels in the Talos patches, and
 `list -json` prints the same rows for scripts.
 
@@ -390,6 +394,61 @@ role, pool, address and status. The cluster and node become the worker's
 `purge` so it also leaves backup jobs, replication and HA. It does not send
 `destroy-unreferenced-disks`, which would scan every storage, including other
 tenants', for disks carrying the same VMID.
+
+### Resizing a pool
+
+`create` makes VMs at the config's sizes and never changes one that exists,
+so a new size for a pool, or for the control plane, reaches a running
+cluster in three steps: change the size, `resize`, and power-cycle the VMs
+one at a time.
+
+```sh
+set -a; . ~/.config/holos/proxmox.env; set +a
+
+# 1. Change memoryMiB or cores: the default in internal/talosvm/config.go,
+#    or the pool in the -config file the cluster was made with.
+# 2. See what changes, then change it.
+go run ./providers/proxmox/cmd/talosvm resize -cluster treasury -dry-run
+go run ./providers/proxmox/cmd/talosvm resize -cluster treasury
+# 3. Apply it, one node at a time: the command resize prints at the end.
+go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -mode power-cycle \
+  -nodes treasury-general-1,treasury-general-2,treasury-general-3
+```
+
+`resize` reads each of the cluster's VMs' cores and memory, now and pending,
+from `GET /nodes/{node}/qemu/{vmid}/pending`, and prints one line per VM:
+`at size`, `resize` with what changes, `pending` for a VM an earlier resize
+changed that has not been restarted since, `skip` for a VM of the cluster the
+config does not ask for, and `missing` for one `create` has not made. For each
+VM to change it sends `PUT /nodes/{node}/qemu/{vmid}/config` with `memory`,
+`cores` or both, whichever differ, and nothing else: `balloon` stays `0`, and
+the disk is never resized. Like every command it looks only at VMs with the
+`talosvm` tag and this cluster's tag, whatever their names. `-nodes a,b`
+limits it to the VMs named; without it every VM the config asks for is
+resized.
+
+It refuses the whole run, dry run included, before any change, when:
+
+- it would give a VM fewer cores or less memory than it runs with, unless
+  `-shrink` is given. Without `-config` it takes the built-in sizes, so a
+  cluster made with a `-config` must be resized with the same file, or a
+  plain `resize` would shrink it; the refusal names each VM, current and
+  new size;
+- a VM's role or pool tag is not the one the config gives its name, such as
+  a worker renamed by hand to `treasury-cp-1`;
+- two of the cluster's VMs share a name, or `-nodes` names one that is not
+  the cluster's.
+
+The VMs have no CPU or memory hotplug, so Proxmox holds the change to a
+running VM as pending, and the VM keeps its old size until it is stopped and
+started; a reboot inside the guest keeps the running QEMU process and does
+not apply it. A stopped VM takes the change at once. `resize` ends with the
+`restart -mode power-cycle -nodes ...` command for every running VM whose new
+size waits, including those an earlier run changed, so a rerun after an
+interrupted restart prints what is still to do. `list` shows those VMs'
+pending size until they are restarted; a VM whose pending size cannot be
+read shows `?` there (and no pending fields in `-json`), with a warning on
+stderr, and the rest of the list is printed as usual.
 
 ### Restarting nodes
 
@@ -519,7 +578,7 @@ whole; unknown fields are an error. `-cluster`, `-first-address` and
   "firstAddress": "10.20.0.50",
   "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 6144, "diskGiB": 32 },
   "pools": [
-    { "name": "general", "count": 3, "cores": 4, "memoryMiB": 8192, "diskGiB": 64 }
+    { "name": "general", "count": 3, "cores": 4, "memoryMiB": 16384, "diskGiB": 64 }
   ]
 }
 ```
