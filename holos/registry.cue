@@ -157,6 +157,19 @@ registry: [
 	// cannot get a platform secret by itself. The Ceph key is the exception:
 	// bootstrap writes it with kubectl, before Argo CD.
 	{name: "secrets-manager"},
+	// quay is the registry: its CloudNativePG cluster, Redis, the Quay
+	// Deployment and route, its Keycloak Client, the Organizations and the
+	// Repository holos-controller makes in it, and the copies of the RustFS
+	// keys and of holos-controller's Quay credential. It needs the CRDs of
+	// cloudnative-pg, external-secrets and holos-controller, the Instance
+	// from keycloak-realm, the bucket and keys from rustfs and the
+	// management namespace. It comes after secrets-manager, next to last,
+	// because it cannot be Healthy on a new cluster by itself: the
+	// credential's ExternalSecret reports Degraded until cmd/quay-bootstrap
+	// is run against the running Quay and writes the platform secret it
+	// copies (README.md, Quay). Anything after it would wait on that by
+	// hand.
+	{name: "quay"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits

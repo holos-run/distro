@@ -11,7 +11,10 @@ As with Debian, effective governance is a primary concern of the project.
 The repository is the Go module `go.holos.run/distro`. Providers live under
 `providers/`, starting with `providers/proxmox/`; each provider's programs live
 under `providers/<provider>/cmd/<name>` and run from a checkout with
-`go run ./providers/<provider>/cmd/<name>`. See [the Go module](docs/go-module.md)
+`go run ./providers/<provider>/cmd/<name>`. Programs that work on the platform
+rather than a provider live under `cmd/<name>`, such as `cmd/quay-bootstrap`,
+which mints holos-controller's Quay token and the registry's robots
+([holos/README.md](holos/README.md), Quay). See [the Go module](docs/go-module.md)
 for how `go.holos.run/distro` resolves to this repository.
 
 The Holos platform, its components and the rendered manifests live under

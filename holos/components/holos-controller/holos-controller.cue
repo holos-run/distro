@@ -4,10 +4,11 @@ import "encoding/yaml"
 
 // holos-controller reconciles the realm's groups, group memberships, users and
 // clients from keycloak.holos.run resources, against an Instance naming a
-// realm that already exists (the keycloak-realm component's import). It also
-// serves quay.holos.run, unused until Quay, and reads security.holos.run
-// ReferenceGrants, which authorize a reference from one namespace to an
-// Instance or Group in another.
+// realm that already exists (the keycloak-realm component's import), and
+// Quay's organizations and repositories from quay.holos.run resources (the
+// quay component's). It reads security.holos.run ReferenceGrants, which
+// authorize a reference from one namespace to an Instance or Group in
+// another.
 //
 // The source of truth is aavis-ops at tag holos-controller-v0.22.0, not the
 // empty holos-run/holos-controller repository. Its CRD base,
@@ -38,17 +39,23 @@ import "encoding/yaml"
 // every kind it serves and needs each kind's CRD to start. The manager
 // registers no admission webhook, so it needs no route on the gateway's
 // webhooks listener. Its own resources, the Instance and the rest, are the
-// keycloak-realm component's, after this one, so their CRDs are established
-// before Argo CD applies them.
+// keycloak-realm and quay components', after this one, so their CRDs are
+// established before Argo CD applies them.
 //
 // The manager reads its Keycloak credential from Secret
 // holos-controller-keycloak-creds in its own namespace, by POD_NAMESPACE,
 // which keycloak-realm writes; until it exists, each resource reports
-// CredentialsNotFound and is retried. HolosController
+// CredentialsNotFound and is retried. Its Quay credential is
+// holos-controller-quay-creds, there too, which the quay component copies
+// from the platform secret cmd/quay-bootstrap writes; until then each
+// Organization and Repository is retried the same way. HolosController
 // (components/keycloak.cue) holds the version, the image and the names.
 
 let Vendor = "vendor/\(HolosController.version)"
 let NS = HolosController.namespace
+
+// CAMount is where the manager mounts the private root (patches, below).
+let CAMount = "/etc/ssl/private-ca"
 
 holos: spec: artifacts: [(#FileArtifact & {
 	files: [
@@ -106,6 +113,20 @@ holos: spec: artifacts: [(#FileArtifact & {
 		// transformer would set. Pinned by digest, so pulled only when
 		// missing. The manager already runs restricted: non-root, no
 		// privilege escalation, all capabilities dropped, a read-only root.
+		//
+		// The private root, for the manager's calls to Quay at its public
+		// URL, through the gateway, whose certificate the private CA issues.
+		// The root is minted in the cluster and is not in git (Q52), so no
+		// Organization or Repository carries it in caBundle. Instead, as
+		// argocd-server does, the manager mounts trust-manager's private-ca
+		// ConfigMap and adds it to Go's system trust: with SSL_CERT_DIR set,
+		// Go reads every file in each directory listed, after the image's
+		// bundle file, /etc/ssl/certs/ca-certificates.crt in distroless. A
+		// resource with an empty caBundle uses the default transport, so the
+		// system pool. Go reads the pool once, at start, so a new root needs
+		// a restart of the manager. Not optional, unlike Argo CD's:
+		// trust-manager comes earlier in the registry. The Instance's
+		// caBundle, which keycloak-realm's Job writes, is left as it is.
 		{
 			target: {kind: "Deployment", name: "holos-controller-manager"}
 			patch: yaml.Marshal({
@@ -115,11 +136,16 @@ holos: spec: artifacts: [(#FileArtifact & {
 					name:      "holos-controller-manager"
 					namespace: NS
 				}
-				spec: template: spec: containers: [{
-					name:            "manager"
-					image:           HolosController.image
-					imagePullPolicy: "IfNotPresent"
-				}]
+				spec: template: spec: {
+					containers: [{
+						name:            "manager"
+						image:           HolosController.image
+						imagePullPolicy: "IfNotPresent"
+						env: [{name: "SSL_CERT_DIR", value: "/etc/ssl/certs:\(CAMount)"}]
+						volumeMounts: [{name: "private-ca", mountPath: CAMount, readOnly: true}]
+					}]
+					volumes: [{name: "private-ca", configMap: name: PrivateCA.bundle}]
+				}
 			})
 		},
 	]

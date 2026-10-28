@@ -1,0 +1,13 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    name: substrate
+    namespace: quay
+spec:
+    deletionPolicy: Orphan
+    email: quay+substrate@bank.internal
+    name: substrate
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin

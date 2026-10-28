@@ -1,0 +1,67 @@
+apiVersion: v1
+data:
+    config.yaml: |
+        SERVER_HOSTNAME: quay.bank.internal
+        PREFERRED_URL_SCHEME: https
+        EXTERNAL_TLS_TERMINATION: true
+        SETUP_COMPLETE: true
+        TESTING: false
+        REGISTRY_TITLE: Holos
+        REGISTRY_TITLE_SHORT: Holos
+        DB_URI: __DB_URI__
+        SECRET_KEY: __SECRET_KEY__
+        DATABASE_SECRET_KEY: __DATABASE_SECRET_KEY__
+        BUILDLOGS_REDIS:
+          host: quay-redis
+          port: 6379
+        USER_EVENTS_REDIS:
+          host: quay-redis
+          port: 6379
+        DISTRIBUTED_STORAGE_CONFIG:
+          rustfs:
+            - RadosGWStorage
+            - hostname: rustfs-svc.rustfs.svc.cluster.local
+              port: 9000
+              is_secure: false
+              bucket_name: quay
+              storage_path: /registry
+              access_key: __S3_ACCESS_KEY__
+              secret_key: __S3_SECRET_KEY__
+              region_name: us-east-1
+              signature_version: s3v4
+        DISTRIBUTED_STORAGE_PREFERENCE:
+          - rustfs
+        FEATURE_PROXY_STORAGE: true
+        AUTHENTICATION_TYPE: OIDC
+        KEYCLOAK_LOGIN_CONFIG:
+          SERVICE_NAME: Keycloak
+          OIDC_SERVER: https://keycloak.bank.internal/realms/holos/
+          CLIENT_ID: quay
+          CLIENT_SECRET: __OIDC_CLIENT_SECRET__
+          LOGIN_SCOPES:
+            - openid
+            - profile
+            - email
+            - groups
+          PREFERRED_USERNAME_CLAIM_NAME: preferred_username
+          VERIFIED_EMAIL_CLAIM_NAME: email
+          PREFERRED_GROUP_CLAIM_NAME: groups
+          USE_PKCE: false
+        FEATURE_DIRECT_LOGIN: false
+        FEATURE_USER_CREATION: true
+        FEATURE_USERNAME_CONFIRMATION: false
+        FEATURE_TEAM_SYNCING: true
+        TEAM_RESYNC_STALE_TIME: 30m
+        SUPER_USERS:
+          - svc-quay-controller
+          - jeff
+        FEATURE_SUPERUSERS_FULL_ACCESS: true
+        FEATURE_ANONYMOUS_ACCESS: true
+        FEATURE_MAILING: false
+        FEATURE_USER_LOG_ACCESS: false
+kind: ConfigMap
+metadata:
+    labels:
+        app.kubernetes.io/name: quay
+    name: quay-config-template
+    namespace: quay

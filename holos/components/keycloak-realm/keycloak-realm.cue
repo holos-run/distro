@@ -13,8 +13,8 @@ import (
 //
 //   - A KeycloakRealmImport creates the realm with what the controller cannot
 //     reconcile: the groups client scope, the kubectl, argocd and
-//     svc-holos-controller clients, svc-holos-controller's admin roles, and
-//     the user jeff. The Keycloak Operator imports it once, when the realm
+//     svc-holos-controller clients, svc-holos-controller's admin roles, the
+//     user jeff and the service user svc-quay-controller. The Keycloak Operator imports it once, when the realm
 //     does not exist, and never again: a change to it here reaches a running
 //     cluster only by deleting the realm and the import (README.md, "The
 //     realm").
@@ -26,13 +26,15 @@ import (
 // It also writes the credential holos-controller calls the admin API with,
 // and the PostSync Job that gives the Instance the private root (Q52).
 //
-// Two secrets are generated here (#GeneratedSecret), in Keycloak's namespace,
-// because the import's placeholders read Secrets in the import's own
-// namespace alone:
+// Three secrets are generated here (#GeneratedSecret), in Keycloak's
+// namespace, because the import's placeholders read Secrets in the import's
+// own namespace alone:
 //
 //   - svc-holos-controller, a login whose username is the client ID and whose
 //     password is the client's secret.
 //   - holos-user-jeff, jeff's login.
+//   - svc-quay-controller, the Quay superuser's login, which
+//     cmd/quay-bootstrap reads to mint holos-controller's Quay token.
 //
 // The controller reads its credential from its own namespace, so an
 // ExternalSecret copies svc-holos-controller there as
@@ -61,6 +63,15 @@ let Clients = KC.clients
 // UserSecret jeff's.
 let ControllerSecret = Clients.controller
 let UserSecret = "holos-user-jeff"
+
+// QuayUser is the service user Quay's SUPER_USERS names and
+// cmd/quay-bootstrap logs in to Quay as (components/quay.cue, interview
+// Q57a). It logs in through Quay's own Keycloak flow, with the realm's
+// ordinary login form, so it is a user with a password rather than a
+// client. Its first and last name and its verified email are set, so
+// Keycloak's VERIFY_PROFILE form never stands between the program and a
+// session. Its Secret is named after it.
+let QuayUser = Quay.controller
 
 // The milestone's user (interview Q6). Its group membership is the
 // controller's, below, not the import's.
@@ -105,6 +116,7 @@ let OptionalScopes = ["offline_access", "address", "phone", "microprofile-jwt", 
 let Placeholders = {
 	SVC_HOLOS_CONTROLLER_CLIENT_SECRET: secret: {name: ControllerSecret, key: "password"}
 	JEFF_PASSWORD: secret: {name: UserSecret, key: "password"}
+	SVC_QUAY_CONTROLLER_PASSWORD: secret: {name: QuayUser.username, key: "password"}
 }
 
 // ArgoCDURL is Argo CD's URL, the base of its redirects.
@@ -312,6 +324,22 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 								temporary: false
 							}]
 						},
+						QuayUser & {
+							// The import is one-shot, so on a realm
+							// imported before this user was added it is
+							// created once by hand, through the admin API
+							// (README.md, Quay). It holds the realm's
+							// default role, as jeff does, and no group:
+							// Quay makes it a superuser by name.
+							enabled:       true
+							emailVerified: true
+							realmRoles: ["default-roles-\(KC.realm)"]
+							credentials: [{
+								type:      "password"
+								value:     "${SVC_QUAY_CONTROLLER_PASSWORD}"
+								temporary: false
+							}]
+						},
 					]
 				}
 			}
@@ -485,6 +513,12 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		name:      UserSecret
 		namespace: Namespace
 		username:  User.username
+	}).resources
+
+	resources: (#GeneratedSecret & {
+		name:      QuayUser.username
+		namespace: Namespace
+		username:  QuayUser.username
 	}).resources
 }).artifact]
 

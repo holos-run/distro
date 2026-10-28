@@ -1,0 +1,11 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Repository
+metadata:
+    name: demo-echo
+    namespace: quay
+spec:
+    deletionPolicy: Orphan
+    description: The demo actor's image, public so atelet can pull it anonymously.
+    name: echo
+    organizationRef: demo
+    visibility: public
