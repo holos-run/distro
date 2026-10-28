@@ -1607,8 +1607,9 @@ OLM and adds nothing once the database is CloudNativePG.
   `WORKER_COUNT_WEB=2`, `WORKER_COUNT_REGISTRY=2`, `WORKER_COUNT_SECSCAN=1`
   and `WORKER_COUNT_UNSUPPORTED_MINIMUM=1`; without the last, upstream's
   minimum of eight registry workers overrides the pins. Memory is
-  requested at 3Gi with a 6Gi limit: aavis-ops measured an idle Quay with
-  the pools pinned near 3.6Gi and saw 2Gi and 4Gi limits OOMKilled. The
+  requested at 4Gi with a 6Gi limit: with the pools pinned, treasury
+  measured Quay at 3.6Gi idle, as aavis-ops had, and 3.8Gi after the
+  check's push; aavis-ops saw 2Gi and 4Gi limits OOMKilled. The
   first start runs the schema migrations, so the startup probe on
   `/health/instance` allows ten minutes. The ServiceAccount token stays
   mounted, because Quay's `KubernetesConfigProvider` will not start without
@@ -1834,8 +1835,8 @@ None of these has been exercised on a cluster yet.
 
 #### Checking Quay
 
-What Quay uses, once it has run a while (no metrics server here), to set
-its memory request from:
+What Quay uses, once it has run a while (no metrics server here), to check
+its memory request against:
 
 ```sh
 kubectl -n quay exec deploy/quay -c quay -- cat /sys/fs/cgroup/memory.current   # bytes

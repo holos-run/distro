@@ -370,15 +370,15 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 								timeoutSeconds: 5
 							}
 							// About twenty Python workers, each with the
-							// whole codebase: aavis-ops measured an idle
-							// Quay with the pools pinned near 3.6Gi, and
-							// OOMKills at 2Gi and 4Gi limits. The request
-							// is most of that, so the scheduler places it
-							// on a worker with room, and the limit leaves
-							// headroom for a push. Remeasure on treasury
-							// (README.md, Quay) and set the request to it.
+							// whole codebase: treasury measured Quay at
+							// 3.6Gi idle, as aavis-ops had, and 3.8Gi
+							// after a push; aavis-ops saw OOMKills at 2Gi
+							// and 4Gi limits. The request is that
+							// measurement rounded up, so the scheduler
+							// places nothing on memory Quay is using, and
+							// the limit leaves headroom for a push.
 							resources: {
-								requests: {cpu: "500m", memory: "3Gi"}
+								requests: {cpu: "500m", memory: "4Gi"}
 								limits: memory: "6Gi"
 							}
 							// The root stays writable: the entrypoint writes
