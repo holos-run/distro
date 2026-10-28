@@ -608,4 +608,6 @@ spec:
               enabled: true
               firstName: Jeff
               lastName: McCune
+              realmRoles:
+                - default-roles-holos
               username: jeff

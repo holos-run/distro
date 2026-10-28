@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-options: Prune=false,Delete=false
+        holos.run/description: The platform's organization, holding its management project
+        holos.run/display-name: Platform
+        holos.run/share-roles: '[{"principal":"/platform/owners","role":"owner"}]'
+    labels:
+        app.kubernetes.io/managed-by: holos.run
+        holos.run/organization: platform
+        holos.run/resource-type: organization
+        kubernetes.io/metadata.name: holos-org-platform
+    name: holos-org-platform

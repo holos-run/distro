@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-options: Prune=false,Delete=false
+        holos.run/default-share-roles: '[{"principal":"/platform/owners","role":"owner"}]'
+        holos.run/description: Platform secrets, copied into the components that use them by External Secrets
+        holos.run/display-name: Platform
+        holos.run/share-roles: '[{"principal":"/platform/owners","role":"owner"}]'
+    labels:
+        app.kubernetes.io/managed-by: holos.run
+        holos.run/organization: platform
+        holos.run/project: platform
+        holos.run/resource-type: project
+        kubernetes.io/metadata.name: holos-prj-platform
+    name: holos-prj-platform

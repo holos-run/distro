@@ -94,6 +94,7 @@ old one and every webhook call is refused. Then change the router's
 | `ztunnel` | Ambient's node proxy on every worker |
 | `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks reached through the gateway; no `Cluster` |
 | `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook reached through the gateway; no store, no `ExternalSecret` |
+| `management-namespaces` | The Secrets Manager's management organization `holos-org-platform` and project `holos-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
 | `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, and the admission webhooks' TLS passthrough listener and `TLSRoute`s |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
@@ -103,6 +104,7 @@ old one and every webhook call is refused. Then change the router's
 | `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `holos-controller` | holos-controller 0.22.0 from aavis-ops' manifests, vendored, in the ambient namespace `holos-controller`, with its eight CRDs; no resources of its kinds |
 | `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
+| `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -606,7 +608,7 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   Pending Service with a reason rather than a different address.
 - **Hostnames.** Every service is `<service>.<privateDomain>` (interview
   Q40), `hello.bank.internal`, `argocd.bank.internal`,
-  `keycloak.bank.internal`, named in
+  `keycloak.bank.internal`, `secrets.bank.internal`, named in
   `IngressGateway.hosts`, one label under the zone and no cluster name.
 - **Listeners.** `https` on 443 for `*.bank.internal`, terminating TLS with
   the `wildcard` `Certificate` from `ClusterIssuer` `private-ca` (Secret
@@ -780,8 +782,9 @@ kubectl wait --for=delete --timeout=2m pv/$PV
 `external-secrets` is the External Secrets operator, ESO, alone: v2.14.0
 from the `external-secrets` chart 2.14.0, in `external-secrets`, watching
 every namespace. It renders no `SecretStore` and no `ExternalSecret`: a
-component generates its own secrets with `#GeneratedSecret`, below, and the
-stores that read from outside the cluster come with the Secrets Manager. The
+component generates its own secrets with `#GeneratedSecret`, below, and
+copies a secret from another namespace through a per-namespace store,
+`#ScopedSecretStore` (Secrets Manager, below). The
 controller and the webhook are one replica each, Deployments with no
 tolerations, so the control plane's taint keeps them on the workers. Their
 pods meet the restricted Pod Security standard, so `external-secrets` needs
@@ -922,9 +925,8 @@ Check the mechanism with a throwaway generated secret, rendered from the
 definition:
 
 ```sh
-cue export ./components --out text -e 'yaml.MarshalStream([for K, V in
-  (#GeneratedSecret & {name: "eso-test", namespace: "eso-test"}).resources
-  for R in V {R}])' > es.yaml
+cue export ./components --out text -e 'yaml.MarshalStream([for K, V in (#GeneratedSecret &
+  {name: "eso-test", namespace: "eso-test"}).resources for R in V {R}])' > es.yaml
 ```
 
 Then:
@@ -1200,7 +1202,10 @@ device grant, so the realm comes in two halves (interview Q50):
     Not `manage-realm`: aavis-ops grants it only for a `Group`'s
     `custodians`, which need fine-grained admin permissions, and nothing
     here uses them, so the realm leaves `adminPermissionsEnabled` off.
-  - the user `jeff`, `jeff@bank.internal`.
+  - the user `jeff`, `jeff@bank.internal`, with the realm role
+    `default-roles-holos`. An imported user gets only the roles it lists, and
+    without that role's `offline_access` Keycloak refuses the Secrets
+    Manager's login, which asks for that scope.
 - holos-controller's resources, in `keycloak` beside the import: the
   `Instance` `holos`, the `Group` `platform-owners` at path
   `platform/owners`, and the `GroupMembership` `platform-owners` putting
@@ -1233,7 +1238,9 @@ downward API's `POD_NAMESPACE`, whatever the `Instance`'s namespace. An
 `svc-holos-controller` into the keys the controller reads, `clientId` and
 `clientSecret`, through `SecretStore` `keycloak`, External Secrets'
 `kubernetes` provider, which authenticates as ServiceAccount
-`keycloak-secret-reader` and may `get` that one Secret in `keycloak`. The
+`keycloak-secret-reader` and may `get` that one Secret in `keycloak`: a
+per-namespace store, `#ScopedSecretStore` (Secrets Manager, below), with
+`source: "keycloak"`. The
 value is generated once, in one place; the copy is not immutable and follows
 its source hourly, or at once with
 `kubectl -n holos-controller annotate externalsecret holos-controller-keycloak-creds force-sync=$(date +%s) --overwrite`.
@@ -1310,6 +1317,219 @@ curl -s --cacert root.pem -H "Authorization: Bearer $t" \
   jq -c '{aud, groups}'                          # {"aud":"kubectl","groups":["/platform/owners"]}
 curl -s --cacert root.pem https://keycloak.bank.internal/realms/holos/protocol/openid-connect/auth/device \
   -d client_id=kubectl -d scope=openid | jq 'has("device_code")'   # true
+```
+
+### Secrets Manager
+
+The Holos Secrets Manager (holos-run/secrets-manager) is where platform
+secrets are made (interview Q18): a Go server with a web UI, at
+`https://secrets.bank.internal`, that manages Kubernetes Secrets directly,
+with Keycloak login and grants, so there is no external store. A secret is
+made in the management namespace through the UI, and an `ExternalSecret` in
+the consumer's namespace copies it there through that consumer's own store.
+`SecretsManager` (`components/secrets-manager.cue`) holds the release, the
+names and the URL; the `secrets-manager` component renders the rest.
+
+- **The server.** One Deployment in the ambient namespace
+  `secrets-manager`, the release's distroless nonroot image pinned by
+  digest, restricted: non-root, a read-only root, all capabilities dropped.
+  It serves plain HTTP on 8080 behind the gateway, which terminates TLS as
+  it does for Keycloak (`--plain-http --listen=:8080`), and its public URL
+  is `--origin=https://secrets.bank.internal`. It trusts the private root
+  from the namespace's `private-ca` ConfigMap, mounted and named by
+  `--ca-cert`, for its calls to the issuer. The kubelet probes `/healthz`
+  and `/readyz`. It keeps no state beyond Namespaces and Secrets, and acts
+  as its own ServiceAccount, `secrets-manager`, impersonating no one.
+- **Its RBAC.** Two ClusterRoles, each `get`, `list`, `create`, `update`
+  and `delete`. `secrets-manager`, on `namespaces`, is bound cluster wide,
+  since organizations and projects are Namespaces the server may make at
+  runtime. `secrets-manager-secrets`, on `secrets`, is bound only by a
+  `RoleBinding` in each project namespace git renders, beside the
+  namespace, so in `holos-prj-platform` alone for now: the server reads and
+  writes Secrets only in project namespaces, which in this distro come from
+  git. The cost is that a project made in the UI has no access to its
+  secrets until git adds its `RoleBinding`; the ProjectClaim collection
+  renders those later. The namespace writes are still cluster wide: the
+  ServiceAccount may update or delete any Namespace, and deleting one
+  deletes everything in it. A `ValidatingAdmissionPolicy` holding them to
+  `holos-` namespaces with the server's labels is open hardening.
+- **Login.** OIDC against the realm `holos` (`--issuer`, which must always
+  be set: an empty issuer turns authentication off), through the public
+  client `secrets-manager`, which a holos-controller `Client` in
+  `secrets-manager` creates, with the `ReferenceGrant`
+  `secrets-manager-clients` in `keycloak` allowing it to name the
+  `Instance` there. Its redirect is `https://secrets.bank.internal/pkce/verify`
+  and its web origin the URL; the SPA runs the code flow with PKCE and asks
+  for `openid profile email groups offline_access`. The server verifies the
+  bearer as an ID token whose `aud` is `secrets-manager` (ADR 0002) and
+  reads roles from `groups` (`--roles-claim`), full paths. The `Client` has
+  no field for a post-logout redirect, so logging out ends on Keycloak's
+  page.
+- **Organizations.** Only `/platform/owners` may create one
+  (`--disable-org-creation --org-creator-roles=/platform/owners`, Q55).
+  Never `--enable-insecure-dex`.
+- **The route.** `HTTPRoute` `secrets-manager` on the gateway's HTTPS
+  listener. The server's `/metrics` is unauthenticated on the same port, so
+  the route's first rule, path prefix `/metrics` with no backend, wins for
+  it and everything under it, and the gateway answers 500 without reaching
+  the server. The gateway normalizes paths before matching (`/%6Detrics`,
+  `/a/../metrics`), and the server redirects `//metrics` to `/metrics`.
+
+v0.19.0's SPA sends the access token, which the server refuses, so with it
+the UI loads and login succeeds but every call after fails as
+unauthenticated. The release that sends the ID token replaces it, a change
+to `SecretsManager.version` and `image` alone.
+
+#### The management namespaces
+
+`holos-prj-platform` (Q54) is a Secrets Manager project, `platform`, under
+the server's default prefixes, `holos-` and `prj-`, in the organization
+`platform`, `holos-org-platform`. The SPA lists projects only within the
+organization chosen, so the project needs one. The server lists a namespace
+only when it carries its labels, so git renders both with them, in the
+`management-namespaces` component, early in the registry:
+`app.kubernetes.io/managed-by: holos.run`, `holos.run/resource-type`
+(`organization` or `project`), and `holos.run/organization: platform`; the
+project also carries `holos.run/project: platform`, and it is the
+`organization` label the server's project list filters on. Both are shown
+as Platform. Their annotations are the server's grants, JSON lists:
+
+- `holos.run/share-roles`, on both:
+  `[{"principal":"/platform/owners","role":"owner"}]`. On the organization
+  it lets owners see it and make projects in it. On the project, owners may
+  list, create, update and delete its secrets and change its grants. A
+  project grant never lets anyone read a secret's data by itself, but an
+  owner may share a secret to themselves, as a secret admin, and then read
+  it.
+- `holos.run/default-share-roles`, on the project, the same list, which the
+  server puts on every secret made in the project, so platform owners may
+  read and share each one. The person who makes a secret is always its
+  owner too.
+
+Beside the project is `RoleBinding` `secrets-manager-secrets`, which lets
+the server work with its Secrets (Its RBAC, above).
+
+Both namespaces carry `Prune=false,Delete=false`: the project's secrets are
+not in git, and deleting it deletes them all. A platform owner can still
+delete the project from the UI, which deletes the namespace; Argo CD would
+re-create it empty. Git owns the rendered annotations: the server writes a
+Namespace only when someone edits the organization or project in the UI,
+and an edit there to the display name, the description or a role grant
+shows as out of sync in Argo CD and is put back by self-heal. A grant to a
+person (`share-users`) is not rendered and stays.
+
+#### Per-namespace stores
+
+A consumer reads platform secrets through a store of its own, in its own
+namespace, that may read the named Secrets and nothing else (Q18).
+`#ScopedSecretStore` (`components/secret-store.cue`) renders it from a
+name, the consumer's namespace and the Secret names; the source defaults to
+`holos-prj-platform`:
+
+```cue
+resources: (#ScopedSecretStore & {
+	name:      "platform"
+	namespace: "ceph-csi-rbd"
+	secrets: ["ceph-client-k8s"]
+	// source: "keycloak"
+}).resources
+```
+
+It renders four resources: ServiceAccount `<namespace>-<name>-reader` in
+the consumer's namespace; a Role of the same name in the source namespace that
+may `get` only the named Secrets (`resourceNames`, no `list`); its
+RoleBinding there; and `SecretStore` `<name>` of the `kubernetes` provider
+in the consumer's namespace, reading the source namespace as that
+ServiceAccount and verifying the API server against `kube-root-ca.crt`.
+There is no `ClusterSecretStore`: with one, a project Owner with admin in
+their namespace could write an `ExternalSecret` copying the Keycloak admin
+credential. The Role is in the source namespace, which no consumer
+controls, and which every consumer of it shares, so its default name
+carries the consumer's namespace. The store reports `ReadWrite`
+capabilities, as every `kubernetes` provider store does, but its Role may
+only `get`, so a `PushSecret` through it is refused. `keycloak-realm` uses
+it for holos-controller's credential, with `source: "keycloak"` and
+`reader: "keycloak-secret-reader"`, the name it had before.
+
+The consumer then writes its own `ExternalSecret` against the store, with
+`creationPolicy: Owner`, since the source is the truth and the copy follows
+it within its `refreshInterval`:
+
+```cue
+ExternalSecret: "ceph-client-k8s": {
+	metadata: namespace: "ceph-csi-rbd"
+	spec: {
+		refreshInterval: "1h"
+		secretStoreRef: {kind: "SecretStore", name: "platform"}
+		target: creationPolicy: "Owner"
+		dataFrom: [{extract: key: "ceph-client-k8s"}]
+	}
+}
+```
+
+The consumer comes after `management-namespaces` in the registry, so the
+namespace its Role and RoleBinding land in exists first. That is all the
+order guarantees: the secret itself is made through the UI, so on a new
+cluster a consumer's `ExternalSecret` reports `SecretSyncedError` until
+someone makes it, and a component earlier than `secrets-manager` cannot
+depend on a platform secret to come up.
+
+#### Adding a platform secret
+
+1. Log in at `https://secrets.bank.internal` as a member of
+   `/platform/owners`, such as `jeff` (Logging in, under Bootstrap Argo
+   CD: the same password), choose the `Platform` organization and open
+   its `Platform` project.
+2. Create the secret, with the name and keys the consumer expects. The
+   server makes it in `holos-prj-platform`, owned by you and, by the
+   project's default grant, by `/platform/owners`.
+3. To let someone else read it, share it with them, a user by email or a
+   role by group path, as viewer: reading a secret's data needs a grant on
+   the secret itself. External Secrets needs no grant in the Secrets
+   Manager; it reads through Kubernetes RBAC, the consumer's Role.
+4. Name the secret in the consumer's `#ScopedSecretStore`, add its
+   `ExternalSecret`, render and merge. A store asked for any other Secret
+   gets a 403 from the API server, and its `ExternalSecret` reports
+   `SecretSyncedError`.
+
+Check the server, the client and the route (`root.pem` as under Keycloak,
+above):
+
+```sh
+kubectl -n secrets-manager get deploy,client               # 1/1, READY True
+kubectl -n secrets-manager get httproute secrets-manager \
+  -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}'   # True
+kubectl -n keycloak get referencegrants.security.holos.run
+kubectl get ns -L holos.run/resource-type,holos.run/organization -l app.kubernetes.io/managed-by=holos.run
+kubectl -n holos-prj-platform get rolebinding secrets-manager-secrets
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.bank.internal/          # 200
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.bank.internal/metrics   # 500
+kubectl -n secrets-manager exec deploy/secrets-manager -- /bin/secrets-manager --version           # the pinned release
+```
+
+Check a store with a throwaway consumer, rendered from the definition, and a
+secret `sm-test` made in the UI:
+
+```sh
+cue export ./components --out text -e 'yaml.MarshalStream([for K, V in (#ScopedSecretStore &
+  {name: "platform", namespace: "sm-test", secrets: ["sm-test"]}).resources for R in V {R}])' > store.yaml
+kubectl create ns sm-test
+kubectl apply --server-side -f store.yaml   # reader sm-test-platform-reader
+for n in sm-test sm-test-other; do kubectl apply --server-side -f - <<YAML
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata: {name: $n, namespace: sm-test}
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {kind: SecretStore, name: platform}
+  target: {creationPolicy: Owner}
+  dataFrom: [{extract: {key: $n}}]
+YAML
+done
+kubectl -n sm-test get secretstore,externalsecret   # Valid; sm-test SecretSynced, sm-test-other SecretSyncedError
+kubectl -n sm-test describe externalsecret sm-test-other | grep -i forbidden
+kubectl delete -f store.yaml   # its Role and RoleBinding in holos-prj-platform, by name
+kubectl delete ns sm-test
 ```
 
 ## Render

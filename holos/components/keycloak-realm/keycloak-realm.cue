@@ -37,11 +37,12 @@ import (
 // The controller reads its credential from its own namespace, so an
 // ExternalSecret copies svc-holos-controller there as
 // holos-controller-keycloak-creds, with the keys the controller reads,
-// clientId and clientSecret, through a SecretStore of External Secrets'
-// kubernetes provider allowed to read that one Secret in keycloak and
-// nothing else. The value is generated once, in one place, and the import and
-// the controller read the same one; the copy follows the source within the
-// hour should it ever be rotated, or at once with a forced refresh.
+// clientId and clientSecret, through a per-namespace store
+// (#ScopedSecretStore), a SecretStore of External Secrets' kubernetes
+// provider allowed to read that one Secret in keycloak and nothing else.
+// The value is generated once, in one place, and the import and the
+// controller read the same one; the copy follows the source within the hour
+// should it ever be rotated, or at once with a forced refresh.
 //
 // Every resource here is in a namespace earlier components made, keycloak or
 // holos-controller, and every kind's CRD comes from an earlier component:
@@ -299,6 +300,12 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 						User & {
 							enabled:       true
 							emailVerified: true
+							// An imported user gets only the roles
+							// it lists, not the realm's default
+							// role, and without its offline_access
+							// Keycloak refuses the Secrets Manager's
+							// login, which asks for that scope.
+							realmRoles: ["default-roles-\(KC.realm)"]
 							credentials: [{
 								type:      "password"
 								value:     "${JEFF_PASSWORD}"
@@ -350,45 +357,6 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// The copy of svc-holos-controller into the controller's
-		// namespace. The SecretStore authenticates as its own
-		// ServiceAccount, through a token External Secrets requests for
-		// it, which may get that one Secret in keycloak.
-		ServiceAccount: "keycloak-secret-reader": metadata: namespace: HC.namespace
-		Role: "keycloak-secret-reader": {
-			metadata: namespace: Namespace
-			rules: [{
-				apiGroups: [""]
-				resources: ["secrets"]
-				resourceNames: [ControllerSecret]
-				verbs: ["get"]
-			}]
-		}
-		RoleBinding: "keycloak-secret-reader": {
-			metadata: namespace: Namespace
-			roleRef: {
-				apiGroup: "rbac.authorization.k8s.io"
-				kind:     "Role"
-				name:     "keycloak-secret-reader"
-			}
-			subjects: [{
-				kind:      "ServiceAccount"
-				name:      "keycloak-secret-reader"
-				namespace: HC.namespace
-			}]
-		}
-		SecretStore: "keycloak": {
-			metadata: namespace: HC.namespace
-			spec: provider: kubernetes: {
-				remoteNamespace: Namespace
-				server: caProvider: {
-					type: "ConfigMap"
-					name: "kube-root-ca.crt"
-					key:  "ca.crt"
-				}
-				auth: serviceAccount: name: "keycloak-secret-reader"
-			}
-		}
 		// holos-controller-keycloak-creds, the keys the controller reads
 		// from svc-holos-controller's username and password. Not
 		// immutable, unlike its source: it is a copy, and follows the
@@ -492,6 +460,20 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 	}
+
+	// The copy of svc-holos-controller into the controller's namespace,
+	// through a per-namespace store (#ScopedSecretStore) whose
+	// ServiceAccount, keycloak-secret-reader, may get that one Secret in
+	// keycloak. The reader keeps the name it had before the definition
+	// existed, rather than the default, holos-controller-keycloak-reader,
+	// so the render and the cluster do not change.
+	resources: (#ScopedSecretStore & {
+		name:      "keycloak"
+		namespace: HC.namespace
+		source:    Namespace
+		secrets: [ControllerSecret]
+		reader: "keycloak-secret-reader"
+	}).resources
 
 	resources: (#GeneratedSecret & {
 		name:      ControllerSecret

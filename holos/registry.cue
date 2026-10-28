@@ -82,6 +82,17 @@ registry: [
 	// TLSRoute is in its namespace, so it comes after private-ca and before
 	// ingress-gateway.
 	{name: "external-secrets"},
+	// management-namespaces is the Secrets Manager's management organization
+	// and project, holos-org-platform and holos-prj-platform, and the
+	// RoleBinding that grants the server's secrets verbs in the project. A
+	// consumer of a platform secret renders its per-namespace store's Role
+	// and RoleBinding into holos-prj-platform, so every consumer comes after
+	// this component, which needs nothing before it. It comes straight after
+	// external-secrets, whose CRDs every store needs, so any component after
+	// that can write one; it is not part of external-secrets, a chart whose
+	// artifact drops invalid resources silently, nor of secrets-manager,
+	// which comes too late.
+	{name: "management-namespaces"},
 	// ingress-gateway is the ingress Gateway, its wildcard certificate and
 	// the routes of components that come before it. It needs the Gateway API
 	// CRDs, the private-ca ClusterIssuer and istiod's istio GatewayClass.
@@ -130,6 +141,19 @@ registry: [
 			jsonPointers: ["/spec/caBundle"]
 		}]
 	},
+	// secrets-manager is the Holos Secrets Manager: its Deployment, RBAC and
+	// route, and the holos-controller Client it logs in through, with the
+	// ReferenceGrant that lets the Client name the Instance in keycloak. It
+	// needs the Client CRD from holos-controller and the Instance from
+	// keycloak-realm, so it comes after both. Its HTTPRoute is in its own
+	// namespace, on the HTTPS listener, which takes routes from every
+	// namespace, so it need not come before ingress-gateway. A consumer of a
+	// platform secret need not come after it, only after
+	// management-namespaces; but the secret must exist before the
+	// consumer's ExternalSecret syncs, and it is made through this
+	// component's UI, so on a new cluster a component earlier than this one
+	// cannot get a platform secret by itself.
+	{name: "secrets-manager"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits

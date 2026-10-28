@@ -35,7 +35,6 @@ import (
 	HTTPRoute?: [_]:          hrv1.#HTTPRoute
 	Job?: [_]:                batchv1.#Job
 	Namespace?: [_]:          corev1.#Namespace
-	ReferenceGrant?: [_]:     rgv1.#ReferenceGrant
 	Role?: [_]:               rbacv1.#Role
 	RoleBinding?: [_]:        rbacv1.#RoleBinding
 	Issuer?: [_]:             issuer.#Issuer
@@ -83,6 +82,14 @@ import (
 	Instance?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
 	Group?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
 	GroupMembership?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
+	Client?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
+
+	// ReferenceGrant is two kinds of one name: the Gateway API's, the
+	// default, and holos-controller's security.holos.run one, which
+	// authorizes a reference from another namespace to an Instance or a
+	// Group and is chosen by its apiVersion. Resources are keyed by kind
+	// alone, so both share this entry.
+	ReferenceGrant?: [_]: *rgv1.#ReferenceGrant | {apiVersion: "security.holos.run/v1alpha1", metadata: {...}, ...}
 
 	Gateway?: [_]: gwv1.#Gateway & {
 		spec: gatewayClassName: string | *"istio"
