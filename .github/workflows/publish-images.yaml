@@ -1,0 +1,147 @@
+name: Publish images
+
+# Builds the Substrate and kagent images and kagent's charts from the holos-run
+# forks at pinned commits, pushes them to ghcr.io/holos-run, and attests each
+# one. Either input may be left empty to publish the other fork alone; leaving
+# both empty fails the run. docs/forks.md, Images, says how to dispatch it and what it
+# publishes. Dispatch only, so every run is a deliberate act that names what
+# it builds, and a fork pull request cannot start one. The behavior is in
+# cmd/publish-images; this file sets up the runner and attests the result.
+on:
+  workflow_dispatch:
+    inputs:
+      substrate_sha:
+        description: Full commit SHA on a holos-* branch of holos-run/substrate; empty skips Substrate
+        required: false
+        type: string
+      kagent_sha:
+        description: Full commit SHA on a holos-* branch of holos-run/kagent; empty skips kagent
+        required: false
+        type: string
+
+# Two runs at once would race to tag the same images.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish
+    # The destination is public, so the build runs on a hosted runner, free
+    # for a public repository, rather than the garage.
+    runs-on: ubuntu-latest
+    # Substrate's own release gives the same Substrate build 30 minutes on
+    # this runner. kagent's controller and UI add theirs: both compile on the
+    # build platform, and only the controller's final apk stage runs under
+    # QEMU for arm64.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      subjects: ${{ steps.publish.outputs.subjects }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The forks' toolchain directives choose the Go that builds them; this
+      # Go only runs cmd/publish-images, which sets GOTOOLCHAIN=auto for them.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Substrate cross-compiles every image, Rust included, and kagent's UI
+      # builds on $BUILDPLATFORM; only the kagent controller's final apk
+      # stage runs as arm64, which needs emulation.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+
+      # A docker-container builder pushes multi-platform images; BuildKit is
+      # pinned as Substrate's own release workflow pins it.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+
+      # The job token, no stored secret. ko, buildx, imagetools and helm all
+      # read the credentials this writes to docker's config.
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The inputs reach the program through the environment, never the
+      # script, and the program refuses anything but a full SHA on one of the
+      # fork's holos-* branches, and fails if both are empty. Its stdout is the
+      # digest references, which go to the job summary; the JSON's subjects
+      # are the attest matrix.
+      - name: publish
+        id: publish
+        env:
+          SUBSTRATE_SHA: ${{ inputs.substrate_sha }}
+          KAGENT_SHA: ${{ inputs.kagent_sha }}
+        run: |
+          go run ./cmd/publish-images \
+            -substrate-sha "${SUBSTRATE_SHA}" \
+            -kagent-sha "${KAGENT_SHA}" \
+            -out "${RUNNER_TEMP}/published.json" > "${RUNNER_TEMP}/published.txt"
+          cat "${RUNNER_TEMP}/published.txt"
+          { echo '```'; cat "${RUNNER_TEMP}/published.txt"; echo '```'; } >> "${GITHUB_STEP_SUMMARY}"
+          # An assignment fails the step when jq fails; an echo would not.
+          subjects="$(jq -ce .subjects "${RUNNER_TEMP}/published.json")"
+          echo "subjects=${subjects}" >> "${GITHUB_OUTPUT}"
+
+      # Disk headroom on the hosted runner, for sizing; it never fails the job.
+      - name: disk
+        if: always()
+        run: df -h
+
+  attest:
+    name: Attest ${{ matrix.name }}
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # id-token signs the provenance through Sigstore, attestations stores it
+    # with GitHub, packages pushes it to the registry beside the subject, and
+    # artifact-metadata records where the subject is stored, which the action
+    # does by default for a subject it pushes to a registry.
+    permissions:
+      id-token: write
+      attestations: write
+      packages: write
+      artifact-metadata: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.publish.outputs.subjects) }}
+    # A job's if cannot read the matrix, so each step checks the subject is
+    # under one of the two packages this workflow publishes, and a subject
+    # outside them fails the job rather than being attested.
+    steps:
+      - name: subject outside ghcr.io/holos-run/{substrate,kagent}
+        if: ${{ !startsWith(matrix.name, 'ghcr.io/holos-run/substrate/') && !startsWith(matrix.name, 'ghcr.io/holos-run/kagent/') }}
+        env:
+          SUBJECT: ${{ matrix.name }}
+        run: |
+          echo "::error::refusing to attest ${SUBJECT}"
+          exit 1
+
+      - if: ${{ startsWith(matrix.name, 'ghcr.io/holos-run/substrate/') || startsWith(matrix.name, 'ghcr.io/holos-run/kagent/') }}
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: ${{ startsWith(matrix.name, 'ghcr.io/holos-run/substrate/') || startsWith(matrix.name, 'ghcr.io/holos-run/kagent/') }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ matrix.name }}
+          subject-digest: ${{ matrix.digest }}
+          push-to-registry: true
