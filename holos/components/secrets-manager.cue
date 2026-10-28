@@ -8,14 +8,13 @@ package holos
 SecretsManager: {
 	// version is the holos-run/secrets-manager release, and image its
 	// distroless nonroot image, the tag kept for the reader and the index
-	// digest the tag pointed to. v0.19.0's SPA sends the OAuth access token,
-	// which the server checks as an ID token whose aud must be the client
-	// ID; Keycloak's access tokens carry no aud, so every call after login
-	// is refused (Q53). The release that sends the ID token instead (ADR
-	// 0002) replaces this one: its version and digest, here, are the whole
-	// change.
-	version: "0.19.0"
-	image:   "ghcr.io/holos-run/secrets-manager:v\(version)@sha256:806f23abd285514dfc2d3effa37992d86d188c6a7374e14e67914a9db87634cf"
+	// digest the tag pointed to. v0.20.0's SPA sends the OIDC ID token as the
+	// bearer (ADR 0002). v0.19.0 sent the OAuth access token, which the
+	// server checks as an ID token whose aud must be the client ID;
+	// Keycloak's access tokens carry no aud, so every call after login was
+	// refused (Q53).
+	version: "0.20.0"
+	image:   "ghcr.io/holos-run/secrets-manager:v\(version)@sha256:e33d995aa4f21d4861b5e7715e9674f8bf305278cf359ad32f9ea55d38272d5c"
 
 	// namespace holds the server. It is in the mesh, like keycloak's: the
 	// gateway reaches it over HBONE, and it calls Keycloak at its public
