@@ -23,6 +23,8 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=:8080
         env:
+        - name: SSL_CERT_DIR
+          value: /etc/ssl/certs:/etc/ssl/private-ca
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
@@ -59,9 +61,17 @@ spec:
             drop:
             - ALL
           readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/ssl/private-ca
+          name: private-ca
+          readOnly: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: holos-controller-manager
       terminationGracePeriodSeconds: 10
+      volumes:
+      - configMap:
+          name: private-ca
+        name: private-ca

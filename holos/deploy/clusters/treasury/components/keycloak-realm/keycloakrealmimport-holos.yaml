@@ -14,6 +14,10 @@ spec:
             secret:
                 key: password
                 name: svc-holos-controller
+        SVC_QUAY_CONTROLLER_PASSWORD:
+            secret:
+                key: password
+                name: svc-quay-controller
     realm:
         clientScopes:
             - attributes: {}
@@ -611,3 +615,15 @@ spec:
               realmRoles:
                 - default-roles-holos
               username: jeff
+            - credentials:
+                - temporary: false
+                  type: password
+                  value: ${SVC_QUAY_CONTROLLER_PASSWORD}
+              email: svc-quay-controller@bank.internal
+              emailVerified: true
+              enabled: true
+              firstName: Quay
+              lastName: Controller
+              realmRoles:
+                - default-roles-holos
+              username: svc-quay-controller

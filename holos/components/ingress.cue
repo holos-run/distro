@@ -44,6 +44,7 @@ IngressGateway: {
 		argocd:   _
 		hello:    _
 		keycloak: _
+		quay:     _
 		secrets:  _
 	}
 

@@ -1,0 +1,13 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    name: demo
+    namespace: quay
+spec:
+    deletionPolicy: Orphan
+    email: quay+demo@bank.internal
+    name: demo
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin

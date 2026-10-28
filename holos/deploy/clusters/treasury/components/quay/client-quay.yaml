@@ -1,0 +1,19 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Client
+metadata:
+    name: quay
+    namespace: quay
+spec:
+    clientId: quay
+    description: Quay
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    redirectUris:
+        - https://quay.bank.internal/oauth2/keycloak/callback
+        - https://quay.bank.internal/oauth2/keycloak/callback/attach
+        - https://quay.bank.internal/oauth2/keycloak/callback/cli
+    secretRef:
+        key: client-secret
+        name: quay-oidc
+    type: confidential
