@@ -109,8 +109,11 @@ type Config struct {
 // the k8s vnet. The sizes follow the Talos Proxmox guide's minimums with room
 // for the platform: 2 cores and 6 GiB for a control plane, 4 cores and 8 GiB
 // for a worker. A control plane runs etcd and the API server, controller
-// manager and scheduler, and wants about 5 GiB in practice, so 6 GiB leaves
-// headroom. The cluster name is left empty on purpose.
+// manager and scheduler. Measured on a running cluster, the node's working set
+// peaked at about 2.5 GiB, mostly the API server's heap, and the rest of the 6
+// GiB was reclaimable page cache; docs/control-plane-memory.md has the
+// measurements, why Proxmox shows 99% used, and the sizing rule to apply when
+// the workload grows. The cluster name is left empty on purpose.
 func Default() Config {
 	return Config{
 		TalosVersion:   DefaultTalosVersion,

@@ -39,7 +39,7 @@ The VM settings follow the
 | --- | --- | --- |
 | SCSI controller | VirtIO SCSI (`virtio-scsi-pci`) | VirtIO SCSI single, the Proxmox default, can hang Talos at bootstrap. |
 | CPU | `host`, 1 socket | Passes the host's `vmx` flag through, so Kata gets `/dev/kvm`, and meets Talos's x86-64-v2 requirement. |
-| Memory | fixed, ballooning off | The guide disables ballooning; memory a balloon takes back is memory the kubelet has promised to pods. |
+| Memory | fixed, ballooning off; 6 GiB for a control plane, 8 GiB for a worker | The guide disables ballooning; memory a balloon takes back is memory the kubelet has promised to pods. Because nothing reports the guest's use to Proxmox, it shows these VMs at 99% used; [Control plane memory](docs/control-plane-memory.md) explains why that is not a problem and how the control plane's size was chosen. |
 | Firmware | OVMF on q35, 4m EFI disk without pre-enrolled keys | The guide's recommendation. Enrolled keys would turn on Secure Boot, which the plain ISO is not signed for. |
 | Disk | `scsi0` on `local-zfs`, `discard=on`, `ssd=1` | |
 | CD-ROM | `ide0`, the Talos ISO from the shared `garage` storage | |
