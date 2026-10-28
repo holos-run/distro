@@ -59,7 +59,7 @@ func resizeGuests() ([]pve.Resource, map[int]GuestSize) {
 	)
 	guests[slices.IndexFunc(guests, func(g pve.Resource) bool { return g.VMID == 106 })].Status = "stopped"
 	have := map[int]GuestSize{
-		104: {2, 6144, 2, 6144},
+		104: {2, 8192, 2, 8192},
 		105: {4, 8192, 4, 8192},
 		106: {4, 8192, 4, 8192},
 		107: {4, 8192, 4, 16384}, // an earlier resize, not restarted since
@@ -89,7 +89,7 @@ func TestPlanResize(t *testing.T) {
 		t.Errorf("PowerCycle = %v, want %v", p.PowerCycle, want)
 	}
 	want := []string{
-		"at size  treasury-cp-1            vmid 104, 2 cores, 6144 MiB",
+		"at size  treasury-cp-1            vmid 104, 2 cores, 8192 MiB",
 		"resize   treasury-general-1       vmid 105, memory 8192 to 16384 MiB at its next start",
 		"resize   treasury-general-2       vmid 106, memory 8192 to 16384 MiB now, since it is stopped",
 		"pending  treasury-general-3       vmid 107, memory 8192 to 16384 MiB at its next start",
@@ -266,7 +266,7 @@ func TestResize(t *testing.T) {
 	}
 	restartCmd := "  talosvm restart -cluster treasury -mode power-cycle -nodes treasury-general-1,treasury-general-2,treasury-general-3\n"
 	for _, want := range []string{
-		"at size  treasury-cp-1            vmid 104, 2 cores, 6144 MiB\n",
+		"at size  treasury-cp-1            vmid 104, 2 cores, 8192 MiB\n",
 		"resize   treasury-general-2       vmid 106, memory 8192 to 16384 MiB at its next start\n",
 		"PUT /api2/json/nodes/r620c/qemu/106/config\n    memory=16384\n",
 		"dry run: sent none of these 3 calls\n",
@@ -396,7 +396,7 @@ func TestResizeDryRunRefusesShrink(t *testing.T) {
 	r.Config.Cluster = "treasury"
 	r.Config.ControlPlane.MemoryMiB = 4096
 	r.DryRun = true
-	if err := r.Resize(ctx, ResizeOptions{}); err == nil || !strings.Contains(err.Error(), "treasury-cp-1 vmid 104 from 2 cores and 6144 MiB to 2 cores and 4096 MiB") {
+	if err := r.Resize(ctx, ResizeOptions{}); err == nil || !strings.Contains(err.Error(), "treasury-cp-1 vmid 104 from 2 cores and 8192 MiB to 2 cores and 4096 MiB") {
 		t.Errorf("dry-run shrink err = %v", err)
 	}
 	if len(f.calls) != 0 {

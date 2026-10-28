@@ -39,7 +39,7 @@ The VM settings follow the
 | --- | --- | --- |
 | SCSI controller | VirtIO SCSI (`virtio-scsi-pci`) | VirtIO SCSI single, the Proxmox default, can hang Talos at bootstrap. |
 | CPU | `host`, 1 socket | Passes the host's `vmx` flag through, so Kata gets `/dev/kvm`, and meets Talos's x86-64-v2 requirement. |
-| Memory | fixed, ballooning off; 6 GiB for a control plane, 16 GiB for a worker | The guide disables ballooning; memory a balloon takes back is memory the kubelet has promised to pods. Because nothing reports the guest's use to Proxmox, it shows these VMs at 99% used; [Control plane memory](docs/control-plane-memory.md) explains why that is not a problem and how the control plane's size was chosen. Workers were 8 GiB, which left about 7.2 GiB to the kubelet; Quay alone uses 3.6 to 3.8 GiB, and its node reached 98% of its memory requests before Substrate and kagent. 16 GiB also leaves two workers room for a third's pods while it restarts. |
+| Memory | fixed, ballooning off; 8 GiB for a control plane, 16 GiB for a worker | The guide disables ballooning; memory a balloon takes back is memory the kubelet has promised to pods. Because nothing reports the guest's use to Proxmox, it shows these VMs at 99% used; [Control plane memory](docs/control-plane-memory.md) explains why that is not a problem and how the control plane's size was chosen. Workers were 8 GiB, which left about 7.2 GiB to the kubelet; Quay alone uses 3.6 to 3.8 GiB, and its node reached 98% of its memory requests before Substrate and kagent. 16 GiB also leaves two workers room for a third's pods while it restarts. |
 | Firmware | OVMF on q35, 4m EFI disk without pre-enrolled keys | The guide's recommendation. Enrolled keys would turn on Secure Boot, which the plain ISO is not signed for. |
 | Disk | `scsi0` on `local-zfs`, `discard=on`, `ssd=1` | |
 | CD-ROM | `ide0`, the Talos ISO from the shared `garage` storage | |
@@ -576,7 +576,7 @@ whole; unknown fields are an error. `-cluster`, `-first-address` and
   "nameserver": "192.168.2.1",
   "searchDomain": "lan",
   "firstAddress": "10.20.0.50",
-  "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 6144, "diskGiB": 32 },
+  "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 8192, "diskGiB": 32 },
   "pools": [
     { "name": "general", "count": 3, "cores": 4, "memoryMiB": 16384, "diskGiB": 64 }
   ]

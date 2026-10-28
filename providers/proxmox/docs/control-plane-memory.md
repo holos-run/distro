@@ -1,7 +1,7 @@
 # Control plane memory
 
-Proxmox shows `treasury-cp-1`, the control plane VM with 6 GiB, at 99.82%
-memory used. The guest is not out of memory: about half of it is available.
+Proxmox showed `treasury-cp-1`, then a control plane VM with 6 GiB, at 99.82%
+memory used. The guest was not out of memory: about half of it is available.
 This page says where the memory goes, which number answers which question,
 what normal and alarming look like, and how the default size was chosen, so
 the next person who sees 99.82% can check it in five minutes and the next
@@ -148,11 +148,17 @@ twice the peak USED plus the 300 MiB the guest does not see, rounded up to a
 whole GiB.
 
 For `treasury`: peak USED 2.47 GiB (2528 MiB); 2 x 2528 + 304 = 5360 MiB, so
-6 GiB. The default stays at 6144 MiB. At that size the node has 2.3 times
+6 GiB. At that size the node has 2.3 times
 its peak working set before the kernel has to reclaim everything it can, and
 the API server's pod, at its peak since boot (3.0 GiB, which includes its
 start-up LISTs and the audit cache), has 2.2 GiB of room under the kubelet's
 5.2 GiB `kubepods` cgroup limit.
+
+The default is 8192 MiB, one step above what the rule gives today. The
+rule sizes for an idle cluster, and the next workloads, Substrate, kagent
+and their controllers, add the watches that grow the API server's heap
+(below). `treasury-cp-1` already runs with 8 GiB, so the default now
+matches the cluster rather than asking a rebuild to shrink it.
 
 The reasoning, and what would change it:
 
@@ -167,11 +173,11 @@ The reasoning, and what would change it:
   LISTs are inside the 3.0 GiB peak since boot but not isolated.
 - The next large sources of watches are Substrate, kagent and their
   controllers. Re-measure after they are installed, with the sampling in this
-  page, before they ship. Raise the default to 8 GiB if
-  peak USED passes 2.8 GiB, or if the API server's anonymous memory floor
-  rises. Ballooning stays off, so the memory is reserved on the host, which
-  has 251 GiB on `r620a`; the host is not the constraint, but a bigger default
-  buys nothing the node uses today.
+  page, before they ship. At 8 GiB the rule holds while peak USED stays
+  under about 3.9 GiB; raise the default again past that, or if the API
+  server's anonymous memory floor keeps rising. Ballooning stays off, so the
+  memory is reserved on the host, which has 251 GiB on `r620a`; the host is
+  not the constraint.
 - A bigger VM does not reduce CPU use. The cores are 17 to 50% busy because
   the API server spends them on the same churn; adding memory would not change
   that.
