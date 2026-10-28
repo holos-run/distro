@@ -685,23 +685,66 @@ which the chart always renders, is patched out until CNPG backups need it.
   one worker each, by the chart's required pod anti-affinity.
 - ceph-csi registers no admission webhook and no APIService.
 
-The Ceph user's key is never in git, since the repository is public. It is
-in Secret `ceph-csi-rbd/ceph-client-k8s` (`Cluster.ceph.secret`), made by
-hand, which the class's provisioner, controller-expand, controller-publish
-and node-stage secret parameters name. No `Application` tracks it, so Argo CD
-neither prunes nor reverts it; it moves to the management namespace once
-external-secrets is in. A rebuilt cluster needs it before anything can claim
-a volume (Bootstrap Argo CD, below). To make it on a running cluster, without
-the key reaching the terminal:
+The Ceph user's key is never in git, since the repository is public. Ceph
+keeps it, outside the cluster, so `ceph auth get-key client.k8s` reads it
+again for a rebuilt cluster. It is a platform secret, `ceph-client-k8s`
+(`Cluster.ceph.secret`), with keys `userID` and `userKey`, in the management
+namespace, `holos-prj-platform`, written there once per cluster at bootstrap
+(Bootstrap Argo CD, below). It carries the label
+`app.kubernetes.io/managed-by=holos.run` and the annotation
+`holos.run/share-roles='[{"principal":"/platform/owners","role":"owner"}]'`,
+so the Secrets Manager lists it under Platform/Platform and platform owners
+can read it. No `Application` tracks it, so Argo CD neither prunes nor
+reverts it, and the namespace carries `Prune=false,Delete=false`.
+
+`ceph-csi-rbd` copies it into its namespace through its own store,
+`SecretStore` `platform` (Per-namespace stores, under Secrets Manager), whose
+Role may `get` that one Secret, and `ExternalSecret` `ceph-client-k8s`, with
+`creationPolicy: Owner` and a `refreshInterval` of an hour. The copy is the
+Secret the class's provisioner, controller-expand, controller-publish and
+node-stage secret parameters name. Deleting and re-creating the
+`ExternalSecret` copies the same key back. Without the management copy the
+driver's pods run, but the `ExternalSecret` reports `SecretSyncedError`,
+`Application` `ceph-csi-rbd` is `Degraded`, nothing later in the registry
+syncs, and
+every claim on `ceph-rbd` stays `Pending`.
+
+Check that the copy is ESO's and matches Ceph, without the key reaching the
+terminal:
 
 ```sh
-ssh root@r620a ceph auth get-key client.k8s |
-  kubectl -n ceph-csi-rbd create secret generic ceph-client-k8s \
-    --from-literal=userID=k8s --from-file=userKey=/dev/stdin
+kubectl -n ceph-csi-rbd get secretstore,externalsecret   # Valid; SecretSynced
+kubectl -n ceph-csi-rbd get secret ceph-client-k8s -o jsonpath='{.metadata.labels.reconcile\.external-secrets\.io/managed} {.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'   # true ExternalSecret/ceph-client-k8s
+cmp -s <(kubectl -n ceph-csi-rbd get secret ceph-client-k8s -o jsonpath='{.data.userKey}' | base64 -d) \
+  <(ssh root@r620a ceph auth get-key client.k8s) && echo same || echo differ
 ```
 
-Without it the driver's pods run and `Application` `ceph-csi-rbd` reports
-`Healthy`, but every claim on `ceph-rbd` stays `Pending`.
+To rotate the key, give Ceph a new one, write it into the management copy,
+and force a refresh rather than wait the hour. Rotating invalidates the old
+key at once: provisioning and staging fail until the copy refreshes, and a
+volume already mapped keeps the old key in the node's kernel client, which
+fails the next time it authenticates, such as after a monitor or OSD
+restart. So restart every pod with a `ceph-rbd` volume afterwards, which
+stages its volume again with the new key:
+
+```sh
+ssh root@r620a ceph auth rotate client.k8s > /dev/null
+key=$(ssh root@r620a ceph auth get-key client.k8s) && [ -n "$key" ] &&
+printf %s "$key" | jq -Rc '{data: {userKey: @base64}}' |
+  kubectl -n holos-prj-platform patch secret ceph-client-k8s --type=merge --patch-file=/dev/stdin
+unset key
+kubectl -n ceph-csi-rbd annotate externalsecret ceph-client-k8s force-sync=$(date +%s) --overwrite
+```
+
+A cluster that ran on a Secret made by hand in `ceph-csi-rbd`, as `treasury`
+did, hands over in place. Write the management copy with the bootstrap
+step's `key=$(ssh …)` pipeline alone, check that `holos-prj-platform` holds
+it, then merge; the `ExternalSecret` adopts the existing Secret. In
+External Secrets 2.14.0 an `Owner` target that already exists is labelled
+managed, its data replaced with the source's, and given the `ExternalSecret`
+as its controller (`externalsecret_controller.go`, `applyOwnership`); it is
+refused only when another `ExternalSecret` controls it. The key is the same,
+so the driver sees no change. Check it as above.
 
 local-path is installed beside it but not used without a compelling reason:
 the garage models GKE and EKS, whose clusters provision network block
@@ -1472,7 +1515,9 @@ namespace its Role and RoleBinding land in exists first. That is all the
 order guarantees: the secret itself is made through the UI, so on a new
 cluster a consumer's `ExternalSecret` reports `SecretSyncedError` until
 someone makes it, and a component earlier than `secrets-manager` cannot
-depend on a platform secret to come up.
+depend on a platform secret to come up. The Ceph key is the exception:
+bootstrap writes it with `kubectl`, before Argo CD, so `ceph-csi-rbd` copies
+it on its first sync (Storage, above).
 
 #### Adding a platform secret
 
@@ -1562,10 +1607,11 @@ A cluster is built with its webhooks failing open, `webhooks.enforcing`
 false in `clusters.cue`; turn it on once they answer (Building a cluster with
 enforcement, above). Argo CD needs pod networking, and DNS to reach GitHub,
 before it can sync anything, so a new cluster gets four components by hand: `cilium`,
-`coredns`, `argocd` and the root `Application` with its `AppProject`. The
-root then creates every component's `Application` in registry order, waiting
-for each to report `Healthy` before the next, and takes over the four as it
-goes. Apply
+`coredns`, `argocd` and the root `Application` with its `AppProject`. It
+also gets `management-namespaces` and the Ceph key in it (Storage, above),
+which no component renders. The root then creates every component's
+`Application` in registry order, waiting for each to report `Healthy` before
+the next, and takes over the hand-applied components as it goes. Apply
 from a checkout of `main`, since that is what Argo CD will sync, and from this
 directory:
 
@@ -1588,12 +1634,22 @@ kubectl wait --for=condition=Established crd/applications.argoproj.io crd/apppro
 kubectl -n argocd rollout status deploy/argocd-repo-server
 kubectl -n argocd rollout status sts/argocd-application-controller
 
-# The Ceph key's Secret, which nothing renders (Storage, above), in the
-# namespace ceph-csi-rbd's Application later takes over.
-kubectl apply --server-side --field-manager=argocd-controller -f $d/ceph-csi-rbd/namespace-ceph-csi-rbd.yaml
-ssh root@r620a ceph auth get-key client.k8s |
-  kubectl -n ceph-csi-rbd create secret generic ceph-client-k8s \
-    --from-literal=userID=k8s --from-file=userKey=/dev/stdin
+# The management namespaces, which need nothing before them, and the Ceph
+# key in the project, which nothing renders (Storage, above). The namespace
+# files sort before the RoleBinding. The Secret is made, not applied: it is
+# not in git, so no field manager of Argo CD's should own it. The key is
+# read into a variable first, so a failed ssh writes nothing rather than an
+# empty key.
+kubectl apply --server-side --field-manager=argocd-controller -f $d/management-namespaces/
+key=$(ssh root@r620a ceph auth get-key client.k8s) && [ -n "$key" ] &&
+printf %s "$key" |
+  kubectl -n holos-prj-platform create secret generic ceph-client-k8s \
+    --from-literal=userID=k8s --from-file=userKey=/dev/stdin --dry-run=client -o yaml |
+  kubectl label --local -f - app.kubernetes.io/managed-by=holos.run -o yaml |
+  kubectl annotate --local -f - \
+    'holos.run/share-roles=[{"principal":"/platform/owners","role":"owner"}]' -o yaml |
+  kubectl create -f -
+unset key
 
 # The AppProject and the root alone: the root creates the other
 # Applications wave by wave. Applying the whole directory would create them

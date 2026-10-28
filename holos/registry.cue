@@ -101,8 +101,10 @@ registry: [
 	// agents and the Gateway.
 	{name: "hello"},
 	// ceph-csi-rbd is the Ceph RBD driver and the default StorageClass,
-	// ceph-rbd. It needs pod networking alone, and its key's Secret, which is
-	// made by hand; it comes ahead of every component that claims a volume.
+	// ceph-rbd. It needs pod networking, the CRDs of external-secrets and the
+	// management namespace, where bootstrap writes its key by hand and from
+	// which its ExternalSecret copies it; it comes ahead of every component
+	// that claims a volume.
 	{name: "ceph-csi-rbd"},
 	// local-path is the node-local fallback StorageClass, not the default.
 	{name: "local-path"},
@@ -152,7 +154,8 @@ registry: [
 	// management-namespaces; but the secret must exist before the
 	// consumer's ExternalSecret syncs, and it is made through this
 	// component's UI, so on a new cluster a component earlier than this one
-	// cannot get a platform secret by itself.
+	// cannot get a platform secret by itself. The Ceph key is the exception:
+	// bootstrap writes it with kubectl, before Argo CD.
 	{name: "secrets-manager"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
