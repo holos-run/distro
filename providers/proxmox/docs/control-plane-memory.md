@@ -199,8 +199,9 @@ go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -mode power-cyc
 ```
 
 `-nodes` keeps `resize` to the control plane; without it, `resize` sets
-every VM to the config's size, workers included. Pass the `-config` the
-cluster was made with, if any, and `resize` refuses to shrink a VM unless
+every VM to the config's size, workers included. Pass the `-config` and
+`-workers` the cluster was made with, if any; without them `resize` skips
+workers beyond the config's count, and it refuses to shrink a VM unless
 given `-shrink`.
 
 With one control plane the Kubernetes API is down until it is back. Prefer

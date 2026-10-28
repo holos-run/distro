@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -58,7 +60,6 @@ func TestRunRejects(t *testing.T) {
 		{"resize no cluster", []string{"resize"}, full, "cluster is required"},
 		{"resize missing config", []string{"resize", "-config", "/nonexistent/talosvm.json"}, full, "no such file"},
 		{"resize takes no -yes", []string{"resize", "-cluster", "treasury", "-yes"}, full, "flag provided but not defined"},
-		{"resize takes no -workers", []string{"resize", "-cluster", "treasury", "-workers", "2"}, full, "flag provided but not defined"},
 		{"resize node twice", []string{"resize", "-cluster", "treasury", "-nodes", "treasury-cp-1,treasury-cp-1"}, full, "named twice"},
 		{"resize bad node", []string{"resize", "-cluster", "treasury", "-nodes", "Treasury-cp-1"}, full, "not a VM name"},
 		{"resize no endpoint", []string{"resize", "-cluster", "treasury", "-dry-run"}, without("PROXMOX_URL"), "PROXMOX_URL"},
@@ -69,6 +70,33 @@ func TestRunRejects(t *testing.T) {
 		}
 		if err != nil && strings.Contains(err.Error(), "0b1c2d3e") {
 			t.Errorf("%s: error echoes a secret: %v", tc.name, err)
+		}
+	}
+}
+
+// resize takes -workers as create does, through the same override, so a
+// cluster made with -workers is resized with the same pool. Each case fails
+// before any request is sent: on the config, or, once the config is valid,
+// on the missing endpoint.
+func TestWorkersFlag(t *testing.T) {
+	noPools := filepath.Join(t.TempDir(), "nopools.json")
+	if err := os.WriteFile(noPools, []byte(`{"pools":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range []string{"create", "resize"} {
+		for _, tc := range []struct {
+			args []string
+			want string
+		}{
+			{[]string{"-workers", "5"}, "PROXMOX_URL"},
+			{[]string{"-workers", "250"}, "pools[0] VM"},
+			{[]string{"-config", noPools, "-workers", "2"}, "-workers: the config has no pools"},
+		} {
+			args := append([]string{cmd, "-cluster", "treasury"}, tc.args...)
+			err := run(context.Background(), args, io.Discard, io.Discard, env(nil))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("%v: err = %v, want it to mention %q", args, err, tc.want)
+			}
 		}
 	}
 }

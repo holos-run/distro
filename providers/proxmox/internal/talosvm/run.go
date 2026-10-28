@@ -153,12 +153,7 @@ func (r *Runner) Create(ctx context.Context) error {
 	}
 	for _, a := range skip {
 		r.logf("exists   %-24s vmid %d on %s", a.Spec.Name, a.Existing.VMID, a.Existing.Node)
-		// Proxmox reports the size the VM runs with, not a pending one,
-		// so this is only a pointer; resize reads the config itself.
-		if v := a.Existing; int(v.MaxCPU) != a.Spec.Cores || int(v.MaxMem>>20) != a.Spec.MemoryMiB {
-			r.logf("         runs with %d cores and %d MiB, the config asks for %d and %d: talosvm resize -cluster %s sets it",
-				int(v.MaxCPU), v.MaxMem>>20, a.Spec.Cores, a.Spec.MemoryMiB, r.Config.Cluster)
-		}
+		r.sizeHint(ctx, a)
 	}
 	nets, err := r.guestNets(ctx, guests)
 	if err != nil {
@@ -227,6 +222,40 @@ func (r *Runner) Create(ctx context.Context) error {
 		return nil
 	}
 	return r.send(ctx, calls)
+}
+
+// sizeHint points at what brings an existing VM to the config's size, since
+// create never resizes one. Proxmox reports the size the VM runs with; only
+// when that differs is its pending size read, the same way list and resize
+// read it. A pending size equal to the config's needs only a power cycle; any
+// other needs resize. A pending size that cannot be read is no reason to
+// stop create, so the hint then assumes nothing is pending.
+func (r *Runner) sizeHint(ctx context.Context, a Action) {
+	v, want := *a.Existing, a.Spec.Size
+	cores, mem := int(v.MaxCPU), int(v.MaxMem>>20)
+	if cores == want.Cores && mem == want.MemoryMiB {
+		return
+	}
+	// The size in /cluster/resources lags a power cycle by a few seconds, so
+	// the VM's own config decides whether the config's size is already set.
+	g, err := r.guestSize(ctx, v)
+	if err != nil {
+		r.warnf("reading the pending size of %s: %v", v.Name, err)
+	}
+	pending := err == nil && g.Pending() && g.NextCores == want.Cores && g.NextMemoryMiB == want.MemoryMiB
+	switch {
+	case err == nil && !g.Pending() && g.Cores == want.Cores && g.MemoryMiB == want.MemoryMiB:
+		return
+	case pending && v.Status == "running":
+		r.logf("         runs with %d cores and %d MiB; the config's %d and %d are pending until a power cycle: talosvm restart -cluster %s -mode power-cycle -nodes %s",
+			cores, mem, want.Cores, want.MemoryMiB, r.Config.Cluster, v.Name)
+	case pending:
+		r.logf("         has %d cores and %d MiB; the config's %d and %d are pending until it starts",
+			cores, mem, want.Cores, want.MemoryMiB)
+	default:
+		r.logf("         runs with %d cores and %d MiB, the config asks for %d and %d: talosvm resize -cluster %s sets it",
+			cores, mem, want.Cores, want.MemoryMiB, r.Config.Cluster)
+	}
 }
 
 func (r *Runner) isoPresent(ctx context.Context, node string, img Image) (bool, error) {

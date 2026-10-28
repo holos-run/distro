@@ -77,10 +77,12 @@ and refuses to run at all, before changing anything, if any of its names is
 taken by some other VM. It never moves or readdresses an existing VM:
 if the config now gives an existing VM another address, for example because a
 rerun forgot the cluster's `-first-address`, `create` refuses with
-"VM X has address P, config says Q". Nor does it resize one; it points at
-`resize` when a VM's size differs from the config's
-([Resizing a pool](#resizing-a-pool)). To change anything else about a VM,
-destroy and create the cluster again.
+"VM X has address P, config says Q". Nor does it resize one. When a VM runs
+with another size than the config's it points at `resize`, or, when the
+config's size is already pending on a running VM, at the power-cycle
+`restart` that applies it; a stopped VM takes a pending size when `create`
+starts it ([Resizing a pool](#resizing-a-pool)). To change anything else
+about a VM, destroy and create the cluster again.
 Lowering a pool's count does not remove the extra VMs either; `destroy`
 removes the whole cluster.
 
@@ -407,7 +409,8 @@ set -a; . ~/.config/holos/proxmox.env; set +a
 
 # 1. Change memoryMiB or cores: the default in internal/talosvm/config.go,
 #    or the pool in the -config file the cluster was made with.
-# 2. See what changes, then change it.
+# 2. See what changes, then change it. Pass the -config and -workers that
+#    create was given, if any.
 go run ./providers/proxmox/cmd/talosvm resize -cluster treasury -dry-run
 go run ./providers/proxmox/cmd/talosvm resize -cluster treasury
 # 3. Apply it, one node at a time: the command resize prints at the end.
@@ -425,7 +428,10 @@ VM to change it sends `PUT /nodes/{node}/qemu/{vmid}/config` with `memory`,
 the disk is never resized. Like every command it looks only at VMs with the
 `talosvm` tag and this cluster's tag, whatever their names. `-nodes a,b`
 limits it to the VMs named; without it every VM the config asks for is
-resized.
+resized. `-workers` overrides the first pool's count exactly as on `create`,
+so a cluster made with `create -workers 5` is resized with `-workers 5`;
+without it, workers beyond the config's count are skipped as VMs the config
+does not ask for.
 
 It refuses the whole run, dry run included, before any change, when:
 
@@ -561,7 +567,7 @@ changes nothing.
 Without `-config` the program uses the defaults below. A JSON file overrides
 only the fields it names, except that `pools` replaces the default pools as a
 whole; unknown fields are an error. `-cluster`, `-first-address` and
-`-workers` (the first pool's count) override the file.
+`-workers` (the first pool's count, on `create` and `resize`) override the file.
 
 ```json
 {

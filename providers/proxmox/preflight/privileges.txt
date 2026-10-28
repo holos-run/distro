@@ -18,7 +18,7 @@
 # (the owner of the task).
 
 VM.Allocate              # POST /nodes/{node}/qemu (create); DELETE /nodes/{node}/qemu/{vmid}
-VM.Audit                 # GET /cluster/resources?type=vm; GET /nodes/{node}/{qemu,lxc}/{vmid}/config to find addresses in use; GET /nodes/{node}/qemu/{vmid}/pending (list, resize)
+VM.Audit                 # GET /cluster/resources?type=vm; GET /nodes/{node}/{qemu,lxc}/{vmid}/config to find addresses in use; GET /nodes/{node}/qemu/{vmid}/pending (list, resize, create's size hint)
 VM.PowerMgmt             # POST /nodes/{node}/qemu/{vmid}/status/start; POST /nodes/{node}/qemu/{vmid}/status/stop; POST /nodes/{node}/qemu/{vmid}/status/shutdown (restart -mode power-cycle)
 VM.Config.CPU            # POST /nodes/{node}/qemu cpu, sockets, cores; PUT /nodes/{node}/qemu/{vmid}/config cores (resize)
 VM.Config.Memory         # POST /nodes/{node}/qemu memory, balloon; PUT /nodes/{node}/qemu/{vmid}/config memory (resize)

@@ -433,6 +433,140 @@ func TestListToleratesUnreadableSize(t *testing.T) {
 	}
 }
 
+// A cluster made with -workers 5 and resized with the same -workers, which
+// the command line applies as Pools[0].Count, resizes workers 4 and 5 too;
+// without it they are skipped as VMs the config does not ask for.
+func TestResizeWithWorkers(t *testing.T) {
+	f := newFake()
+	old := treasury()
+	old.Pools[0].Count, old.Pools[0].MemoryMiB = 5, 8192
+	r, out := newRunner(t, f, old)
+	ctx := context.Background()
+	if err := r.Create(ctx); err != nil {
+		t.Fatalf("Create: %v\n%s", err, out)
+	}
+	r.Config = treasury()
+	r.Config.Pools[0].Count = 5
+	r.DryRun = true
+	f.calls = nil
+	out.Reset()
+	if err := r.Resize(ctx, ResizeOptions{}); err != nil {
+		t.Fatalf("Resize: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"resize   treasury-general-4       vmid 108, memory 8192 to 16384 MiB at its next start\n",
+		"resize   treasury-general-5       vmid 109, memory 8192 to 16384 MiB at its next start\n",
+		"PUT /api2/json/nodes/r620c/qemu/109/config\n    memory=16384\n",
+		"dry run: sent none of these 5 calls\n",
+		"-nodes treasury-general-1,treasury-general-2,treasury-general-3,treasury-general-4,treasury-general-5\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("resize -workers 5 output lacks %q:\n%s", want, out)
+		}
+	}
+	r.Config.Pools[0].Count = 3
+	out.Reset()
+	if err := r.Resize(ctx, ResizeOptions{}); err != nil {
+		t.Fatalf("Resize: %v\n%s", err, out)
+	}
+	if !strings.Contains(out.String(), "skip     treasury-general-5       vmid 109, not in the config") || !strings.Contains(out.String(), "sent none of these 3 calls") {
+		t.Errorf("resize without -workers:\n%s", out)
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("dry-run resizes sent %v", f.calls)
+	}
+}
+
+// create says how an existing VM reaches the config's size: resize, when
+// nothing or something else is pending; a power cycle, when the config's
+// size is pending; nothing, once it runs with it.
+func TestCreateSizeHint(t *testing.T) {
+	f := newFake()
+	old := treasury()
+	old.Pools[0].MemoryMiB = 8192
+	r, out := newRunner(t, f, old)
+	ctx := context.Background()
+	if err := r.Create(ctx); err != nil {
+		t.Fatalf("Create: %v\n%s", err, out)
+	}
+	r.Config = treasury()
+	create := func() string {
+		t.Helper()
+		f.calls = nil
+		out.Reset()
+		r.DryRun = true
+		if err := r.Create(ctx); err != nil {
+			t.Fatalf("Create: %v\n%s", err, out)
+		}
+		if len(f.calls) != 0 {
+			t.Errorf("dry-run create sent %v", f.calls)
+		}
+		return out.String()
+	}
+	resizeHint := "runs with 4 cores and 8192 MiB, the config asks for 4 and 16384: talosvm resize -cluster treasury sets it"
+	cycleHint := func(vm string) string {
+		return "runs with 4 cores and 8192 MiB; the config's 4 and 16384 are pending until a power cycle: talosvm restart -cluster treasury -mode power-cycle -nodes " + vm + "\n"
+	}
+
+	// Running at the old size with nothing pending: resize, for each
+	// worker and not the control plane, which is at size.
+	if got := create(); strings.Count(got, resizeHint) != 3 || strings.Count(got, "runs with") != 3 || strings.Contains(got, "power-cycle") {
+		t.Errorf("before resize:\n%s", got)
+	}
+
+	r.DryRun = false
+	if err := r.Resize(ctx, ResizeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// general-1 has another size pending, and general-2's cannot be read,
+	// which create shrugs off.
+	f.pending[105]["memory"] = "12288"
+	delete(f.configs[106], "memory")
+	var warnings bytes.Buffer
+	r.Err = &warnings
+	got := create()
+	if strings.Count(got, resizeHint) != 2 || !strings.Contains(got, cycleHint("treasury-general-3")) || strings.Contains(got, "-nodes treasury-general-1") {
+		t.Errorf("after resize:\n%s", got)
+	}
+	if !strings.Contains(warnings.String(), "reading the pending size of treasury-general-2") {
+		t.Errorf("warnings = %q", warnings.String())
+	}
+	r.Err = nil
+	f.configs[106]["memory"] = "8192"
+	f.pending[105]["memory"] = "16384"
+	if got := create(); strings.Contains(got, resizeHint) || !strings.Contains(got, cycleHint("treasury-general-1")) || !strings.Contains(got, cycleHint("treasury-general-2")) {
+		t.Errorf("with the config's size pending:\n%s", got)
+	}
+
+	// A stopped VM takes its pending size when create starts it.
+	i := slices.IndexFunc(f.vms, func(v pve.Resource) bool { return v.VMID == 107 })
+	f.vms[i].Status = "stopped"
+	if got := create(); !strings.Contains(got, "has 4 cores and 8192 MiB; the config's 4 and 16384 are pending until it starts") || strings.Contains(got, cycleHint("treasury-general-3")) {
+		t.Errorf("with a stopped VM:\n%s", got)
+	}
+	f.vms[i].Status = "running"
+
+	// After a power cycle the VMs run at the config's size: no hint.
+	for _, v := range OwnedVMs(f.vms, "treasury") {
+		shutdown, start := powerCycleCalls(v, time.Minute)
+		for _, c := range []Call{shutdown, start} {
+			if err := r.call(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if got := create(); strings.Contains(got, "runs with") {
+		t.Errorf("after the power cycle:\n%s", got)
+	}
+	// /cluster/resources lags a power cycle by a few seconds; the VM's
+	// config, with nothing pending, decides.
+	i = slices.IndexFunc(f.vms, func(v pve.Resource) bool { return v.VMID == 105 })
+	f.vms[i].MaxMem = 8192 << 20
+	if got := create(); strings.Contains(got, "runs with") {
+		t.Errorf("with /cluster/resources behind:\n%s", got)
+	}
+}
+
 func TestResizeChecksPrivileges(t *testing.T) {
 	f := newFake()
 	f.privs = slices.DeleteFunc(f.privs, func(p string) bool { return p == "VM.Config.Memory" })

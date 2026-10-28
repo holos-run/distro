@@ -1,9 +1,9 @@
 // Command talosvm creates, lists, resizes, restarts and destroys the Talos
 // VMs of one cluster on Proxmox VE.
 //
-//	go run ./providers/proxmox/cmd/talosvm create  -cluster <name> [-config file] [-snippets-dir dir] [-dry-run]
+//	go run ./providers/proxmox/cmd/talosvm create  -cluster <name> [-config file] [-workers n] [-first-address a] [-snippets-dir dir] [-dry-run]
 //	go run ./providers/proxmox/cmd/talosvm list    -cluster <name> [-json]
-//	go run ./providers/proxmox/cmd/talosvm resize  -cluster <name> [-config file] [-nodes a,b] [-shrink] [-dry-run]
+//	go run ./providers/proxmox/cmd/talosvm resize  -cluster <name> [-config file] [-workers n] [-nodes a,b] [-shrink] [-dry-run]
 //	go run ./providers/proxmox/cmd/talosvm restart -cluster <name> [-mode reboot|power-cycle] [-nodes a,b] [-timeout 15m] [-dry-run]
 //	go run ./providers/proxmox/cmd/talosvm destroy -cluster <name> [-yes]
 //	go run ./providers/proxmox/cmd/talosvm check
@@ -75,6 +75,10 @@ commands:
 Run talosvm <command> -h for the flags of one command.
 `
 
+// workersUsage describes -workers, which create and resize share, so that
+// resize sees the same pool as the create that made the cluster.
+const workersUsage = "worker count of the first pool; overrides the config"
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := run(ctx, os.Args[1:], os.Stdout, os.Stderr, os.Getenv)
@@ -128,13 +132,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	case "create":
 		dryRun = fs.Bool("dry-run", false, "print the API calls create would send and send none")
 		firstAddress = fs.String("first-address", "", "first node address; overrides the config's firstAddress")
-		workers = fs.Int("workers", -1, "worker count of the first pool; overrides the config")
+		workers = fs.Int("workers", -1, workersUsage)
 	case "list":
 		asJSON = fs.Bool("json", false, "print JSON instead of a table")
 	case "resize":
 		dryRun = fs.Bool("dry-run", false, "print the API calls resize would send and send none")
 		nodes = fs.String("nodes", "", "comma-separated VMs to resize (default every VM the config asks for)")
 		shrink = fs.Bool("shrink", false, "allow fewer cores or less memory than a VM runs with")
+		workers = fs.Int("workers", -1, workersUsage+"; pass the one create was given")
 	case "restart":
 		dryRun = fs.Bool("dry-run", false, "print each node's steps and change nothing")
 		mode = fs.String("mode", talosvm.ModeReboot, "reboot (talosctl reboot, for changes inside the guest) or power-cycle (Proxmox shutdown and start, for a changed VM config)")
