@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ceph-csi-rbd-platform-reader
+  namespace: holos-prj-platform
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - ceph-client-k8s
+  resources:
+  - secrets
+  verbs:
+  - get

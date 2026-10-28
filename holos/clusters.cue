@@ -84,8 +84,11 @@ import "net"
 	// ceph is the cluster's share of the site's Ceph cluster: the RBD pool
 	// its volumes are images in and the Ceph client it authenticates as,
 	// whose caps are profile rbd on that pool. The client's key is never in
-	// git; it is put in Secret <namespace>/<secret> by hand (README.md,
-	// "Storage"). A second cluster on the site takes a pool of its own.
+	// git. It is a platform secret, <secret>, in the management namespace,
+	// put there once per cluster at bootstrap from ceph auth get-key, and an
+	// ExternalSecret copies it into the driver's namespace under the same
+	// name (README.md, "Storage"). A second cluster on the site takes a pool
+	// of its own.
 	ceph: {
 		pool:   string
 		user:   string

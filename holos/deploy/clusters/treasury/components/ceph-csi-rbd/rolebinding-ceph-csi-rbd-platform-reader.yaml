@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ceph-csi-rbd-platform-reader
+  namespace: holos-prj-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ceph-csi-rbd-platform-reader
+subjects:
+- kind: ServiceAccount
+  name: ceph-csi-rbd-platform-reader
+  namespace: ceph-csi-rbd
