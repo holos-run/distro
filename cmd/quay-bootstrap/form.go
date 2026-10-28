@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -24,6 +26,24 @@ type form struct {
 }
 
 func (f *form) has(name string) bool { return f.fields[name] }
+
+// request builds the request that submits the form with its pre-filled
+// values, overrides replacing any of the same name.
+func (f *form) request(ctx context.Context, overrides url.Values) (*http.Request, error) {
+	values := url.Values{}
+	for k, v := range f.values {
+		values[k] = v
+	}
+	for k, v := range overrides {
+		values[k] = v
+	}
+	req, err := http.NewRequestWithContext(ctx, f.method, f.action, strings.NewReader(values.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req, nil
+}
 
 // isLogin reports whether this is Keycloak's username and password form.
 func (f *form) isLogin() bool { return f.has("username") && f.has("password") }
@@ -124,7 +144,9 @@ func fragmentValue(location, key string) (string, error) {
 	if u.Fragment == "" {
 		return "", fmt.Errorf("redirect to %s%s carries no fragment", u.Host, u.Path)
 	}
-	values, err := url.ParseQuery(u.Fragment)
+	// url.Parse has already decoded Fragment; parse the escaped form, so a
+	// + or a %xx in a value is decoded once, not twice.
+	values, err := url.ParseQuery(u.EscapedFragment())
 	if err != nil {
 		return "", fmt.Errorf("parsing the redirect's fragment: %w", err)
 	}

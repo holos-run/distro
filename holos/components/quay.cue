@@ -62,11 +62,6 @@ Quay: {
 		demo:      _
 	}
 
-	// robotOrganizations are the organizations cmd/quay-bootstrap makes
-	// robots in. A Quay robot belongs to one organization and may be granted
-	// nothing outside it, so each gets its own push and pull robots.
-	robotOrganizations: ["substrate", "kagent"]
-
 	// ownersTeam is the synced team every organization has. It is not
 	// owners: Quay makes a team owners in every new organization, with its
 	// creator in it, and holos-controller reports a team it did not make as

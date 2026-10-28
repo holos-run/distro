@@ -250,18 +250,10 @@ func readPage(resp *http.Response, err error) (*page, error) {
 
 // submit posts f with overrides over its pre-filled values.
 func (q *quayClient) submit(ctx context.Context, f *form, overrides url.Values) (*page, error) {
-	values := url.Values{}
-	for k, v := range f.values {
-		values[k] = v
-	}
-	for k, v := range overrides {
-		values[k] = v
-	}
-	req, err := http.NewRequestWithContext(ctx, f.method, f.action, strings.NewReader(values.Encode()))
+	req, err := f.request(ctx, overrides)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return readPage(q.http.Do(req))
 }
 
@@ -413,18 +405,10 @@ func (q *quayClient) mintToken(ctx context.Context, clientID string, scopes []st
 	if err != nil {
 		return "", err
 	}
-	values := url.Values{}
-	for k, v := range f.values {
-		values[k] = v
-	}
-	for k, v := range params {
-		values[k] = v
-	}
-	post, err := http.NewRequestWithContext(ctx, http.MethodPost, f.action, strings.NewReader(values.Encode()))
+	post, err := f.request(ctx, params)
 	if err != nil {
 		return "", err
 	}
-	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	post.Header.Set("X-CSRF-Token", csrf)
 	presp, err := q.noRedirect.Do(post)
 	if err != nil {
@@ -467,11 +451,12 @@ func (q *quayClient) ensureRobot(ctx context.Context, org, short string) (*quayR
 	return robot, true, nil
 }
 
-// ensureTeamMember makes team in org, with role, if it does not exist or has
-// another role, and puts member in it. Quay lets a robot into a team of its
+// ensureTeamMember makes team in org, with role and description, if it does
+// not exist, sets its role if it has another, and puts member in it. The
+// description is sent only when the team is made, so one set by hand stays. Quay lets a robot into a team of its
 // own organization only, and a team is the only way to give one an
 // organization role, such as creator.
-func (q *quayClient) ensureTeamMember(ctx context.Context, org, team, role, member string) (bool, error) {
+func (q *quayClient) ensureTeamMember(ctx context.Context, org, team, role, description, member string) (bool, error) {
 	var o struct {
 		Teams map[string]struct {
 			Role string `json:"role"`
@@ -483,7 +468,11 @@ func (q *quayClient) ensureTeamMember(ctx context.Context, org, team, role, memb
 	changed := false
 	teamPath := "/api/v1/organization/" + url.PathEscape(org) + "/team/" + url.PathEscape(team)
 	if t, ok := o.Teams[team]; !ok || t.Role != role {
-		if err := q.mutate(ctx, http.MethodPut, teamPath, map[string]string{"role": role, "description": "Robots that push, made by cmd/quay-bootstrap"}, nil); err != nil {
+		body := map[string]string{"role": role}
+		if !ok {
+			body["description"] = description
+		}
+		if err := q.mutate(ctx, http.MethodPut, teamPath, body, nil); err != nil {
 			return false, fmt.Errorf("setting team %s/%s: %w", org, team, err)
 		}
 		logf("set team %s/%s to role %s", org, team, role)

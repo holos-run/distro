@@ -1671,8 +1671,9 @@ OLM and adds nothing once the database is CloudNativePG.
 - **Organizations.** holos-controller `Organization`s in `quay`:
   `substrate` and `kagent`, whose repositories are private and made by the
   push robots' first push, and `demo`, which holds the public `Repository`
-  `echo` for the demo actor. Each syncs team `owners` from
-  `/platform/owners` as admin. All are `deletionPolicy: Orphan`, so a
+  `echo` for the demo actor. Each syncs team `platformowners` from
+  `/platform/owners` as admin, not `owners`, the team Quay makes in every
+  new organization, which holos-controller would report as a conflict. All are `deletionPolicy: Orphan`, so a
   deleted or pruned resource leaves the organization and its images, which
   are not in git. None carries a `caBundle`: holos-controller trusts the
   private root through `SSL_CERT_DIR`, as argocd-server does, from the

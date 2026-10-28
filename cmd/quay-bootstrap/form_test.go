@@ -69,6 +69,11 @@ func TestFragmentValue(t *testing.T) {
 	if err != nil || got != "tok" {
 		t.Errorf("got %q, %v", got, err)
 	}
+	// Decoded once: %2B is a +, and a + stays a + rather than a space.
+	got, err = fragmentValue("https://quay.example/oauth/localapp#access_token=a%2Bb+c&token_type=Bearer", "access_token")
+	if err != nil || got != "a+b c" {
+		t.Errorf("got %q, %v, want %q", got, err, "a+b c")
+	}
 	if _, err := fragmentValue("https://quay.example/oauth/localapp?access_token=tok", "access_token"); err == nil {
 		t.Error("a token in the query, not the fragment, was accepted")
 	}

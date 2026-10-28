@@ -247,3 +247,36 @@ func TestRunRobotsConverges(t *testing.T) {
 		t.Errorf("second run wrote: %d Quay writes, %d Secret writes", f.writes-quayWrites, k.writes-kubeWrites)
 	}
 }
+
+func TestRunTokenRepairsStoredCredential(t *testing.T) {
+	f, srv, roots := startFakeQuay(t)
+	k := newFakeKube()
+	o := &options{
+		quayURL:       srv.URL,
+		username:      "svc-quay-controller",
+		namespace:     "holos-prj-platform",
+		tokenSecret:   "quay-controller-token",
+		automationOrg: "platform-automation",
+	}
+	// A working token stored with another url and no username.
+	_ = k.createSecret(context.Background(), o.credentialSecret(&credential{url: "https://old.example", token: "good"}))
+	k.writes = 0
+	ctx := context.Background()
+
+	if err := runToken(ctx, k, o, roots); err != nil {
+		t.Fatal(err)
+	}
+	c := k.secrets["holos-prj-platform/quay-controller-token"]
+	if string(c.data["url"]) != srv.URL || string(c.data["username"]) != "svc-quay-controller" || string(c.data["token"]) != "good" {
+		t.Errorf("stored credential not repaired: %q", c.data)
+	}
+	if f.writes != 0 || k.writes != 1 {
+		t.Errorf("first run: %d Quay writes, %d Secret writes; want 0 and 1", f.writes, k.writes)
+	}
+	if err := runToken(ctx, k, o, roots); err != nil {
+		t.Fatal(err)
+	}
+	if k.writes != 1 {
+		t.Errorf("second run wrote the Secret again")
+	}
+}

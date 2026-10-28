@@ -190,7 +190,13 @@ func runToken(ctx context.Context, k kube, o *options, roots []byte) error {
 	if have, err := readCredential(ctx, k, o.namespace, o.tokenSecret); err != nil {
 		return err
 	} else if have != nil {
-		q, err := newQuayClient(have.url, roots)
+		// The stored token is checked against -quay-url, not the url it was
+		// stored with, so the flag decides which Quay the controller is
+		// pointed at: a token another Quay refuses is minted anew there.
+		if have.url != o.quayURL {
+			logf("the stored url is %s; checking its token against %s", have.url, o.quayURL)
+		}
+		q, err := newQuayClient(o.quayURL, roots)
 		if err != nil {
 			return err
 		}
@@ -205,7 +211,10 @@ func runToken(ctx context.Context, k kube, o *options, roots []byte) error {
 		case user.Username != o.username:
 			logf("the stored token acts as %s, not %s; minting another", user.Username, o.username)
 		default:
-			changed, err := applySecret(ctx, k, o.credentialSecret(have))
+			// Written from what was verified, so a Secret with another url
+			// or no username is repaired.
+			c := &credential{url: o.quayURL, token: have.token, username: user.Username}
+			changed, err := applySecret(ctx, k, o.credentialSecret(c))
 			if err == nil && !changed {
 				logf("secret %s/%s holds a working token for %s: no change", o.namespace, o.tokenSecret, user.Username)
 			}
@@ -321,7 +330,7 @@ func runRobots(ctx context.Context, k kube, o *options, roots []byte) error {
 		if err := note(c, err); err != nil {
 			return err
 		}
-		if err := note(q.ensureTeamMember(ctx, org, "pushers", "creator", pusher.Name)); err != nil {
+		if err := note(q.ensureTeamMember(ctx, org, "pushers", "creator", "Robots that push, made by cmd/quay-bootstrap", pusher.Name)); err != nil {
 			return err
 		}
 		if err := note(q.ensureDefaultPermission(ctx, org, pusher.Name, "write")); err != nil {
