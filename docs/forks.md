@@ -311,7 +311,19 @@ an empty docker config:
 DOCKER_CONFIG="$(mktemp -d)" docker pull ghcr.io/holos-run/kagent/ui@sha256:<digest>
 ```
 
-Record the check here when it is done.
+Checked on 2026-10-29, after
+[run 40798960644](https://github.com/holos-run/distro/actions/runs/40798960644)
+published the 2026-10-28 pins:
+
+- **Public.** All 15 packages were public with no change in their settings.
+  Their manifests resolve with an empty docker config. `docker pull` of
+  `kagent/ui` and `helm pull` of the `kagent` chart work anonymously from the
+  claude VM. A pod on `treasury-general-3` pulled `substrate/atelet` by digest
+  with no pull secret.
+- **Distro can write.** The run pushed to `substrate/envoy-dataplane` and
+  `substrate/ate-idp-server`, which an earlier failed run had created, so
+  holos-run/distro has write access to packages that already exist.
+- **Not run.** The `gh api` listing above, which needs `read:packages`.
 
 ### Attestations
 
