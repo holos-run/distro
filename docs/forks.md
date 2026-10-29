@@ -202,8 +202,8 @@ holos-run by the Publish images workflow,
 which runs [`cmd/publish-images`](../cmd/publish-images) on a GitHub-hosted
 runner. ghcr.io is their origin, not a mirror: they are holos-run's builds of
 holos-run's forks. They are public, so a cluster pulls them anonymously, and
-they outlive the treasury cluster, whose Quay is rebuilt with it. The Quay
-`substrate` and `kagent` organizations are not used for them.
+they outlive the treasury cluster, whose Quay is rebuilt with it. Quay holds
+none of them.
 
 | Fork | Published | Built by |
 | --- | --- | --- |

@@ -105,7 +105,7 @@ old one and every webhook call is refused. Then change the router's
 | `holos-controller` | holos-controller 0.22.0 from aavis-ops' manifests, vendored, in the ambient namespace `holos-controller`, with its eight CRDs and the private root in its trust; no resources of its kinds |
 | `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
-| `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization`s `substrate`, `kagent` and `demo` and the public `Repository` `demo/echo`, and holos-controller's Quay credential |
+| `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and holos-controller's Quay credential |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -1592,9 +1592,10 @@ kubectl delete ns sm-test
 
 ### Quay
 
-Quay is the platform's registry (interview Q13, Q56 to Q59), at
-`https://quay.bank.internal`: the Substrate and kagent images the garage
-runner builds, private, and the demo actor's image, public. `Quay`
+Quay is the platform's registry (interview Q13, Q56, Q57 and Q59), at
+`https://quay.bank.internal`: the demo actor's image, public. The Substrate
+and kagent images and charts are on `ghcr.io/holos-run`, pulled anonymously
+([docs/forks.md](../docs/forks.md)). `Quay`
 (`components/quay.cue`) holds the release, the names and the URL; the `quay`
 component renders the rest. It is aavis-ops' Quay component ported, plain
 manifests rather than the Quay Operator, which off OpenShift still expects
@@ -1669,14 +1670,13 @@ OLM and adds nothing once the database is CloudNativePG.
 - **The route.** `HTTPRoute` `quay`, every path to `quay:8080`, plain HTTP
   behind the gateway, as Keycloak. Pods resolve `quay.bank.internal` to the
   gateway already, so aavis-ops' ServiceEntries are not ported.
-- **Organizations.** holos-controller `Organization`s in `quay`:
-  `substrate` and `kagent`, whose repositories are private and made by the
-  push robots' first push, and `demo`, which holds the public `Repository`
-  `echo` for the demo actor. Each syncs team `platformowners` from
-  `/platform/owners` as admin, not `owners`, the team Quay makes in every
-  new organization, which holos-controller would report as a conflict. All are `deletionPolicy: Orphan`, so a
-  deleted or pruned resource leaves the organization and its images, which
-  are not in git. None carries a `caBundle`: holos-controller trusts the
+- **Organizations.** One holos-controller `Organization` in `quay`, `demo`,
+  which holds the public `Repository` `echo` for the demo actor. It syncs
+  team `platformowners` from `/platform/owners` as admin, not `owners`, the
+  team Quay makes in every new organization, which holos-controller would
+  report as a conflict. Both are `deletionPolicy: Orphan`, so a deleted or
+  pruned resource leaves the organization and its images, which are not in
+  git. Neither carries a `caBundle`: holos-controller trusts the
   private root through `SSL_CERT_DIR`, as argocd-server does, from the
   `private-ca` ConfigMap mounted at `/etc/ssl/private-ca`; Go reads it at
   start, so a new root needs `kubectl -n holos-controller rollout restart
@@ -1694,36 +1694,23 @@ OLM and adds nothing once the database is CloudNativePG.
 
 The irreducible part, which no CRD models, is `cmd/quay-bootstrap`, a Go
 program ported from aavis-ops' `hack/quay-bootstrap`, run by hand from the
-repository's root after Quay is up, at bootstrap and after a rebuild:
+repository's root after Quay is up, at bootstrap and after a rebuild.
 
-- `quay-bootstrap token` logs in to Quay as `svc-quay-controller` through
-  Keycloak's login form, with the password from Secret
-  `keycloak/svc-quay-controller`, makes the organization
-  `platform-automation` and its OAuth Application `holos-controller` if they
-  are missing, mints a token through the implicit grant the UI's Generate
-  Token drives, and writes Secret `quay-controller-token` (`url`, `token`,
-  `username`) in `holos-prj-platform`. A stored token is probed first, on
-  endpoints that need its `super:user` and `org:admin` scopes, and replaced
-  only when Quay refuses it with a 401 or 403: a token stays live until it
-  is revoked, so minting on any other fault would leave another live
-  superuser token behind.
-- `quay-bootstrap robots`, once the `Organization`s are `Ready`, uses that
-  token to make robots `push` and `pull` in `substrate` and `kagent`. A Quay
-  robot belongs to one organization and may be granted nothing outside it,
-  so each organization has its own. The push robot is in team `pushers`,
-  role `creator`, so its first push makes a repository, of which it is then
-  admin; the pull robot reads. Both get their role on every repository
-  already there and, by a default permission, on every one made later. It
-  writes `quay-robot-push-substrate` and `quay-robot-push-kagent`
-  (`username`, `token`), for the garage runner, and `quay-robot-pull`, a
-  `kubernetes.io/dockerconfigjson` whose `auths` are keyed
-  `quay.bank.internal/substrate` and `quay.bank.internal/kagent`, which the
-  kubelet matches by path prefix, for the workers' ServiceAccounts.
+`quay-bootstrap token` logs in to Quay as `svc-quay-controller` through
+Keycloak's login form, with the password from Secret
+`keycloak/svc-quay-controller`, makes the organization `platform-automation`
+and its OAuth Application `holos-controller` if they are missing, mints a
+token through the implicit grant the UI's Generate Token drives, and writes
+Secret `quay-controller-token` (`url`, `token`, `username`) in
+`holos-prj-platform`. A stored token is probed first, on endpoints that need
+its `super:user` and `org:admin` scopes, and replaced only when Quay refuses
+it with a 401 or 403: a token stays live until it is revoked, so minting on
+any other fault would leave another live superuser token behind.
 
-Both write platform secrets with `app.kubernetes.io/managed-by=holos.run`
-and the platform owners' grant, so they show under Platform in the Secrets
-Manager, and both converge: a second run prints `no change` and writes
-nothing. They use `kubectl`'s current context (or `-context`) and trust the
+The Secret is a platform secret, with `app.kubernetes.io/managed-by=holos.run`
+and the platform owners' grant, so it shows under Platform in the Secrets
+Manager. The command converges: a second run prints `no change` and writes
+nothing. It uses `kubectl`'s current context (or `-context`) and trusts the
 private root from the cluster's `private-ca` ConfigMap (or `-ca-file`)
 beside the system's; `-h` lists the rest.
 
@@ -1756,9 +1743,6 @@ go run ./cmd/quay-bootstrap token
 kubectl -n holos-controller annotate externalsecret holos-controller-quay-creds force-sync=$(date +%s) --overwrite
 kubectl -n quay wait --for=condition=Ready organization --all --timeout=5m
 kubectl -n quay wait --for=condition=Ready repository --all --timeout=5m
-
-# 3. The robots.
-go run ./cmd/quay-bootstrap robots
 ```
 
 #### Trusting the root on the workers
@@ -1816,10 +1800,6 @@ kubectl -n argocd get applications                                          # ev
   in Quay until the Application is deleted (organization
   `platform-automation`, Applications), which deletes every token it issued;
   the next `token` run makes a new one.
-- **A robot.** Regenerate its token in Quay (the organization's Robot
-  Accounts, or `POST /api/v1/organization/<org>/robots/<name>/regenerate`),
-  then run `quay-bootstrap robots`, which writes the new token into the
-  platform secrets.
 - **`quay-db`.** As `keycloak-db` (Keycloak, above), with `deploy/quay`
   scaled to 0 and the `quay` Application paused: the init container builds
   the database URL from the Secret at each start.
@@ -1844,8 +1824,7 @@ kubectl -n quay exec deploy/quay -c quay -- cat /sys/fs/cgroup/memory.current   
 
 From the repository's root on the claude VM, with `root.pem` as above,
 docker trusting the root
-(`sudo install -D root.pem /etc/docker/certs.d/quay.bank.internal/ca.crt`),
-and `t`, `a`, `u` and `p` unset afterwards:
+(`sudo install -D root.pem /etc/docker/certs.d/quay.bank.internal/ca.crt`):
 
 ```sh
 # 1. Running, migrated, Synced and Healthy.
@@ -1856,29 +1835,27 @@ kubectl -n quay logs deploy/quay -c quay | grep -i -m3 'migrat'
 # 2. By hand, in a browser: log in at https://quay.bank.internal as jeff
 #    through Keycloak, log out, and log in again (no 400 on the code exchange).
 
-# 3. Both commands converge, and the secrets are listed under Platform.
-go run ./cmd/quay-bootstrap token  | tail -1             # ... no change
-go run ./cmd/quay-bootstrap robots | tail -1             # no change
+# 3. The command converges, and the secret is listed under Platform.
+go run ./cmd/quay-bootstrap token | tail -1              # ... no change
 kubectl -n holos-prj-platform get secret -l app.kubernetes.io/managed-by=holos.run
-  # ceph-client-k8s, quay-controller-token, quay-robot-pull, quay-robot-push-kagent, quay-robot-push-substrate
+  # ceph-client-k8s, quay-controller-token
 
-# 4. The organizations and the repository are Ready, and jeff is in each platformowners team.
+# 4. The organization and the repository are Ready, and jeff is in the platformowners team.
 kubectl -n quay get organization,repository             # READY True
 tok=$(kubectl -n holos-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d)
-for o in substrate kagent demo; do
-  curl -s --cacert root.pem -H "Authorization: Bearer $tok" \
-    https://quay.bank.internal/api/v1/organization/$o/team/platformowners/members | jq -c "[\"$o\", [.members[].name]]"
-done                                                    # each lists jeff, once jeff has logged in
+curl -s --cacert root.pem -H "Authorization: Bearer $tok" \
+  https://quay.bank.internal/api/v1/organization/demo/team/platformowners/members | jq -c '[.members[].name]'
+                                                        # lists jeff, once jeff has logged in
 
-# 5. A multi-layer image, one layer large, pushed by a push robot to a new
-#    repository, and its blobs in RustFS.
-ru=$(kubectl -n holos-prj-platform get secret quay-robot-push-substrate -o jsonpath='{.data.username}' | base64 -d)
-kubectl -n holos-prj-platform get secret quay-robot-push-substrate -o jsonpath='{.data.token}' | base64 -d |
-  docker login quay.bank.internal -u "$ru" --password-stdin
+# 5. A multi-layer image, one layer large, pushed to the public repository
+#    with the controller's token, which docker login takes as $oauthtoken,
+#    and its blobs in RustFS.
+printf %s "$tok" | docker login quay.bank.internal -u '$oauthtoken' --password-stdin
 d=$(mktemp -d)
 printf 'FROM docker.io/library/busybox:1.37.0\nRUN head -c 300000000 /dev/urandom > /big\nRUN echo one > /one\nRUN echo two > /two\n' > $d/Dockerfile
-docker build -t quay.bank.internal/substrate/check:1 $d
-docker push quay.bank.internal/substrate/check:1
+docker build -t quay.bank.internal/demo/echo:check $d
+docker push quay.bank.internal/demo/echo:check
+docker logout quay.bank.internal
 kubectl -n quay run s3-test --image=docker.io/rustfs/rc:v0.1.36 --restart=Never \
   --overrides='{"spec":{"containers":[{"name":"s3-test","image":"docker.io/rustfs/rc:v0.1.36",
     "command":["sleep","600"],"env":[
@@ -1888,32 +1865,22 @@ kubectl -n quay run s3-test --image=docker.io/rustfs/rc:v0.1.36 --restart=Never 
 kubectl -n quay wait --for=condition=Ready pod/s3-test
 kubectl -n quay exec s3-test -- rc ls -r s/quay/registry/ | tail -5   # the blobs, the large one ~300MB
 kubectl -n quay delete pod s3-test
+unset tok
 
-# 6. A worker pulls the private image with the pull secret, and not without.
+# 6. An anonymous pull of the public image, by a worker and from the laptop.
 kubectl create ns quay-test
-kubectl -n holos-prj-platform get secret quay-robot-pull -o json |
-  jq '{apiVersion, kind, type, data, metadata: {name: .metadata.name, namespace: "quay-test"}}' | kubectl create -f -
-kubectl -n quay-test run with --image=quay.bank.internal/substrate/check:1 --restart=Never \
-  --overrides='{"spec":{"imagePullSecrets":[{"name":"quay-robot-pull"}]}}' --command -- sleep 600
-kubectl -n quay-test run without --image=quay.bank.internal/substrate/check:1 --restart=Never --command -- sleep 600
-kubectl -n quay-test get pods                           # with Running; without ErrImagePull, unauthorized
+kubectl -n quay-test run anonymous --image=quay.bank.internal/demo/echo:check --image-pull-policy=Always \
+  --restart=Never --command -- sleep 600
+kubectl -n quay-test get pods                           # anonymous Running, with no pull secret
 kubectl delete ns quay-test
-
-# 7. An anonymous pull of the public repository, from the laptop. Push to it
-#    first with the controller's token, which docker login takes as $oauthtoken.
-printf %s "$tok" | docker login quay.bank.internal -u '$oauthtoken' --password-stdin
-docker tag quay.bank.internal/substrate/check:1 quay.bank.internal/demo/echo:check
-docker push quay.bank.internal/demo/echo:check
-docker logout quay.bank.internal
 #   on the laptop, logged out: docker pull quay.bank.internal/demo/echo:check
-unset tok ru
 
-# 8. A clean render reproduces deploy/ (Render, below).
+# 7. A clean render reproduces deploy/ (Render, below).
 ```
 
 Step 6 is what the Talos patch is for, and a pull that fails with a
-certificate error points there. The check's repository and tags,
-`substrate/check` and `demo/echo:check`, are deleted in the UI afterwards.
+certificate error points there. The check's tag, `demo/echo:check`, is
+deleted in the UI afterwards.
 
 ## Render
 
