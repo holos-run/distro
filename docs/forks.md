@@ -271,6 +271,13 @@ for it. Its summary lists every reference it pushed, as
 `<name>:<tag>@<digest>`, and the Attest jobs, one per image and chart, attest
 those digests.
 
+ghcr.io refuses writes to a package for a moment after the push that creates
+it, with `DENIED: requested access to the resource is denied`. The first
+dispatch failed that way on each new package in turn. So the program retries
+a publish whose output carries that message, up to 16 times, 20 seconds
+apart. Each retry rebuilds from the job's warm cache and pushes the same
+content again. Any other failure is not retried.
+
 ### Where the digests go
 
 The run's output is the source of the digests: the Publish job's summary
