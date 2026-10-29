@@ -37,6 +37,15 @@ import "net"
 	// Capabilities.KubeVersion.
 	kubernetesVersion: string | *"1.37.1"
 
+	// serviceAccountIssuer is the iss of the cluster's ServiceAccount tokens,
+	// as the API server's discovery document (/.well-known/openid-configuration)
+	// gives it. Talos sets it to the control plane endpoint, not the in-cluster
+	// https://kubernetes.default.svc, so a component that verifies those
+	// tokens itself, as Substrate's API server does, is told it here. Recorded,
+	// not chosen: it is the endpoint providers/proxmox/talos/cluster.sh
+	// generates the cluster with.
+	serviceAccountIssuer: =~"^https://"
+
 	// The Kubernetes networks, as Talos configures them (KubeNetworkConfig
 	// in the control plane's machine config). Recorded here, not chosen
 	// here: Cilium allocates pod addresses from the node podCIDRs the
@@ -184,6 +193,8 @@ clusters: treasury: {
 		start: "10.20.0.30"
 		stop:  "10.20.0.33"
 	}
+	// The control plane endpoint, treasury-cp-1.
+	serviceAccountIssuer: "https://10.20.0.50:6443"
 	// Every webhook answers through the gateway's webhooks listener, so the
 	// cluster enforces. A rebuild starts with this false (README.md,
 	// "Admission webhooks").

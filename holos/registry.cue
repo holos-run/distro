@@ -157,6 +157,30 @@ registry: [
 	// cannot get a platform secret by itself. The Ceph key is the exception:
 	// bootstrap writes it with kubectl, before Argo CD.
 	{name: "secrets-manager"},
+	// substrate is Agent Substrate's control plane, rendered from the fork's
+	// install tree in vendor/substrate (substrate.cue): its CRDs, the pod
+	// certificate controller, the API server, the IdP, the controller, the
+	// router, the egress gateway, the credential provider, atelet, its
+	// CloudNativePG cluster and role Job, its generated passwords, the copy
+	// of the RustFS keys, and the gVisor WorkerPool. It needs the CRDs of
+	// cloudnative-pg, external-secrets and cert-manager, the private-ca
+	// ClusterIssuer and the private-ca ConfigMap, a ceph-rbd volume, and the
+	// bucket and keys from rustfs, so it comes after all of them; it reads
+	// no platform secret, so it needs nothing of management-namespaces or
+	// secrets-manager. Its WorkerPool and SandboxConfig are kinds whose CRDs
+	// it installs, so the dry run skips them until they are established.
+	//
+	// It cannot be Healthy on a new cluster by itself: until the key pools
+	// are created by hand with ate-setup (README.md, Substrate), the pods
+	// that project them wait in ContainerCreating. It comes before quay,
+	// which waits on a step by hand too, because its step needs only the
+	// namespaces this sync creates and takes a minute, where quay's needs
+	// Quay up and Keycloak; neither needs the other, and the demo actor's
+	// image, which needs both, is pushed by hand afterwards.
+	{
+		name: "substrate"
+		syncOptions: ["SkipDryRunOnMissingResource=true"]
+	},
 	// quay is the registry: its CloudNativePG cluster, Redis, the Quay
 	// Deployment and route, its Keycloak Client, the demo Organization and
 	// Repository holos-controller makes in it, and the copies of the RustFS

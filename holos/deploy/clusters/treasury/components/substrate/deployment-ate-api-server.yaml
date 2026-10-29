@@ -1,0 +1,284 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ate-api-server
+  namespace: ate-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ate-api-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        holos.run/config-hash: a96f4533
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: ate-api-server
+    spec:
+      containers:
+      - args:
+        - --grpc-server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem
+        - --config-file=/run/apiconfig.ate.dev/apiconfig.textproto
+        - --authentication-config=/etc/ateapi/authentication/authentication.yaml
+        - --postgres-read-write-connection-string=@env
+        - --postgres-owner-connection-string=@env
+        - --postgres-read-write-role=@env
+        - --postgres-owner-role=@env
+        - --postgres-schema=@env
+        - --actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json
+        - --actor-jwt-issuer=@env
+        - --actor-id-ca-pool=/run/actor-id-ca-pool/pool.json
+        - --atelet-client-cred-bundle=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        - --pod-identity-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
+        - --default-egress-gateway-address=atenet-egress.ate-system.svc:443
+        - --drain-delay=13s
+        - --drain-timeout=15s
+        - --objectstore-plugin-socket=/run/objectstore-plugin/control.sock
+        - --snapshot-location=@env
+        - --authz-bootstrap-owners=system:serviceaccount:ate-system:ate-client,spiffe://cluster.local/ns/kagent/sa/kagent-controller
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        - configMapRef:
+            name: ate-api-server-envvars
+            optional: true
+        - secretRef:
+            name: ate-api-server-secret-envvars
+            optional: true
+        image: ghcr.io/holos-run/substrate/ateapi@sha256:0f686185f3b109e3c749d19619a5b1d3fc25b15029bbc1e798c9ab8381393041
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        name: ate-api-server
+        ports:
+        - containerPort: 443
+        - containerPort: 9090
+          name: prometheus
+        - containerPort: 9091
+          name: health
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            drop:
+            - ALL
+          runAsNonRoot: true
+        startupProbe:
+          failureThreshold: 24
+          httpGet:
+            path: /healthz
+            port: health
+          periodSeconds: 5
+        volumeMounts:
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+        - mountPath: /run/postgres.podcert.ate.dev
+          name: postgres
+          readOnly: true
+        - mountPath: /run/actor-id-jwt-pool
+          name: actor-id-jwt-pool
+        - mountPath: /run/actor-id-ca-pool
+          name: actor-id-ca-pool
+          readOnly: true
+        - mountPath: /run/apiconfig.ate.dev
+          name: api-config
+          readOnly: true
+        - mountPath: /etc/ateapi/authentication
+          name: authentication-config
+          readOnly: true
+        - mountPath: /run/postgres-server-ca
+          name: postgres-server-ca
+          readOnly: true
+      initContainers:
+      - args:
+        - control
+        - --socket=/run/objectstore-plugin/control.sock
+        - --exchange-listen=:8445
+        - --actor-jwt-issuer=$(ATE_API_ACTOR_JWT_ISSUER)
+        - --transfer-service-account=$(ATE_API_SNAPSHOT_TRANSFER_SERVICE_ACCOUNT)
+        env:
+        - name: ATE_STORAGE_BACKEND
+          value: s3
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ENDPOINT_URL
+          value: http://rustfs-svc.rustfs.svc:9000
+        - name: AWS_S3_USE_PATH_STYLE
+          value: "true"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: rustfs-substrate
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: rustfs-substrate
+        - name: ATE_API_ACTOR_JWT_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: ATE_API_ACTOR_JWT_ISSUER
+              name: ate-api-server-envvars
+        - name: ATE_API_SNAPSHOT_TRANSFER_SERVICE_ACCOUNT
+          valueFrom:
+            configMapKeyRef:
+              key: ATE_API_SNAPSHOT_TRANSFER_SERVICE_ACCOUNT
+              name: ate-api-server-envvars
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1ccc33f1b437bc1963daf6f2435a159bbc9c0e9ea05d0b36148ca89469b4e340
+        name: objectstore-plugin
+        ports:
+        - containerPort: 8445
+          name: exchange
+        restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        startupProbe:
+          exec:
+            command:
+            - /ko-app/objectstore-plugin
+            - healthcheck
+            - --socket=/run/objectstore-plugin/control.sock
+          failureThreshold: 30
+          periodSeconds: 2
+        volumeMounts:
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+          readOnly: true
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+          readOnly: true
+        - mountPath: /run/actor-id-jwt-jwks
+          name: actor-id-jwt-jwks
+          readOnly: true
+      serviceAccountName: ate-api-server
+      terminationGracePeriodSeconds: 40
+      volumes:
+      - configMap:
+          items:
+          - key: ca.crt
+            path: server-ca.pem
+          name: private-ca
+        name: postgres-server-ca
+      - emptyDir: {}
+        name: objectstore-plugin
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: servicedns.podcert.ate.dev/identity
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: servicedns.podcert.ate.dev/identity
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: podidentity.podcert.ate.dev/identity
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: podidentity.podcert.ate.dev/identity
+      - name: postgres
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: substrate_owner_user.pem
+              keyType: ECDSAP256
+              signerName: postgres.podcert.ate.dev/identity
+              userAnnotations:
+                postgres.podcert.ate.dev/username: substrate_owner_user
+          - podCertificate:
+              credentialBundlePath: substrate_readwrite_user.pem
+              keyType: ECDSAP256
+              signerName: postgres.podcert.ate.dev/identity
+              userAnnotations:
+                postgres.podcert.ate.dev/username: substrate_readwrite_user
+      - name: actor-id-jwt-pool
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: pool
+                path: pool.json
+              name: actor-id-jwt-pool
+      - name: actor-id-jwt-jwks
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: jwks
+                path: jwks.json
+              name: actor-id-jwt-pool
+      - name: actor-id-ca-pool
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: pool
+                path: pool.json
+              name: actor-id-ca-pool
+      - configMap:
+          name: ate-api-config
+        name: api-config
+      - configMap:
+          name: ate-api-authentication
+        name: authentication-config

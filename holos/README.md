@@ -15,9 +15,12 @@ holos/
 ├── talos.cue       the control plane's Talos patch made from the above; talos_tool.cue writes it
 ├── private-ca.cue  the names of the private CA and its trust bundle
 ├── istio.cue       the mesh's release, namespace, images and trust domain
+├── substrate.cue   the Substrate fork's commit and image digests, and the names Substrate is reached by
+├── kagent.cue      kagent's namespace and controller identity, which Substrate trusts
 ├── signing-keys/   the public keys commits on main are signed with
 ├── platform/       the Platform: the registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
+├── vendor/         git submodules a component renders from: substrate, the Substrate fork
 └── deploy/         rendered manifests, committed; never edited by hand
 ```
 
@@ -105,6 +108,7 @@ old one and every webhook call is refused. Then change the router's
 | `holos-controller` | holos-controller 0.22.0 from aavis-ops' manifests, vendored, in the ambient namespace `holos-controller`, with its eight CRDs and the private root in its trust; no resources of its kinds |
 | `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
+| `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and holos-controller's Quay credential |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
@@ -1590,6 +1594,367 @@ kubectl delete -f store.yaml   # its Role and RoleBinding in holos-prj-platform,
 kubectl delete ns sm-test
 ```
 
+### Substrate
+
+`substrate` is Agent Substrate's control plane, from the holos-run fork
+(interview Q23, Q26 and Q27; [docs/forks.md](../docs/forks.md)). The fork is
+vendored as a git submodule at `vendor/substrate`, checked out at the pin,
+and the component renders upstream's own install tree from it, the files
+`go run ./cmd/ate-setup deploy ate-system` would apply. `Substrate`
+(`substrate.cue`) holds the fork's commit, every image's digest on
+`ghcr.io/holos-run/substrate`, and the names other components dial;
+`Kagent` (`kagent.cue`) holds the kagent controller's identity, which
+Substrate trusts before kagent is installed. ate-setup needs a cluster to
+render, so it is read, not run: `components/substrate/ATE-SETUP.md` maps
+every step of its `deploy ate-system` to a stage here or to a step by hand
+below, and is re-read on every bump.
+
+A clone renders only with the submodule checked out
+(`git submodule update --init holos/vendor/substrate` from the repository's
+root, once); without it `kubectl kustomize` finds no files and the render
+fails. The render reads nothing from the network.
+
+The component is a pipeline, one artifact of four stages:
+
+1. **Input.** A `Command` generator runs `kubectl kustomize
+   --load-restrictor LoadRestrictionsNone` on
+   `components/substrate/upstream/kustomization.yaml`, which lists
+   `manifests/ate-install/base` and the files ate-setup applies on their
+   own: the three CRDs and the controller's RBAC, the pod certificate
+   controller, the SandboxConfig admission policy and `gvisor-default`, the
+   egress gateway, and the Kubernetes Secrets credential provider and its
+   namespace policy. It also makes ConfigMap `substrate-db-setup` from
+   `pkg/postgressetup/setup.sql`. Upstream's bundled PostgreSQL is not
+   listed.
+2. **CUE.** A `Resources` generator makes what ate-setup creates
+   imperatively, and the platform's additions (below).
+3. **Patches.** A `Kustomize` transformer reproduces ate-setup's render: the
+   router's allowed SPIFFE IDs, the IdP's issuer, the API server's bootstrap
+   owners and config hash, the egress gateway's credential provider flags,
+   which ate-setup splices over a YAML comment kustomize drops, the Envoy
+   image in place of `${ENVOY_DATAPLANE_IMAGE}`, the GKE image credential
+   provider removed from atelet, the private root added to its trust, the
+   GKE PodMonitoring, the bundled database's NetworkPolicy and the
+   credential provider's cluster-wide Secret reader binding dropped, the
+   object store plugin on S3, `ate-system` privileged, and both namespaces
+   `Delete=false`. Every container
+   patch tests the container's name at its index first, so a reordered
+   upstream manifest fails the render rather than patching the wrong
+   container. Its `images` field rewrites every
+   `ko://go.ate.dev/substrate/cmd/<path>` to
+   `ghcr.io/holos-run/substrate/<name>@<digest>`.
+4. **Slice.** `holos kubectl-slice` writes one file per resource.
+
+Two validators fail the render if the submodule is not at
+`Substrate.commit`, or if a `ko://` image, a `${...}` image placeholder, the GKE
+collector address, a PodMonitoring or a `gcs` storage backend survives.
+
+What it runs, in `ate-system` unless named:
+
+- **The control plane.** The API server (two replicas), the IdP (two), the
+  controller, the Envoy router, the egress gateway, the credential
+  provider, and atelet on every worker; the pod certificate controller in
+  `podcertificate-controller-system`, which publishes the three
+  ClusterTrustBundles every Substrate pod projects. Every image is pulled
+  anonymously from `ghcr.io/holos-run/substrate` by digest; no
+  ServiceAccount has a pull secret. Substrate registers no admission
+  webhook, only the CEL ValidatingAdmissionPolicy `sandboxconfig-assets`.
+- **The namespace.** `ate-system` is privileged, since atelet mounts host
+  paths under `/var` and `/dev`, and stays out of the mesh: Substrate runs
+  its own mutual TLS on pod certificates, and upstream's default-deny
+  NetworkPolicies hold at the application ports. It and
+  `podcertificate-controller-system` carry
+  `argocd.argoproj.io/sync-options: Delete=false`: they hold the key pools,
+  which are not in git, and the database, so deleting the Application or
+  pruning the namespace never takes them.
+- **Its configuration.** `ate-api-authentication` trusts the cluster's
+  ServiceAccount tokens for audience `api.ate-system.svc`, with the issuer
+  from `Cluster.serviceAccountIssuer` (`https://10.20.0.50:6443` on
+  treasury, the control plane endpoint, as the discovery document gives
+  it) and the pod's own CA and token files, since Talos answers anonymous
+  discovery with a 401. `ate-api-config` sets the log level `info`.
+  `ate-api-server-envvars` has the roles, the actor JWT issuer
+  `https://idp.ate-system.svc` and the snapshot location `s3://substrate/`.
+  `ate-otel-config` sets every exporter to `none` and logs to `console`:
+  there is no collector. Each workload's pod template carries
+  `holos.run/config-hash`, a short digest of what it reads of these: the API
+  server's of its four ConfigMaps, the connection strings' template and the
+  OpenTelemetry settings; ate-controller's, atelet's, the router's and the
+  egress gateway's of the OpenTelemetry settings; the credential provider's
+  of its namespace policy. A change in git to any of them rolls its readers.
+  It does not cover the generated passwords, nor the router's and the egress
+  gateway's Envoy ConfigMaps, which come from upstream's tree (Bumping the
+  pin, below).
+- **The database.** CloudNativePG `Cluster` `substrate-db`, which kagent
+  shares with roles and a schema of its own: one instance, 10Gi on
+  `ceph-rbd`, PostgreSQL 18.6 pinned by image, `enablePDB: false`,
+  `Prune=false,Delete=false`, superuser access on with the generated
+  `substrate-db-superuser` (username `postgres`), and `initdb` making
+  database `substrate` owned by `substrate`, a login nothing uses. Its
+  serving certificate is `Certificate` `substrate-db-server` from the
+  `private-ca` ClusterIssuer, so clients verify it against the private root
+  every namespace has, which lasts as long as the cluster; CloudNativePG's
+  own CA would be renewed every three months under clients that load it
+  once. The API server mounts the `private-ca` ConfigMap where upstream
+  mounts Secret `postgres-server-ca`.
+- **Its roles.** Job `substrate-db-setup` runs upstream's `setup.sql` with
+  psql as the superuser, in one transaction, with the role names, schema
+  and passwords as psql variables, as ate-setup does for its bundled
+  database: roles `substrate_owner` and `substrate_readwrite`, login users
+  `substrate_owner_user` and `substrate_readwrite_user` with the passwords
+  in the generated `substrate-db-users`, and schema `substrate`. Every
+  statement converges, so it is an Argo CD `Sync` hook, run on every sync
+  and deleted once it succeeds; not `PostSync`, which waits for the API
+  server to be Healthy, which it cannot be without its roles. It waits for
+  the database itself. The API server runs its migrations through the
+  owner's connection.
+- **The connection strings.** `ExternalSecret`
+  `ate-api-server-secret-envvars` templates both DSNs and the schema from
+  `substrate-db-users`, through `SecretStore` `substrate-db-users`
+  (`#ScopedSecretStore` with `source: "ate-system"`), `sslmode=verify-full`
+  against the private root. It follows its source within the hour.
+- **Snapshots.** In RustFS's bucket `substrate`, at
+  `rustfs-svc.rustfs.svc:9000`, path-style, region `us-east-1`, plain HTTP:
+  `rustfs` is in the mesh and `ate-system` is not, so ztunnel takes the
+  connection in plaintext. Both object store plugin sidecars, the API
+  server's and atelet's, read the keys from `rustfs-substrate`, copied from
+  `rustfs` by `SecretStore` `rustfs`.
+- **The router.** Mutual TLS on 8443 (Service `atenet-router:443`), which
+  accepts a client certificate from the pod identity signer whose SPIFFE ID
+  is on `--ingress-allowed-spiffe-ids`, exactly: the ingress gateway's,
+  `IngressGateway.spiffeID`
+  (`spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`), and
+  kagent's controller's, `Kagent.controller.spiffeID`. A client with no
+  certificate, or one not on the list, fails the handshake. The router
+  strips `ate-target-actor` before the actor sees the request.
+- **Owners.** The API server's bootstrap owners are `ate-client`
+  (`system:serviceaccount:ate-system:ate-client`), the identity `kubectl
+  ate` acts as without `--token-file`, and kagent's controller. Anyone who
+  can mint a token for `ate-client`, which takes `create` on
+  `serviceaccounts/token` in `ate-system`, is a global owner of Substrate:
+  only cluster admins, from the laptop.
+- **Egress.** The egress gateway's ext-proc names the bundled provider,
+  `k8s.io` at `k8s-credential-provider.ate-system.svc:50051`, whose
+  namespace policy, in git, lets atespace `kagent` resolve Secrets in
+  namespace `kagent`, and no other atespace any. Upstream binds the
+  provider's Secret reader ClusterRole cluster wide, so it could read every
+  Secret in the cluster; the component drops that ClusterRoleBinding and
+  keeps the ClusterRole. Each namespace in the policy's `allowedNamespaces`
+  gets a RoleBinding of that ClusterRole to ServiceAccount
+  `ate-system/k8s-credential-provider`, rendered by the component that owns
+  the namespace (`kagent` for `kagent`), so the provider reads Secrets only
+  where an atespace may resolve them.
+- **The worker pool.** `WorkerPool` `gvisor` in the privileged namespace
+  `ate-workers`: three workers of `ateworker-gvisor` by digest, on the
+  nodes labeled `holos.run/nodepool: general`, with the class default
+  `gvisor-default`, whose gVisor build atelet fetches from `gs://gvisor`
+  anonymously. It carries `kagent.dev/worker-pool-namespace: kagent` and
+  `kagent.dev/worker-pool-name: gvisor`, which kagent's generated
+  ActorTemplates select on. ate-controller creates its ServiceAccount,
+  `ateworker`.
+
+#### Bringing Substrate up
+
+Three things have no declarative form and are done by hand, in this order.
+
+**The key pools**, once per cluster, after Argo CD has synced the
+namespaces. They are the root of every pod identity, actor token and MITM
+certificate: ate-setup creates them as Secrets that Argo CD does not track,
+so it never prunes them, and that never pass through the Secrets Manager.
+Until they exist the pods that project them wait in ContainerCreating and
+the Application is Progressing; the kubelet retries within about two
+minutes of their creation. Each command creates only what is missing, so a
+second run changes nothing. ate-setup uses `KUBECONFIG`'s current context
+(`--context` to choose), and `go run` builds it, about a minute the first
+time.
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+kubectl get ns ate-system podcertificate-controller-system   # synced
+cd holos/vendor/substrate                                    # from the repository's root
+go run ./cmd/ate-setup create podcertificate-controller-cas  # service-dns-, pod-identity-, postgres-ca-pool
+go run ./cmd/ate-setup create jwt-authority-pool             # actor-id-jwt-pool
+go run ./cmd/ate-setup create actor-id-ca-pool
+go run ./cmd/ate-setup create actor-id-ca-certs              # from actor-id-ca-pool, so after it
+go run ./cmd/ate-setup create egress-mitm-ca-pool
+kubectl get clustertrustbundles -l podcert.ate.dev/canarying=live   # podidentity, postgres, servicedns
+kubectl -n ate-system rollout status deploy/ate-api-server
+```
+
+**The demo atespace** and **its actors**, through the API with `kubectl
+ate`, built from the same commit. Atespaces, actor templates and actors are
+API objects in Substrate's database, not Kubernetes resources. `kubectl
+ate` port-forwards to Service `api` and, without `--token-file`, mints a
+token for `ate-client`. The demo has two templates, `echo` and `other`,
+which differ only in `WHOAMI_NAME`, and an actor of each: the router strips
+`ate-target-actor` and an actor has no variable naming it, so each answers
+with its template's name, as `Name:`, above the request headers it
+received. Templates are immutable; to change one, delete and re-create it.
+
+The image is `traefik/whoami` v1.12.0, copied by digest into the public
+`demo/echo` repository in Quay, which keeps the digest, so a rebuilt Quay
+is refilled with the same pin. atelet pulls actor images itself, with
+go-containerregistry, not through containerd, so the workers' Talos trust
+store does not reach it: the component mounts the namespace's `private-ca`
+ConfigMap into atelet at `/etc/ssl/private-ca` and sets `SSL_CERT_DIR` to
+`/etc/ssl/certs:/etc/ssl/private-ca`, as argocd-server and holos-controller
+do, which keeps the image's public roots. Go reads them once, at start, so
+after a rebuild, whose root is new, restart atelet
+(`kubectl -n ate-system rollout restart ds/atelet`).
+
+```sh
+go build -o ~/bin/kubectl-ate ./cmd/kubectl-ate   # from holos/vendor/substrate; ~/bin on PATH
+kubectl ate create atespace demo
+
+# Into Quay, with the controller's token; buildx trusts the root through
+# SSL_CERT_DIR, not docker's certs.d.
+digest=sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
+export DOCKER_CONFIG=$(mktemp -d)
+kubectl -n holos-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d |
+  docker login quay.bank.internal -u '$oauthtoken' --password-stdin
+SSL_CERT_DIR=/etc/docker/certs.d/quay.bank.internal docker buildx imagetools create \
+  -t quay.bank.internal/demo/echo:v1.12.0 docker.io/traefik/whoami:v1.12.0@$digest
+docker logout quay.bank.internal; rm -rf $DOCKER_CONFIG; unset DOCKER_CONFIG
+
+image=quay.bank.internal/demo/echo@$digest
+for a in echo other; do
+  kubectl ate create actor-template -f - <<EOF
+metadata: {atespace: demo, name: $a}
+containers:
+- name: whoami
+  image: $image
+  env: [{name: WHOAMI_NAME, value: $a}]
+  wakeupProbe: {httpGet: {path: /health, port: 80}}
+resources:
+  limits: {cpuMillicores: 250, memoryBytes: 134217728}
+EOF
+done
+kubectl ate get actor-templates -a demo   # a GOLDEN TAG for each, within a minute
+for a in echo other; do kubectl ate create actor $a -a demo --template $a; done
+kubectl ate get actors -a demo            # both SUSPENDED until a request wakes them
+```
+
+#### Bumping the pin
+
+A new pin is a fork commit whose images `publish-images.yaml` has published to ghcr.io
+([docs/forks.md](../docs/forks.md)). From `holos/`:
+
+```sh
+git -C vendor/substrate fetch origin
+git -C vendor/substrate checkout <commit>
+# substrate.cue: commit, version, and every digest from the publish run's references
+# components/substrate/ATE-SETUP.md: walk steps/deploy.go again, change what moved,
+# then the line numbers and the pin at its top
+cue vet ./... && rm -rf deploy/clusters && holos render platform
+git diff deploy/clusters/treasury/components/substrate   # what the bump changes on the cluster
+git add vendor/substrate substrate.cue components/substrate deploy
+```
+
+If the bump's diff changes ConfigMap `atenet-router-envoy-config` or
+`atenet-egress`, the Envoy bootstrap upstream ships, restart their readers
+once Argo CD has synced it, since no hash covers them:
+
+```sh
+kubectl -n ate-system rollout restart deploy/atenet-router deploy/atenet-egress
+```
+
+The render refuses a `Substrate.commit` that is not the submodule's, and a
+`ko://` image the `images` field does not know, which is what a new
+component in upstream's tree looks like: add its name and digest. A new
+flag ate-setup appends, a new file it applies on its own or a new
+ConfigMap key does not fail the render; only the re-read finds it. A
+schema change is migrated by ate-api-server on start, through the owner's
+connection.
+
+#### Rotation
+
+- **The database passwords**, `substrate-db-users`. Rotate the Secret as
+  any generated one (External Secrets, above); only the role Job's pods
+  name it, and they are gone once it succeeds. Then sync `substrate`
+  (`argocd app sync substrate`): the ExternalSecret Argo CD re-creates
+  generates new passwords, and the role Job, a Sync hook, sets them with
+  `ALTER ROLE`; until then the API server keeps the connections it has.
+  Force the connection strings to follow with `kubectl -n ate-system
+  annotate externalsecret ate-api-server-secret-envvars
+  force-sync=$(date +%s) --overwrite`, then roll the API server, which
+  reads them at start: `kubectl -n ate-system rollout restart
+  deploy/ate-api-server`. New connections fail between the sync and the
+  restart.
+- **The superuser and the initdb owner**, `substrate-db-superuser` and
+  `substrate-db`: as `keycloak-db` (Keycloak, above). The instance manager
+  sets the new password when the Secret changes. Only the role Job uses the
+  superuser, and nothing uses the owner.
+- **The key pools**: not yet; their rotation is
+  Holos_Distro/substrate-bank-hardening. Deleting one makes every
+  certificate or token it issued unverifiable.
+
+None of these has been exercised on a cluster yet.
+
+#### Checking Substrate
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+# 1. Running, migrated, its database and secrets in place.
+kubectl -n ate-system get pods,cluster.postgresql.cnpg.io   # every pod Running; substrate-db healthy
+kubectl -n ate-system get externalsecret,secretstore        # every one SecretSynced, every store Valid
+kubectl -n podcertificate-controller-system get pods
+kubectl get clustertrustbundles -l podcert.ate.dev/canarying=live
+    # podidentity, postgres and servicedns from the pod certificate controller,
+    # and egress-mitm from ate-controller once the MITM pool exists
+kubectl -n ate-system logs deploy/ate-api-server -c ate-api-server | grep -m1 'migrations ready'
+kubectl -n ate-workers get workerpool,pods                  # gvisor 3/3, RESOLVED True
+
+# 2. The router: refused without a certificate, and each actor answering an
+#    allowed client by name. The client is a pod with the gateway's identity
+#    and a pod certificate of its own, deleted afterwards.
+kubectl -n istio-ingress apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata: {name: router-test}
+spec:
+  serviceAccountName: ingress-gateway
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 100, runAsGroup: 101, seccompProfile: {type: RuntimeDefault}}
+  containers:
+  - name: curl
+    image: docker.io/curlimages/curl:8.11.1
+    command: [sleep, "600"]
+    securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+    volumeMounts: [{name: router-client, mountPath: /run/router-client, readOnly: true}]
+  volumes:
+  - name: router-client
+    projected:
+      sources:
+      - podCertificate: {signerName: podidentity.podcert.ate.dev/identity, keyType: ECDSAP256, credentialBundlePath: credential-bundle.pem}
+      - clusterTrustBundle:
+          signerName: servicedns.podcert.ate.dev/identity
+          labelSelector: {matchLabels: {podcert.ate.dev/canarying: live}}
+          path: router-ca.pem
+EOF
+kubectl -n istio-ingress wait --for=condition=Ready pod/router-test
+c='--cacert /run/router-client/router-ca.pem'
+id='--cert /run/router-client/credential-bundle.pem --key /run/router-client/credential-bundle.pem'
+kubectl -n istio-ingress exec router-test -- sh -c "curl -sS $c https://atenet-router.ate-system.svc/"
+                                                   # alert certificate required
+for a in echo other; do
+  kubectl -n istio-ingress exec router-test -- sh -c \
+    "curl -sS $c $id -H 'ate-target-actor: demo/$a' https://atenet-router.ate-system.svc/" | head -1
+done                                               # Name: echo, then Name: other
+kubectl ate get actors -a demo                     # both RUNNING
+kubectl -n istio-ingress delete pod router-test
+
+# 3. A durable snapshot in RustFS.
+kubectl ate suspend actor echo -a demo --mode sync
+kubectl ate get actor echo -a demo -o yaml | grep -A1 'snapshotUri: s3://substrate/atespaces/demo/actors'
+                                                   # state: SNAPSHOT_STORAGE_STATE_COMPLETED
+
+# 4. A clean render reproduces deploy/ (Render, below).
+```
+
+The same pod under ServiceAccount `default` fails the handshake with
+`alert certificate unknown`. On a new cluster Argo CD reports the
+`substrate` Application Progressing until the key pools exist.
+
 ### Quay
 
 Quay is the platform's registry (interview Q13, Q56, Q57 and Q59), at
@@ -1884,9 +2249,11 @@ deleted in the UI afterwards.
 
 ## Render
 
-From this directory:
+From this directory, in a clone or worktree with the Substrate submodule
+checked out (Substrate, above), which a fresh one is not:
 
 ```sh
+git submodule update --init vendor/substrate
 cue vet ./...
 rm -rf deploy/clusters
 holos render platform
@@ -1976,6 +2343,11 @@ start.
 ```sh
 kubectl -n argocd rollout restart deploy/argocd-server
 ```
+
+The root then waits on `substrate` until its key pools exist: once its
+namespaces are synced, run the key pool commands under Bringing Substrate
+up (Substrate, above). Its pods that project the pools wait in
+ContainerCreating until then, so the Application stays Progressing.
 
 The root then waits on `quay`, next to last, whose credential is a platform
 secret made by `cmd/quay-bootstrap` against the running Quay: once Quay's
