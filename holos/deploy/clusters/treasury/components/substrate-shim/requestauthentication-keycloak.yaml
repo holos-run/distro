@@ -1,0 +1,18 @@
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+    name: keycloak
+    namespace: substrate-shim
+spec:
+    jwtRules:
+        - audiences:
+            - kubectl
+          forwardOriginalToken: false
+          fromHeaders:
+            - name: Authorization
+              prefix: 'Bearer '
+          issuer: https://keycloak.bank.internal/realms/holos
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate

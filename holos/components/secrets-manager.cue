@@ -39,7 +39,7 @@ SecretsManager: {
 	// owners is the group, by the full path the groups claim carries, that
 	// alone may create organizations (Q55) and that owns the platform
 	// organization and project. keycloak-realm makes it.
-	owners: "/platform/owners"
+	owners: Keycloak.groups.owners.path
 
 	// secretsRole is the ClusterRole holding the server's secrets verbs,
 	// which a RoleBinding in each project namespace git renders grants it

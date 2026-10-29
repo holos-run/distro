@@ -82,13 +82,15 @@ let User = {
 	lastName:  "McCune"
 }
 
-// Owners is the group whose members are Argo CD admins (components/argocd).
-// The controller takes the path with or without its leading slash and
-// creates the parent, platform, if it is missing; the claim carries the full
-// path, /platform/owners.
+// Owners is the group whose members are Argo CD admins (components/argocd),
+// Keycloak.groups.owners, which the Substrate shim's policy reads too. The
+// controller takes the path with or without its leading slash and creates
+// the parent, platform, if it is missing; the claim carries the full path,
+// /platform/owners. The Group is given it without the slash, as it always
+// has been.
 let Owners = {
-	name: "platform-owners"
-	path: "platform/owners"
+	name: KC.groups.owners.name
+	path: strings.TrimPrefix(KC.groups.owners.path, "/")
 }
 
 // BuiltinClientScopes are the client scopes Keycloak 26.8.1 creates in a new

@@ -42,6 +42,19 @@ Keycloak: {
 	// full path.
 	groupsClaim: "groups"
 
+	// groups are the realm's groups that other components grant something
+	// to, by the full path the groups claim carries.
+	groups: {
+		// owners is the platform's owner group: Argo CD admins, and the
+		// group the Substrate shim admits to the demo and kagent atespaces
+		// (AteGateway). keycloak-realm makes it, named name in its
+		// namespace, and puts jeff in it.
+		owners: {
+			name: "platform-owners"
+			path: "/platform/owners"
+		}
+	}
+
 	// clients are the realm's client IDs that other components name: the
 	// realm import creates each of them.
 	clients: {

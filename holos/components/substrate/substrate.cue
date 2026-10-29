@@ -232,13 +232,14 @@ let ConfigHashes = {
 
 // Ingress is the router's allowed list (--ingress-allowed-spiffe-ids), an
 // exact match on the SPIFFE ID of a client's pod identity certificate: the
-// ingress gateway, through which substrate-shim reaches actors, and kagent's
-// controller. The gateway's identity is IngressGateway's, the one the
-// gateway Deployment's certificate is issued for; the unification below
-// fails the render should Istio's trust domain ever differ from the pod
-// identity signer's.
-let Ingress = [IngressGateway.spiffeID, Kagent.controller.spiffeID]
-IngressGateway: spiffeID: "spiffe://\(S.trustDomain)/ns/\(IngressGateway.namespace)/sa/\(IngressGateway.serviceAccount)"
+// Substrate shim's gateway, through which people reach actors, and kagent's
+// controller. The gateway's identity is AteGateway's
+// (components/substrate-shim.cue), the one its Deployment's certificate is
+// issued for and its Gateway's service account annotation names; the shared
+// ingress Gateway is not on the list. The unification below fails the render
+// should Istio's trust domain ever differ from the pod identity signer's.
+let Ingress = [AteGateway.spiffeID, Kagent.controller.spiffeID]
+AteGateway: spiffeID: "spiffe://\(S.trustDomain)/ns/\(AteGateway.namespace)/sa/\(AteGateway.serviceAccount)"
 
 // BootstrapOwners always hold owner on the global scope: ate-client, the
 // identity kubectl ate acts as without --token-file, as ate-setup's default,

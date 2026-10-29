@@ -1,0 +1,29 @@
+apiVersion: extensions.istio.io/v1alpha1
+kind: TrafficExtension
+metadata:
+    name: ate-target-actor
+    namespace: substrate-shim
+spec:
+    lua:
+        inlineCode: |-
+            -- <actor>.<atespace>.ate.bank.internal to ate-target-actor: <atespace>/<actor>.
+            local suffix = ".ate.bank.internal"
+
+            function envoy_on_request(request_handle)
+              local headers = request_handle:headers()
+              local host = string.lower(headers:get(":authority") or "")
+              host = string.gsub(host, ":%d+$", "")
+              local actor, atespace
+              if #host > #suffix and string.sub(host, -#suffix) == suffix then
+                actor, atespace = string.match(string.sub(host, 1, -#suffix - 1), "^([a-z0-9-]+)%.([a-z0-9-]+)$")
+              end
+              if actor == nil then
+                request_handle:respond({[":status"] = "400"}, "host is not <actor>.<atespace>.ate.bank.internal\n")
+                return
+              end
+              headers:replace("ate-target-actor", atespace .. "/" .. actor)
+            end
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate

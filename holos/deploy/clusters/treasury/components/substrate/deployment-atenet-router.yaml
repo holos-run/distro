@@ -36,7 +36,7 @@ spec:
         - --ateapi-ca-file=/run/servicedns-ca/trust-bundle.pem
         - --ateapi-client-cert=/run/podidentity.podcert.ate.dev/credential-bundle.pem
         - --drain-delay=13s
-        - --ingress-allowed-spiffe-ids=spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway,spiffe://cluster.local/ns/kagent/sa/kagent-controller
+        - --ingress-allowed-spiffe-ids=spiffe://cluster.local/ns/substrate-shim/sa/ate-gateway,spiffe://cluster.local/ns/kagent/sa/kagent-controller
         env:
         - name: POD_NAME
           valueFrom:

@@ -98,7 +98,7 @@ old one and every webhook call is refused. Then change the router's
 | `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks reached through the gateway; no `Cluster` |
 | `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook reached through the gateway; no store, no `ExternalSecret` |
 | `management-namespaces` | The Secrets Manager's management organization `holos-org-platform` and project `holos-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
-| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, and the admission webhooks' TLS passthrough listener and `TLSRoute`s |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the admission webhooks' TLS passthrough listener and `TLSRoute`s, and the `ate` passthrough listener for `*.ate.bank.internal` |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
@@ -109,6 +109,7 @@ old one and every webhook call is refused. Then change the router's
 | `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
+| `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and holos-controller's Quay credential |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
@@ -639,17 +640,24 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   Every route is rendered here,
   not by the webhook's component, so the listener and its routes change in
   one sync. istiod adds 9443 to the gateway's Service.
+- **Ate listener.** `ate` on 443 for `*.ate.<privateDomain>`, protocol `TLS`
+  in `Passthrough` mode, beside `https` on the same port: Envoy matches the
+  SNI to the most specific name, so `echo.demo.ate.bank.internal` comes here
+  and every other host under the zone to `https`. It accepts only
+  `TLSRoute`s from `substrate-shim`, whose one route forwards the connection
+  to the Substrate shim's own Gateway (The Substrate shim, below). `ingress`
+  never terminates those connections, so none of the shim's policy runs on
+  it.
 - **ServiceAccount.** The `gateway.istio.io/service-account` annotation names
   it `ingress-gateway`, so the gateway's mesh identity is
-  `spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`
-  (`IngressGateway.spiffeID`), the identity substrate-shim puts on the
-  Substrate router's allowed list. Without the annotation it would be
-  `ingress-istio`, a side effect of the class.
+  `spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`. Without the
+  annotation it would be `ingress-istio`, a side effect of the class. The
+  Substrate router does not admit it; only the shim's gateway reaches the
+  router.
 - **Deployment.** `infrastructure.parametersRef` names ConfigMap
   `istio-ingress/ingress-gateway`, whose `deployment` key istiod merges into
   the Deployment it generates: two replicas spread across nodes, so draining
-  a worker does not drop the gateway. substrate-shim adds its podCertificate
-  volume there.
+  a worker does not drop the gateway.
 - `istio-ingress` is not in ambient: the gateway is its own mesh proxy and
   reaches an ambient workload over HBONE through the workload's ztunnel.
 
@@ -1721,10 +1729,11 @@ What it runs, in `ate-system` unless named:
   `rustfs` by `SecretStore` `rustfs`.
 - **The router.** Mutual TLS on 8443 (Service `atenet-router:443`), which
   accepts a client certificate from the pod identity signer whose SPIFFE ID
-  is on `--ingress-allowed-spiffe-ids`, exactly: the ingress gateway's,
-  `IngressGateway.spiffeID`
-  (`spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`), and
-  kagent's controller's, `Kagent.controller.spiffeID`. A client with no
+  is on `--ingress-allowed-spiffe-ids`, exactly: the Substrate shim's
+  gateway's, `AteGateway.spiffeID`
+  (`spiffe://cluster.local/ns/substrate-shim/sa/ate-gateway`), and kagent's
+  controller's, `Kagent.controller.spiffeID`. The shared `ingress` gateway is
+  not on the list. A client with no
   certificate, or one not on the list, fails the handshake. The router
   strips `ate-target-actor` before the actor sees the request.
 - **Owners.** The API server's bootstrap owners are `ate-client`
@@ -1905,14 +1914,14 @@ kubectl -n ate-system logs deploy/ate-api-server -c ate-api-server | grep -m1 'm
 kubectl -n ate-workers get workerpool,pods                  # gvisor 3/3, RESOLVED True
 
 # 2. The router: refused without a certificate, and each actor answering an
-#    allowed client by name. The client is a pod with the gateway's identity
-#    and a pod certificate of its own, deleted afterwards.
-kubectl -n istio-ingress apply -f - <<'EOF'
+#    allowed client by name. The client is a pod with the shim gateway's
+#    identity and a pod certificate of its own, deleted afterwards.
+kubectl -n substrate-shim apply -f - <<'EOF'
 apiVersion: v1
 kind: Pod
 metadata: {name: router-test}
 spec:
-  serviceAccountName: ingress-gateway
+  serviceAccountName: ate-gateway
   automountServiceAccountToken: false
   securityContext: {runAsNonRoot: true, runAsUser: 100, runAsGroup: 101, seccompProfile: {type: RuntimeDefault}}
   containers:
@@ -1931,17 +1940,17 @@ spec:
           labelSelector: {matchLabels: {podcert.ate.dev/canarying: live}}
           path: router-ca.pem
 EOF
-kubectl -n istio-ingress wait --for=condition=Ready pod/router-test
+kubectl -n substrate-shim wait --for=condition=Ready pod/router-test
 c='--cacert /run/router-client/router-ca.pem'
 id='--cert /run/router-client/credential-bundle.pem --key /run/router-client/credential-bundle.pem'
-kubectl -n istio-ingress exec router-test -- sh -c "curl -sS $c https://atenet-router.ate-system.svc/"
+kubectl -n substrate-shim exec router-test -- sh -c "curl -sS $c https://atenet-router.ate-system.svc/"
                                                    # alert certificate required
 for a in echo other; do
-  kubectl -n istio-ingress exec router-test -- sh -c \
+  kubectl -n substrate-shim exec router-test -- sh -c \
     "curl -sS $c $id -H 'ate-target-actor: demo/$a' https://atenet-router.ate-system.svc/" | head -1
 done                                               # Name: echo, then Name: other
 kubectl ate get actors -a demo                     # both RUNNING
-kubectl -n istio-ingress delete pod router-test
+kubectl -n substrate-shim delete pod router-test
 
 # 3. A durable snapshot in RustFS.
 kubectl ate suspend actor echo -a demo --mode sync
@@ -1954,6 +1963,158 @@ kubectl ate get actor echo -a demo -o yaml | grep -A1 'snapshotUri: s3://substra
 The same pod under ServiceAccount `default` fails the handshake with
 `alert certificate unknown`. On a new cluster Argo CD reports the
 `substrate` Application Progressing until the key pools exist.
+
+### The Substrate shim
+
+`substrate-shim` is how a person reaches an actor: at
+`https://<actor>.<atespace>.ate.bank.internal`, with a Keycloak ID token
+(interview Q7 to Q9). It is plain Istio, with no controller of its own.
+`AteGateway` (`components/substrate-shim.cue`) names it, and the substrate
+component reads the same definition for the router's allowed list.
+
+- **Its own Gateway.** A `RequestAuthentication` applies to every request
+  its gateway sees, and refuses a bearer JWT from an issuer it does not know
+  with 401 `Jwt issuer is not configured`. On `ingress` that would break
+  `docker pull` from Quay, whose registry tokens are Quay's JWTs, and the
+  argocd CLI. So the shim is the `Gateway` `substrate-shim/ate`, class
+  `istio`, annotated `networking.istio.io/service-type: ClusterIP`: istiod
+  gives it the Service `ate-istio` and no address. `ingress`'s `ate`
+  listener passes every `*.ate.bank.internal` connection through to that
+  Service, by SNI, with the `TLSRoute` `substrate-shim/ate` (The ingress
+  gateway, above). There is no new address and no DNS change: the private
+  zone's `*.bank.internal` already resolves the hosts to 10.20.0.30. Two
+  replicas, preferably on two nodes, as `ingress` has.
+- **Listeners.** One per atespace, named after it, for
+  `*.<atespace>.ate.bank.internal`, terminating TLS with the `Certificate`
+  `<atespace>-wildcard` from the `private-ca` ClusterIssuer: `demo` and
+  `kagent` today. Each admits only `HTTPRoute`s from `ate-system`, where
+  `ate-<atespace>` routes to the router's Service on 443. Being in the
+  router's namespace, those routes need no `ReferenceGrant`, and no
+  `ReferenceGrant` into `ate-system` exists, so no other route can reach the
+  router through the gateway. A host under an atespace with no listener,
+  such as `foo.nope.ate.bank.internal`, matches no filter chain and the
+  connection is reset during the TLS handshake (curl exits 35). The Gateway
+  sets `allowedListeners` to its own namespace, so a `ListenerSet` there can
+  add an atespace.
+- **Authentication.** `RequestAuthentication` `keycloak` accepts an ID token
+  from the realm's issuer for the `kubectl` client (ADR 0002), the token
+  `kubectl oidc-login get-token` prints; any other bearer token gets 401.
+  `forwardOriginalToken` is false, so Envoy removes the `Authorization`
+  header once the token is verified and the actor never holds it. A request
+  with no token passes this step.
+- **Authorization.** `AuthorizationPolicy` `ate` allows a request only if
+  the host is under an atespace with a rule, a token from the realm was
+  verified, and the token's `groups` claim holds one of the atespace's
+  `groups` (`AteGateway.atespaces`), `/platform/owners` for both today
+  (`Keycloak.groups.owners`). Istio matches `hosts` as a plain suffix of
+  `:authority`, so each rule lists the host with and without `:443`, for a
+  client that puts the port in `Host`. Everything else, a request with no
+  token included, gets 403 `RBAC: access denied`.
+- **The actor.** `TrafficExtension` `ate-target-actor` is a few lines of
+  Lua. It splits the host, `<actor>.<atespace>.ate.bank.internal`, and
+  replaces `ate-target-actor` with `<atespace>/<actor>`, which drops any
+  value the client sent. It has no phase, so istiod puts it after
+  `jwt_authn` and `rbac` in the filter chain, and a refused request never
+  gets the header. A host of any other shape, such as
+  `a.echo.demo.ate.bank.internal`, gets 400. The router strips the header
+  before the actor sees the request, so the proof of routing is which actor
+  answers.
+- **Mutual TLS to the router.** `DestinationRule` `atenet-router` in
+  `substrate-shim`, exported to that namespace only, originates mutual TLS
+  to `atenet-router.ate-system.svc.cluster.local`. The client certificate is
+  a pod certificate from `podidentity.podcert.ate.dev/identity`, which the
+  `ate-gateway` ConfigMap (the Gateway's `parametersRef`) projects into the
+  `istio-proxy` container with `keyPath` and `certificateChainPath`, since
+  the DestinationRule takes the key and the chain as two files. The router's
+  serving certificate is checked against the servicedns signer's live
+  ClusterTrustBundles, projected beside it, for the name
+  `atenet-router.ate-system.svc`, which is also the SNI. The certificate
+  carries `spiffe://cluster.local/ns/substrate-shim/sa/ate-gateway`, the
+  `AteGateway.spiffeID` the router's allowed list is rendered from, for the
+  ServiceAccount the Gateway's `gateway.istio.io/service-account` annotation
+  names. Every replica gets its own key and certificate. The gateway's pods
+  start only once the pod identity signer issues, so on a new cluster they
+  wait for Substrate's key pools (Bringing Substrate up, above).
+- **The namespace.** `substrate-shim` is not in ambient: the gateway is its
+  own proxy, and the router is outside the mesh. Unlike `istio-ingress`, it
+  is not exempt from cert-manager's webhook: the webhook's path is
+  `ingress`'s `webhooks` listener, which this component does not render, so
+  a commit here cannot break the dry run of its own Certificates.
+- **Client addresses.** `ingress` passes the connection through, so the
+  shim, and the actor in `X-Forwarded-For`, see the `ingress` pod's address,
+  not the client's.
+
+#### Reaching an actor
+
+From a machine that trusts the private root (The private CA, above), as a
+member of `/platform/owners`. kubelogin prints the `kubectl` client's ID
+token, which lasts five minutes:
+
+```sh
+TOKEN=$(kubectl oidc-login get-token --oidc-issuer-url=https://keycloak.bank.internal/realms/holos \
+  --oidc-client-id=kubectl --grant-type=device-code | jq -r .status.token)
+curl https://echo.demo.ate.bank.internal/                                       # 403 RBAC: access denied
+curl -H "Authorization: Bearer $TOKEN" https://echo.demo.ate.bank.internal/     # Name: echo
+curl -H "Authorization: Bearer $TOKEN" https://other.demo.ate.bank.internal/    # Name: other
+```
+
+The actor wakes on the request, if it was suspended, before it answers.
+
+#### Adding an atespace
+
+1. Create the atespace in Substrate with `kubectl ate create atespace
+   <name>`, as for `demo` (Substrate, above). Its name is a DNS label, the
+   hosts' second label and the listener's name.
+2. Add it to `AteGateway.atespaces` in `components/substrate-shim.cue`, with
+   the groups, by full path, that may reach its actors:
+   `<name>: groups: ["/<group path>"]`.
+3. Render and commit. The sync adds its `Certificate`, its listener, its
+   `HTTPRoute` and its `AuthorizationPolicy` rule. Neither the router's
+   allowed list nor DNS changes.
+
+An atespace claimed through a project is meant to arrive as a `ListenerSet`
+in `substrate-shim`, with its certificate and its rule, from the project's
+claim (atespace-from-the-projectclaim); the Gateway already allows it.
+
+#### Rotation
+
+- **The gateway's client certificate** is a pod certificate, valid for 24
+  hours, the signer's default, since `maxExpirationSeconds` is unset. The
+  kubelet renews it before it expires and rewrites the two files; Istio's
+  agent watches the files a DestinationRule names and hands Envoy the new
+  pair. This has not been observed yet. To observe it, set
+  `maxExpirationSeconds: 3600`, the minimum, on the `podCertificate` in the
+  `ate-gateway` ConfigMap, which rolls the gateway, and repeat a request
+  after an hour.
+- **The router's trust bundle** is the servicedns signer's live
+  ClusterTrustBundles, which the kubelet keeps current in the projected
+  file. Rotating the key pools themselves is
+  Holos_Distro/substrate-bank-hardening.
+- **The wildcards** are renewed by cert-manager, and istiod hands them to the
+  gateway as they change.
+- **Keycloak's signing keys**: istiod fetches the realm's JWKS itself, with
+  the private root (Istio, above), and refreshes it periodically, so a new
+  realm key is picked up without a restart; a new private root needs an
+  istiod restart.
+
+#### Checking the shim
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+kubectl -n substrate-shim get gateway,certificate,pods -o wide
+    # ate PROGRAMMED True; both wildcards Ready; two ate-istio pods on two nodes
+kubectl -n istio-ingress get gateway ingress \
+  -o jsonpath='{range .status.listeners[*]}{.name} {.attachedRoutes}{"\n"}{end}'   # ate 1
+# With $TOKEN as above:
+curl -H "Authorization: Bearer $TOKEN" -H 'ate-target-actor: demo/other' \
+  https://echo.demo.ate.bank.internal/ | head -1                     # still Name: echo
+curl https://foo.nope.ate.bank.internal/                             # exit 35, no listener
+# A token for a user outside the atespace's groups, such as
+# svc-quay-controller, gets 403. The router refuses any other identity:
+# Checking Substrate, above, step 2, under ServiceAccount default.
+docker pull quay.bank.internal/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
+    # ingress still passes Quay's own bearer tokens
+```
 
 ### Quay
 

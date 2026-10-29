@@ -181,6 +181,16 @@ registry: [
 		name: "substrate"
 		syncOptions: ["SkipDryRunOnMissingResource=true"]
 	},
+	// substrate-shim is the Istio shim in front of Substrate's router: its
+	// own Gateway with a listener and certificate per atespace, behind the
+	// ingress Gateway's ate listener, the Keycloak token and group policy,
+	// the Lua that sets the actor from the host, and the mutual TLS to the
+	// router. It needs the Gateway API CRDs, istiod, the private-ca
+	// ClusterIssuer, ingress-gateway's ate listener, and substrate: its
+	// gateway's pods project a certificate from Substrate's pod identity
+	// signer, which waits on substrate's key pools, and its HTTPRoutes are
+	// in substrate's namespace. So it comes straight after substrate.
+	{name: "substrate-shim"},
 	// quay is the registry: its CloudNativePG cluster, Redis, the Quay
 	// Deployment and route, its Keycloak Client, the demo Organization and
 	// Repository holos-controller makes in it, and the copies of the RustFS

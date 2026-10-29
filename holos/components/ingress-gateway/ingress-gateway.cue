@@ -11,7 +11,9 @@ import "encoding/yaml"
 // Also the HTTPRoutes of components installed before the Gateway API CRDs,
 // so that each of those can still be applied by hand at bootstrap: Argo CD's.
 // And the TLS passthrough listener the API server reaches the admission
-// webhooks through, with a TLSRoute per webhook Service (webhooks.cue).
+// webhooks through, with a TLSRoute per webhook Service (webhooks.cue), and
+// the one the Substrate shim's hosts pass through to its own Gateway
+// (AteGateway), whose TLSRoute substrate-shim renders.
 //
 // Applied once istiod is running (it owns the istio GatewayClass) and the
 // private CA issues.
@@ -50,9 +52,8 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// The gateway Deployment's customization. istiod merges the
 		// deployment key into the Deployment it generates (a strategic merge
-		// patch); substrate-shim adds the podCertificate volume here. Two
-		// replicas, preferably on two nodes, so draining a worker does not
-		// drop the gateway.
+		// patch). Two replicas, preferably on two nodes, so draining a worker
+		// does not drop the gateway.
 		ConfigMap: (IG.parameters): {
 			metadata: namespace: IG.namespace
 			data: deployment: yaml.Marshal({
@@ -127,6 +128,32 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 									key:      "kubernetes.io/metadata.name"
 									operator: "In"
 									values:   IG.webhooks.namespaces
+								}]
+							}
+						}
+					},
+					{
+						name:     IG.listeners.ate
+						hostname: AteGateway.wildcard
+						port:     443
+						protocol: "TLS"
+						// The Substrate shim's hosts,
+						// <actor>.<atespace>.ate.<domain>, pass through to the
+						// shim's own Gateway, which terminates TLS and holds
+						// the policy. Envoy matches SNI to the most specific
+						// name, so they come here rather than to https's
+						// *.<domain>.
+						tls: mode: "Passthrough"
+						// Only TLSRoutes, and only from the shim's namespace,
+						// where the one route to its Gateway's Service is.
+						allowedRoutes: {
+							kinds: [{group: "gateway.networking.k8s.io", kind: "TLSRoute"}]
+							namespaces: {
+								from: "Selector"
+								selector: matchExpressions: [{
+									key:      "kubernetes.io/metadata.name"
+									operator: "In"
+									values: [AteGateway.namespace]
 								}]
 							}
 						}
