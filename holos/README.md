@@ -10,6 +10,7 @@ holos/
 ├── cue.mod/        CUE module; holos init platform v1alpha6's schemas
 ├── clusters.cue    per-site and per-cluster data
 ├── registry.cue    the components, in sync order
+├── collections.cue the ProjectClaim collection, bound into the platform, and its group and user definitions
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── webhooks.cue    the Services that serve admission webhooks
 ├── talos.cue       the control plane's Talos patch made from the above; talos_tool.cue writes it
@@ -18,6 +19,7 @@ holos/
 ├── substrate.cue   the Substrate fork's commit and image digests, and the names Substrate is reached by
 ├── kagent.cue      kagent's namespace and controller identity, which Substrate trusts
 ├── signing-keys/   the public keys commits on main are signed with
+├── projects/       the ProjectClaim collection: its schema, and a file per project
 ├── platform/       the Platform: the registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
 ├── vendor/         git submodules a component renders from: substrate, the Substrate fork
@@ -112,6 +114,7 @@ old one and every webhook call is refused. Then change the router's
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and holos-controller's Quay credential |
+| `project-<name>` | One per ProjectClaim in `projects/`, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, and its `AppProject` and `Application`; none today |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -1495,9 +1498,10 @@ takes this path:
   a token but not on the list is dropped, and logged, rather than refusing
   the whole request, which the API server would do for a group the
   impersonator may not impersonate. A user not on `users` is refused by the
-  API server with 403. Today `users` is `jeff` (`Keycloak.users.jeff`, the
-  one user the realm import creates) and `groups` is `/platform/owners`; the ProjectClaim
-  collection adds each project's owner group.
+  API server with 403. `users` is `jeff` (`Keycloak.users.jeff`, the one
+  user the realm import creates) and every project's owners, and `groups`
+  is `/platform/owners` and every project's owner group; the owners and
+  their groups come from the ProjectClaim collection (Projects, below).
 - **What a group may do** is a binding of its own: `ClusterRoleBinding`
   `platform-owners-cluster-admin` makes `/platform/owners` `cluster-admin`
   (Q63), as it is Argo CD's `role:admin`.
@@ -1540,7 +1544,8 @@ Substrate shim.
 
 #### Adding a person or a group
 
-- **A person**: add them to `Keycloak.users` and their username to
+- **A person**: as the owner of a project, through its claim (Projects,
+  below). Otherwise add them to `Keycloak.users` and their username to
   `HolosAuthenticator.users`, and create them in the realm by hand, as
   `svc-quay-controller` was (Quay, below). The realm import creates only
   `jeff`; it does not read the rest of `Keycloak.users`.
@@ -1623,8 +1628,10 @@ names and the URL; the `secrets-manager` component renders the rest.
   namespace, so in `holos-prj-platform` alone for now: the server reads and
   writes Secrets only in project namespaces, which in this distro come from
   git. The cost is that a project made in the UI has no access to its
-  secrets until git adds its `RoleBinding`; the ProjectClaim collection
-  renders those later. The namespace writes are still cluster wide: the
+  secrets until git adds its `RoleBinding`. A ProjectClaim renders no
+  Secrets Manager project yet (interview Q64); rendering one for each claim
+  is the tech debt item secrets-manager-project-for-each-projectclaim. The
+  namespace writes are still cluster wide: the
   ServiceAccount may update or delete any Namespace, and deleting one
   deletes everything in it. A `ValidatingAdmissionPolicy` holding them to
   `holos-` namespaces with the server's labels is open hardening.
@@ -2615,6 +2622,167 @@ Step 6 is what the Talos patch is for, and a pull that fails with a
 certificate error points there. The check's tag, `demo/echo:check`, is
 deleted in the UI afterwards.
 
+## Projects
+
+A product engineer gets a project, a namespace they own, with a
+ProjectClaim: one small CUE file in `projects/`, in a pull request with the
+manifests it renders. The ProjectClaim collection is a pure CUE collection,
+not a CRD (overview §4), ported from aavis-ops' Project collection, which
+names the same thing. `projects/projects.cue` is its schema,
+`collections.cue` binds it into the platform, and `components/project`
+renders each claim.
+
+A claim renders, as the component `project-<name>` with an `Application` of
+its own in the `platform` `AppProject` (interview Q66):
+
+- **The namespace** `<name>`, in ambient, labeled `holos.run/project: <name>`.
+- **Keycloak**: the groups `/projects/<name>/roles/owner`, `editor` and
+  `viewer`; a `User` for each owner who is not already one of the realm's
+  people (`Keycloak.users`, such as `jeff`); the owners' membership in the
+  owner group; and the `ReferenceGrant` `project-<name>` in `keycloak` that
+  lets these resources name the `Instance` there. holos-controller makes the
+  parent groups `/projects`, `/projects/<name>` and `/projects/<name>/roles`
+  itself. No client (Q65): Quay syncs its teams from the groups claim.
+- **Quay**: the `Organization` `<name>`, with the teams `projectowners`
+  (admin), `projecteditors` (creator, write) and `projectviewers` (member,
+  read), each synced from its group, and `platformowners`, as every
+  organization has.
+- **RBAC**: the `RoleBinding` `<name>-owners` in `<name>`, the owner group
+  bound to the `admin` `ClusterRole` (`ownerAccess`), in that namespace and
+  no other. Its subject is the group's full path, with the leading slash
+  the groups claim carries: the bare path matches nothing.
+- **Argo CD**: the `AppProject` `<name>`, which may sync only from this
+  repository, at signed commits, into `<name>`, no cluster-scoped kind, and
+  neither RBAC nor holos-controller's kinds; and the `Application` `<name>`
+  in it, which syncs `deploy/clusters/<cluster>/projects/<name>/`. That
+  directory holds only what the claim renders, one `ConfigMap`, `project`,
+  describing it. Every render removes `deploy/clusters` first, so a file
+  added there by hand is gone at the next render and fails CI; a project's
+  own manifests are future work, to be rendered from CUE or kept outside
+  `deploy/clusters`.
+- **holos-authenticator**: the owners' usernames and the owner group join
+  `HolosAuthenticator.users` and `.groups`, so the authenticator forwards
+  the group and may impersonate the owners. The `RoleBinding`'s subject and
+  the allowlist entry are the same definition, `#ProjectRoleGroupPath`, so
+  `grep -r /projects/<name>/roles/owner deploy/` finds both.
+
+No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
+editor and viewer groups. The collection is empty in the repository (Q67).
+
+### Adding a project
+
+1. Write `projects/<name>.cue`, with one owner or more, keyed by email in
+   lower case:
+
+   ```cue
+   package projects
+
+   projects: "my-project": owners: "alice@bank.internal": _
+   ```
+
+   `<name>` is the project's one name: lower case letters, digits and single
+   dashes, 2 to 63 characters. It may not be a name the platform uses: a
+   component's, a platform namespace, Argo CD's `platform` or `default`, a
+   Quay organization, a person's username, a Substrate atespace, or anything
+   starting `kube-`, `holos-` or `project-` (`Projects.reserved`,
+   `components/project.cue`). A claim that takes one fails the render.
+
+   An owner's Keycloak username, which their tokens carry as
+   `preferred_username` and which the authenticator impersonates as
+   `oidc:<username>`, is the email's local part, lower-cased, with each run
+   of anything outside `[a-z0-9]` turned to a dash and any dash at either
+   end trimmed: `alice.smith@` is `alice-smith`, `-alice-@` is `alice`. Set
+   it when it is something else:
+   `owners: "alice@bank.internal": username: "asmith"`; a username is runs
+   of lower-case letters and digits joined by single dashes or dots. An
+   owner who is one of the realm's people must have the username they have
+   there, one username is one person, and no owner may be a platform
+   service user (`svc-quay-controller`, or a client's `service-account-*`):
+   each mistake fails the render. `ownerAccess: "edit"` or `"view"` gives
+   the owners less than `admin`.
+
+2. Render, from this directory, and check what changed:
+
+   ```sh
+   cue vet ./... && rm -rf deploy/clusters && holos render platform
+   git status deploy/
+     # new: components/project-<name>/, projects/<name>/ and
+     #      components/argocd-apps/application-project-<name>.yaml
+     # changed: holos-authenticator's Backend and impersonator ClusterRole,
+     #      and the sync wave, its index in the registry, of every
+     #      Application after the new one: argocd-apps' always, and any
+     #      other project-* Application that sorts after it
+   ```
+
+3. Commit the claim and `deploy/` together, signed (`git commit -S`, Argo
+   CD, above), and open a pull request. CI renders the platform again and
+   fails if `deploy/` differs from what the claim renders. Merge it in
+   GitHub's UI.
+
+4. Argo CD syncs the merge within a minute: the root creates `project-<name>`,
+   which makes everything above and the project's `Application`, and
+   `holos-authenticator` syncs its allowlist.
+
+5. **For an owner Keycloak did not already have**, set their first and last
+   name and a password in Keycloak's admin console (realm `holos`, Users),
+   or send them a reset. The claim makes the user with neither: a password
+   is not for git, and the realm requires a name, which Keycloak otherwise
+   asks for on first login.
+
+6. **The owner logs in again.** The groups claim is written when a token is
+   minted, so a token from before the merge has no
+   `/projects/<name>/roles/owner`; kubelogin's cache must be cleared
+   (`kubectl oidc-login clean`) or left to expire. Quay team membership too
+   follows the groups claim at each Quay login, so the owner joins
+   `projectowners` when they next log in to Quay. Then, as in Logging in
+   with kubectl:
+
+   ```sh
+   kubectl --context treasury-oidc auth whoami       # oidc:alice, [/projects/my-project/roles/owner system:authenticated]
+   kubectl --context treasury-oidc auth can-i create deployments -n my-project   # yes
+   kubectl --context treasury-oidc auth can-i create deployments -n default      # no
+   ```
+
+### Checking a project
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+kubectl -n argocd get application project-my-project my-project   # Synced Healthy
+kubectl -n my-project get groups.keycloak.holos.run,users.keycloak.holos.run,groupmemberships.keycloak.holos.run,organizations.quay.holos.run
+    # every READY True
+grep -r /projects/my-project/roles/owner deploy/   # the RoleBinding, the Backend, the impersonator, the Organization, the ConfigMap
+```
+
+### Removing a project
+
+Removing the claim and rendering removes its files, and the root prunes
+`project-<name>`'s `Application`; but no `Application` has the resources
+finalizer (Argo CD, above), so everything it made stays. Remove it by hand,
+in this order, after the merge:
+
+```sh
+kubectl -n argocd delete application <name>
+kubectl -n argocd delete appproject <name>
+kubectl delete namespace <name>        # wait: holos-controller's finalizers delete the groups and the membership
+kubectl -n keycloak delete referencegrant.security.holos.run project-<name>
+```
+
+The `ReferenceGrant` goes last: without it the finalizers of the namespace's
+`Group` and `GroupMembership` cannot reach the `Instance`, report
+`ReferenceNotGranted` and hold the namespace in `Terminating` until the
+grant is back. Three things stay, by design, and are removed in Keycloak's
+admin console or Quay's API once nobody needs them:
+
+- the parent groups `/projects/<name>` and `/projects/<name>/roles`, which
+  holos-controller made and does not own, and `/projects` once no project
+  is left;
+- each owner's user, `Orphan`, since a person may own another project and
+  their password was set by hand;
+- the Quay organization and its images, `Orphan`, as `demo` is. Delete it
+  before a claim of the same name is added again: the new `Organization`
+  does not adopt, so holos-controller reports a `Conflict` on an
+  organization it did not create, and the project's never becomes Ready.
+
 ## Render
 
 From this directory, in a clone or worktree with the Substrate submodule
@@ -2637,8 +2805,12 @@ cluster only through `talosctl` (`providers/proxmox/talos/README.md`).
 `holos render platform` writes files but never removes one a component no
 longer renders, such as the Hubble certgen Job whose name changes with the
 Cilium values, so remove `deploy/clusters` first. Commit the result;
-`deploy/` must be clean after a render. Argo CD syncs what is committed on
-`main`, so a change reaches a cluster only with its render. Render one
+`deploy/` must be clean after a render. CI's Render job
+(`.github/workflows/ci.yaml`) runs the same steps, with holos 0.106.0 and
+the helm v3.17.3, kubectl v1.37.1 and cue v0.17.1 it runs, and fails a
+pull request whose committed tree differs from its render. Argo CD syncs
+what is committed on `main`, so a change reaches a cluster only with its
+render. Render one
 component with `holos render platform --selector component=cilium`.
 
 ## Bootstrap Argo CD

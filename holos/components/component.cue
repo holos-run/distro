@@ -181,21 +181,29 @@ holos: core.#BuildPlan & {
 
 // #ResourcesArtifact renders CUE resources into OutputDir, one file per
 // resource.
+//
+// directory, if set, renders them somewhere else in deploy/ instead, for a
+// component with a second artifact, as components/project has. Every
+// artifact of a BuildPlan writes its intermediate files into the one
+// temporary directory, so a second artifact names its own file there,
+// generated.
 #ResourcesArtifact: {
 	resources: #Resources
+	directory: string | *OutputDir
+	generated: string | *"resources.yaml"
 
 	artifact: core.#Artifact & {
-		artifact: OutputDir
+		artifact: directory
 		generators: [{
 			kind:        "Resources"
-			output:      "resources.yaml"
+			output:      generated
 			"resources": resources
 		}]
 		transformers: [{
 			kind: "Command"
-			inputs: ["resources.yaml"]
-			output: OutputDir
-			command: args: ["holos", "kubectl-slice", "-f", "\(BuildContext.tempDir)/resources.yaml", "-o", "\(BuildContext.tempDir)/\(OutputDir)"]
+			inputs: [generated]
+			output: directory
+			command: args: ["holos", "kubectl-slice", "-f", "\(BuildContext.tempDir)/\(generated)", "-o", "\(BuildContext.tempDir)/\(directory)"]
 		}]
 	}
 }

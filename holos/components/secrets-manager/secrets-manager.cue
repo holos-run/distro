@@ -68,7 +68,10 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		//
 		// The cost: a project made in the UI has a namespace but no access
 		// to its secrets, and the UI fails on them, until git adds its
-		// RoleBinding; the ProjectClaim collection renders those later. The
+		// RoleBinding. A ProjectClaim renders no Secrets Manager project yet
+		// (interview Q64); rendering one, with its RoleBinding, for each
+		// claim is the tech debt item
+		// secrets-manager-project-for-each-projectclaim. The
 		// namespace writes are still cluster wide: the ServiceAccount may
 		// update or delete any Namespace in the cluster, and deleting one
 		// deletes everything in it, Keycloak's included. A

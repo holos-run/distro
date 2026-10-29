@@ -91,8 +91,9 @@ jobs:
           done
 
       # holos/vendor/ holds git submodules, such as the Substrate fork, which
-      # are other projects' code: gofmt skips them. CI checks out no
-      # submodules, but a clone that has them must pass too. go build and go
+      # are other projects' code: gofmt skips them. This job checks out no
+      # submodules (the Render job does), but a clone that has them must
+      # pass too. go build and go
       # vet need no such rule: each submodule has its own go.mod, so ./...
       # stops at it.
       - name: gofmt
@@ -109,3 +110,107 @@ jobs:
 
       - name: vet
         run: go vet ./...
+
+  render:
+    name: Render
+    # The rendered manifests in holos/deploy/ are what Argo CD syncs, and
+    # they are committed beside the CUE that renders them. This job renders
+    # the platform again from the commit, as README.md, Render, does by hand,
+    # and fails if the result differs from what is committed, by a changed
+    # file or a new one, so deploy/ can be trusted to be the render of the
+    # CUE beside it, a ProjectClaim's included.
+    #
+    # It runs where the Go job runs; see that job's comments on
+    # RUNNER_LABELS, which apply here unchanged.
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS) }}
+    # A render takes seconds and the downloads a minute; anything near this
+    # is a hung download or render, not a slow one.
+    timeout-minutes: 15
+    steps:
+      - name: ran on the garage runner
+        if: contains(vars.RUNNER_LABELS, 'garage')
+        run: |
+          echo "runner: ${RUNNER_NAME} (${RUNNER_OS}/${RUNNER_ARCH})"
+          case "${RUNNER_NAME}" in
+            garage-*) ;;
+            *) echo "::error::expected a garage-* runner, got ${RUNNER_NAME}"; exit 1 ;;
+          esac
+
+      # The substrate component renders from the Substrate fork's install
+      # tree in the holos/vendor/substrate submodule, and checks that it is
+      # at Substrate.commit, so the submodule is checked out. The job never
+      # pushes, so the token is not left in the clone's git config.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      # The tools the render runs, at the versions deploy/ is rendered with,
+      # each checked against its published SHA-256: holos 0.106.0, which
+      # runs helm for the charts and kubectl's kustomize for the patches,
+      # and cue for `cue vet` and `cue cmd talos`. The runner's own helm and
+      # kubectl, if it has any, could render a chart or a kustomization
+      # differently, so these come first on PATH. Linux x86_64 only, which
+      # the garage runners and ubuntu-latest are.
+      - name: install holos, helm, kubectl and cue
+        env:
+          HOLOS_VERSION: "0.106.0"
+          HOLOS_SHA256: 4a8de6339dc00df3321bf634fc1830cb4b22e83c4d8efc5deccd43c6d5611478
+          HELM_VERSION: v3.17.3
+          HELM_SHA256: ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd
+          KUBECTL_VERSION: v1.37.1
+          KUBECTL_SHA256: 65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
+          CUE_VERSION: v0.17.1
+          CUE_SHA256: a39b0c97695069d95d276d99be0f5dbabb081d801bfdc9ba49b76efaf94e2369
+        run: |
+          if [ "${RUNNER_OS}/${RUNNER_ARCH}" != "Linux/X64" ]; then
+            echo "::error::the pinned tools are linux amd64; this runner is ${RUNNER_OS}/${RUNNER_ARCH}"
+            exit 1
+          fi
+          bin="${RUNNER_TEMP}/bin"
+          dl="${RUNNER_TEMP}/dl"
+          mkdir -p "${bin}" "${dl}"
+          fetch() { # url sha256 file
+            curl -fsSL --retry 3 -o "${dl}/$3" "$1"
+            echo "$2  ${dl}/$3" | sha256sum -c -
+          }
+          fetch "https://github.com/holos-run/holos/releases/download/v${HOLOS_VERSION}/holos_Linux_x86_64.tar.gz" "${HOLOS_SHA256}" holos.tar.gz
+          tar -xzf "${dl}/holos.tar.gz" -C "${bin}" holos
+          fetch "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" "${HELM_SHA256}" helm.tar.gz
+          tar -xzf "${dl}/helm.tar.gz" -C "${bin}" --strip-components=1 linux-amd64/helm
+          fetch "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" "${KUBECTL_SHA256}" kubectl
+          install -m 0755 "${dl}/kubectl" "${bin}/kubectl"
+          fetch "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_linux_amd64.tar.gz" "${CUE_SHA256}" cue.tar.gz
+          tar -xzf "${dl}/cue.tar.gz" -C "${bin}" cue
+          echo "${bin}" >> "${GITHUB_PATH}"
+
+      - name: versions
+        run: |
+          holos --version
+          helm version --short
+          kubectl version --client
+          cue version | head -1
+
+      # README.md, Render. holos render platform writes files but never
+      # removes one, so deploy/clusters goes first, and a file the CUE no
+      # longer renders shows as deleted. cue vet comes first because the
+      # render does not report every error in clusters.cue.
+      - name: render
+        working-directory: holos
+        run: |
+          cue vet ./...
+          rm -rf deploy/clusters
+          holos render platform
+          cue cmd talos
+
+      # Anything at all: a modified, deleted or untracked file, anywhere in
+      # the repository, since cue cmd talos writes outside holos/.
+      - name: deploy/ is the render
+        run: |
+          changes="$(git status --porcelain)"
+          if [ -n "${changes}" ]; then
+            echo "::error::the committed render differs from the CUE; render (holos/README.md, Render) and commit the result:"
+            echo "${changes}"
+            git diff --stat
+            exit 1
+          fi

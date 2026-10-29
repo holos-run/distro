@@ -14,9 +14,16 @@ registry: [...#Registration]
 
 // #Registration is one component in the registry.
 #Registration: {
-	// name is the component's directory under components/ and its name in
-	// deploy/ and in Argo CD.
+	// name is the component's name in deploy/ and in Argo CD.
 	name: string
+	// component is its directory under components/: its name, unless one
+	// directory renders several components, as components/project renders
+	// one per ProjectClaim (collections.cue).
+	component: string | *name
+	// parameters are the component's CUE tags, beside clusterName, which
+	// every component gets (platform/platform.cue): project, for a
+	// ProjectClaim's.
+	parameters: [string]: string
 	// syncOptions are added to the Application's sync options, after the
 	// ones every Application has.
 	syncOptions: [...string]
@@ -212,13 +219,24 @@ registry: [
 	// keys and of holos-controller's Quay credential. It needs the CRDs of
 	// cloudnative-pg, external-secrets and holos-controller, the Instance
 	// from keycloak-realm, the bucket and keys from rustfs and the
-	// management namespace. It comes after secrets-manager, next to last,
-	// because it cannot be Healthy on a new cluster by itself: the
-	// credential's ExternalSecret reports Degraded until cmd/quay-bootstrap
-	// is run against the running Quay and writes the platform secret it
-	// copies (README.md, Quay). Anything after it would wait on that by
-	// hand.
+	// management namespace. It comes after secrets-manager, last of the
+	// platform's own components, because it cannot be Healthy on a new
+	// cluster by itself: the credential's ExternalSecret reports Degraded
+	// until cmd/quay-bootstrap is run against the running Quay and writes
+	// the platform secret it copies (README.md, Quay). Anything after it
+	// would wait on that by hand; only the projects, whose Quay
+	// organizations need that credential anyway, do.
 	{name: "quay"},
+	// The ProjectClaim collection's components, project-<name>, one per
+	// claim in projects/ (collections.cue), each the project's namespace,
+	// Keycloak groups, users and memberships, Quay organization, RBAC and
+	// Argo CD AppProject and Application (components/project). They need
+	// holos-controller's CRDs, the Instance from keycloak-realm, Quay's
+	// credential from quay, and holos-authenticator, whose allowlist names
+	// their owners, so they come after all of them. None is in the
+	// repository's tree: the collection is empty until a pull request adds
+	// a claim (interview Q67).
+	for R in #ProjectRegistrations {R},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits

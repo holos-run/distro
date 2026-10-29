@@ -83,6 +83,7 @@ import (
 	Instance?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
 	Group?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
 	GroupMembership?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
+	User?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
 	Client?: [_]: {apiVersion: "keycloak.holos.run/v1alpha1", metadata: {...}, ...}
 	Organization?: [_]: {apiVersion: "quay.holos.run/v1alpha1", metadata: {...}, ...}
 	Repository?: [_]: {apiVersion: "quay.holos.run/v1alpha1", metadata: {...}, ...}
