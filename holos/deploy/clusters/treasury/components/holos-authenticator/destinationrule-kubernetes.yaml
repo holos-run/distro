@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: kubernetes
+  namespace: holos-authenticator
+spec:
+  exportTo:
+  - .
+  host: kubernetes.default.svc.cluster.local
+  trafficPolicy:
+    tls:
+      caCertificates: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      mode: SIMPLE
+      sni: kubernetes.default.svc
+      subjectAltNames:
+      - kubernetes.default.svc

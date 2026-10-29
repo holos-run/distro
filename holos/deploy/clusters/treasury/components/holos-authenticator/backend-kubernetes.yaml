@@ -1,0 +1,21 @@
+apiVersion: authenticator.holos.run/v1alpha1
+kind: Backend
+metadata:
+  name: kubernetes
+  namespace: holos-authenticator
+spec:
+  groupMapping:
+    anyOf:
+    - /platform/owners
+  groupsHeaderSeparator: '|'
+  host: k8s.bank.internal
+  oidc:
+    clientID: kubectl
+    groupsClaim: groups
+    issuerURL: https://keycloak.bank.internal/realms/holos
+    usernameClaim: preferred_username
+    usernamePrefix: 'oidc:'
+  server:
+    url: https://kubernetes.default.svc
+  serviceAccountRef:
+    name: holos-authenticator-impersonator

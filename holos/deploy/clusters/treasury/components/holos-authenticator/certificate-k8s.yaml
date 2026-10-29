@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: k8s
+  namespace: holos-authenticator
+spec:
+  dnsNames:
+  - k8s.bank.internal
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: private-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: k8s-tls

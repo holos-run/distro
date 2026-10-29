@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holos-authenticator
+  namespace: holos-authenticator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: holos-authenticator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: holos-authenticator
+    spec:
+      containers:
+      - args:
+        - --grpc-bind-address=:9000
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address=0
+        - --leader-elect
+        - --impersonate-groups-header=x-impersonate-groups
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: SSL_CERT_DIR
+          value: /etc/ssl/private-ca
+        image: ghcr.io/holos-run/holos-authenticator:v0.21.0@sha256:c5a1838d65e5fadaa48a370056cdc963ba8abe6a5bc19936bc7ab2294590560f
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+        name: manager
+        ports:
+        - containerPort: 9000
+          name: grpc
+        - containerPort: 8081
+          name: health
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/ssl/private-ca
+          name: private-ca
+          readOnly: true
+      securityContext:
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: holos-authenticator
+      terminationGracePeriodSeconds: 10
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: holos-authenticator
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: private-ca
+        name: private-ca

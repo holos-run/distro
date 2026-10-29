@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: k8s
+  namespace: holos-authenticator
+spec:
+  hostnames:
+  - k8s.bank.internal
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: ingress
+    namespace: istio-ingress
+    sectionName: k8s
+  rules:
+  - backendRefs:
+    - name: k8s-istio
+      port: 443

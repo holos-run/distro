@@ -11,9 +11,11 @@ import "encoding/yaml"
 // Also the HTTPRoutes of components installed before the Gateway API CRDs,
 // so that each of those can still be applied by hand at bootstrap: Argo CD's.
 // And the TLS passthrough listener the API server reaches the admission
-// webhooks through, with a TLSRoute per webhook Service (webhooks.cue), and
-// the one the Substrate shim's hosts pass through to its own Gateway
-// (AteGateway), whose TLSRoute substrate-shim renders.
+// webhooks through, with a TLSRoute per webhook Service (webhooks.cue), the
+// one the Substrate shim's hosts pass through to its own Gateway
+// (AteGateway), whose TLSRoute substrate-shim renders, and the one the
+// Kubernetes API's host passes through to holos-authenticator's Gateway
+// (HolosAuthenticator), whose TLSRoute holos-authenticator renders.
 //
 // Applied once istiod is running (it owns the istio GatewayClass) and the
 // private CA issues.
@@ -154,6 +156,35 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 									key:      "kubernetes.io/metadata.name"
 									operator: "In"
 									values: [AteGateway.namespace]
+								}]
+							}
+						}
+					},
+					{
+						name:     IG.listeners.k8s
+						hostname: HolosAuthenticator.host
+						port:     443
+						protocol: "TLS"
+						// The Kubernetes API, k8s.<domain>, passes through to
+						// holos-authenticator's own Gateway, which terminates
+						// TLS, asks the authenticator about every request and
+						// forwards it to the API server as an impersonation.
+						// An exact hostname, so it comes here rather than to
+						// https's *.<domain>. The impersonator's token and the
+						// Lua that writes Impersonate-Group stay off this
+						// Gateway.
+						tls: mode: "Passthrough"
+						// Only TLSRoutes, and only from the authenticator's
+						// namespace, where the one route to its Gateway's
+						// Service is.
+						allowedRoutes: {
+							kinds: [{group: "gateway.networking.k8s.io", kind: "TLSRoute"}]
+							namespaces: {
+								from: "Selector"
+								selector: matchExpressions: [{
+									key:      "kubernetes.io/metadata.name"
+									operator: "In"
+									values: [HolosAuthenticator.namespace]
 								}]
 							}
 						}

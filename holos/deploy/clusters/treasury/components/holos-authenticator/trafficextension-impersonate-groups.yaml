@@ -1,0 +1,28 @@
+apiVersion: extensions.istio.io/v1alpha1
+kind: TrafficExtension
+metadata:
+  name: impersonate-groups
+  namespace: holos-authenticator
+spec:
+  lua:
+    inlineCode: |-
+      -- x-impersonate-groups: g1|g2 to Impersonate-Group: g1, Impersonate-Group: g2.
+      function envoy_on_request(handle)
+        local sep = "|"
+        local class = sep:gsub("%W", "%%%0")
+        local joined = handle:headers():get("x-impersonate-groups")
+        if joined == nil or joined == "" then
+          return
+        end
+        handle:headers():remove("x-impersonate-groups")
+        for group in string.gmatch(joined, "([^" .. class .. "]+)") do
+          local g = group:gsub("^%s*(.-)%s*$", "%1")
+          if g ~= "" then
+            handle:headers():add("Impersonate-Group", g)
+          end
+        end
+      end
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: k8s

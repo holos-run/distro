@@ -21,7 +21,23 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		// it creates. An image with a / is used as it is, digest included.
 		global: proxy: image: Istio.images.proxyv2
 
-		meshConfig: trustDomain: Istio.trustDomain
+		meshConfig: {
+			trustDomain: Istio.trustDomain
+			// The external authorization servers a CUSTOM
+			// AuthorizationPolicy may name. holos-authenticator, over gRPC
+			// (HolosAuthenticator.provider): it answers with the headers
+			// that make a request to the API server an impersonation. Two
+			// seconds, as in aavis-ops. failOpen stays false, so a request
+			// the server cannot answer gets 403.
+			extensionProviders: [{
+				name: HolosAuthenticator.provider.name
+				envoyExtAuthzGrpc: {
+					service: HolosAuthenticator.provider.service
+					port:    HolosAuthenticator.provider.port
+					timeout: "2s"
+				}
+			}]
+		}
 
 		// One replica, as the chart's default, without the chart's
 		// HorizontalPodAutoscaler: the cluster has no metrics server, and an
@@ -30,9 +46,11 @@ holos: spec: artifacts: [(#HelmArtifact & {
 
 		env: {
 			// A Gateway sends a request for a Service labeled
-			// istio.io/ingress-use-waypoint through the Service's waypoint,
-			// as holos-authenticator's waypoint needs. On by default in 1.31;
-			// stated, since the platform depends on it.
+			// istio.io/ingress-use-waypoint through the Service's waypoint.
+			// On by default in 1.31; stated, so that a Service given a
+			// waypoint behind the ingress Gateway gets its policy. Nothing
+			// relies on it yet: holos-authenticator, for which it was
+			// turned on, runs on a Gateway of its own instead.
 			ENABLE_INGRESS_WAYPOINT_ROUTING: "true"
 			// Adds the webhook hostname (webhooks.cue) to the DNS names of
 			// istiod's serving certificate, which serves the webhooks on 15017,
