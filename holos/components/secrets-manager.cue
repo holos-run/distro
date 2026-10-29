@@ -43,7 +43,10 @@ SecretsManager: {
 
 	// secretsRole is the ClusterRole holding the server's secrets verbs,
 	// which a RoleBinding in each project namespace git renders grants it
-	// there (components/management-namespaces).
+	// there: holos-prj-platform's alone, in management-namespaces. A
+	// ProjectClaim renders no project here and so no RoleBinding (interview
+	// Q64); that is the tech debt item
+	// secrets-manager-project-for-each-projectclaim.
 	secretsRole: "\(name)-secrets"
 
 	// platform is the management organization and project (Q54), under the

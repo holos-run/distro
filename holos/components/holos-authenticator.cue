@@ -1,5 +1,7 @@
 package holos
 
+import "list"
+
 // HolosAuthenticator names holos-authenticator, which the holos-authenticator
 // component installs in front of the Kubernetes API server at
 // https://k8s.<domain> (overview §4): an Envoy external authorization server
@@ -85,10 +87,14 @@ HolosAuthenticator: {
 	// the people who may use kubectl at all: a token for anyone else is
 	// verified, and the API server refuses the impersonation with 403. They
 	// are the resourceNames of the impersonator's users rule, each with
-	// usernamePrefix. Each is in Keycloak.users; the realm import creates
-	// only jeff, and anyone else is created in the realm by hand.
+	// usernamePrefix. Each is in Keycloak.users, whom the realm import or
+	// a person by hand creates, or is the owner of a project, whose claim
+	// creates them (#ProjectOwnerUsernames, collections.cue), each once.
 	users: [...string]
-	users: [Keycloak.users.jeff.username]
+	users: [for U, _ in {
+		(Keycloak.users.jeff.username): true
+		for U in #ProjectOwnerUsernames {(U): true}
+	} {U}]
 
 	// groups are the groups, by the full path the groups claim carries
 	// (Keycloak.groupsClaim), that the manager forwards and the impersonator
@@ -98,9 +104,11 @@ HolosAuthenticator: {
 	// rather than refused: the API server refuses a whole request whose
 	// groups include one the impersonator may not impersonate. Granting a
 	// group something is a binding of its own, such as the cluster-admin
-	// binding of owners in the holos-authenticator component. The
-	// ProjectClaim collection (project-collection) adds each project's owner
-	// group here, and binds it in the project's namespace.
+	// binding of owners in the holos-authenticator component, or the
+	// RoleBinding of each project's owner group in its namespace
+	// (components/project), whose claim the ProjectClaim collection adds
+	// here (#ProjectOwnerGroupClaims, collections.cue) from the definition
+	// the RoleBinding's subject is made from.
 	groups: [...string]
-	groups: [Keycloak.groups.owners.path]
+	groups: list.Concat([[Keycloak.groups.owners.path], #ProjectOwnerGroupClaims])
 }
