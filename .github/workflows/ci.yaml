@@ -90,9 +90,14 @@ jobs:
             fi
           done
 
+      # holos/vendor/ holds git submodules, such as the Substrate fork, which
+      # are other projects' code: gofmt skips them. CI checks out no
+      # submodules, but a clone that has them must pass too. go build and go
+      # vet need no such rule: each submodule has its own go.mod, so ./...
+      # stops at it.
       - name: gofmt
         run: |
-          unformatted="$(gofmt -l .)"
+          unformatted="$(find . -path ./holos/vendor -prune -o -name '*.go' -type f -exec gofmt -l {} +)"
           if [ -n "${unformatted}" ]; then
             echo "::error::gofmt -l reports unformatted files:"
             echo "${unformatted}"

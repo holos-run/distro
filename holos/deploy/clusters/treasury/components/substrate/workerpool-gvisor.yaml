@@ -1,0 +1,16 @@
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  labels:
+    kagent.dev/worker-pool-name: gvisor
+    kagent.dev/worker-pool-namespace: kagent
+  name: gvisor
+  namespace: ate-workers
+spec:
+  replicas: 3
+  sandboxClasses:
+  - name: gvisor
+  template:
+    nodeSelector:
+      holos.run/nodepool: general
+  workerImage: ghcr.io/holos-run/substrate/ateworker-gvisor:v0.0.0-holos.20261028.475f49b@sha256:9f16968c56534b9fbf92ceb5853a9dafddfe3ff498edabe9ba6010fbcbb3ac23

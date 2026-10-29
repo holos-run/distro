@@ -1,0 +1,46 @@
+# The substrate component's input: Substrate's install tree from the fork's
+# submodule at holos/vendor/substrate, as cmd/ate-setup applies it for
+# "deploy ate-system", unmodified. The component's Command generator builds
+# this with kubectl kustomize --load-restrictor LoadRestrictionsNone, since
+# every path here is outside this directory, and the CUE stages after it
+# patch the result (substrate.cue). ATE-SETUP.md maps each ate-setup step to
+# a line here, a CUE stage or an imperative step.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # ate-setup applies these on their own, before or after the bundle, so
+  # upstream's base leaves them out. Not ate-system-namespace.yaml, the
+  # namespace ate-setup applies first: ate-controller.yaml, in the base,
+  # carries the same Namespace, and kustomize refuses two.
+  - ../../../vendor/substrate/manifests/ate-install/generated/ate.dev_csidriverconfigs.yaml
+  - ../../../vendor/substrate/manifests/ate-install/generated/ate.dev_sandboxconfigs.yaml
+  - ../../../vendor/substrate/manifests/ate-install/generated/ate.dev_workerpools.yaml
+  - ../../../vendor/substrate/manifests/ate-install/generated/role.yaml
+  - ../../../vendor/substrate/manifests/ate-install/pod-certificate-controller.yaml
+  - ../../../vendor/substrate/manifests/ate-install/sandboxconfig-validation.yaml
+  - ../../../vendor/substrate/manifests/ate-install/sandboxconfig-gvisor.yaml
+  # The control plane bundle: the API server, the IdP, the controller,
+  # atelet, the router, the OpenTelemetry ConfigMap, the router's GKE
+  # PodMonitoring and the namespace's NetworkPolicies. The CUE stage drops
+  # the PodMonitoring and replaces the ConfigMap's data.
+  - ../../../vendor/substrate/manifests/ate-install/base
+  - ../../../vendor/substrate/manifests/ate-install/atenet-egress.yaml
+  # The bundled Kubernetes Secrets credential provider and its namespace
+  # policy, whose data the CUE stage replaces with kagent's entry.
+  - ../../../vendor/substrate/manifests/egress-credential-injection/namespace-policy.yaml
+  - ../../../vendor/substrate/manifests/egress-credential-injection/k8s-credential-provider.yaml
+
+# Not listed: postgres/postgres.yaml, upstream's bundled database, which the
+# CloudNativePG cluster replaces; the kind, agentgateway, cloudsql and size10
+# overlays and components; egress-credential-injection/sample-secret.yaml.
+
+# The SQL that makes ate-api-server's roles and schema, for the role Job.
+# No hash suffix: the Job, made in CUE, names it.
+configMapGenerator:
+  - name: substrate-db-setup
+    namespace: ate-system
+    files:
+      - setup.sql=../../../vendor/substrate/pkg/postgressetup/setup.sql
+generatorOptions:
+  disableNameSuffixHash: true

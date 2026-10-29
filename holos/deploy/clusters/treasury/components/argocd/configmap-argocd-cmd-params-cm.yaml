@@ -14,6 +14,7 @@ data:
   notificationscontroller.log.level: info
   redis.server: argocd-redis:6379
   repo.server: argocd-repo-server:8081
+  reposerver.enable.git.submodule: "false"
   reposerver.log.format: text
   reposerver.log.level: info
   server.insecure: "true"

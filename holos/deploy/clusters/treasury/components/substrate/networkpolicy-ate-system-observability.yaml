@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ate-system-observability
+  namespace: ate-system
+spec:
+  ingress:
+  - ports:
+    - port: metrics
+      protocol: TCP
+    - port: prometheus
+      protocol: TCP
+    - port: envoy-metrics
+      protocol: TCP
+    - port: health
+      protocol: TCP
+    - port: healthz
+      protocol: TCP
+    - port: stats
+      protocol: TCP
+    - port: readiness
+      protocol: TCP
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: NotIn
+      values:
+      - k8s-credential-provider
+  policyTypes:
+  - Ingress

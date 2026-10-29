@@ -1,0 +1,233 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: atelet
+  name: atelet
+  namespace: ate-system
+spec:
+  selector:
+    matchLabels:
+      app: atelet
+  template:
+    metadata:
+      annotations:
+        holos.run/config-hash: c833980c
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: atelet
+    spec:
+      containers:
+      - args:
+        - --grpc-server-cred-bundle=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        - --client-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
+        - --ateapi-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem
+        - --drain-delay=0s
+        - --drain-timeout=5m
+        - --objectstore-plugin-socket=/run/objectstore-plugin/node.sock
+        env:
+        - name: SSL_CERT_DIR
+          value: /etc/ssl/certs:/etc/ssl/private-ca
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.node.name=$(NODE_NAME),service.instance.id=$(POD_UID)
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/holos-run/substrate/atelet@sha256:8ef83c880bf6db3445a419fae172ef4f6f4c0ea0b055a489bb5f9a3713ced26b
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        name: atelet
+        ports:
+        - containerPort: 21998
+          name: grpc
+        - containerPort: 9090
+          name: prometheus
+          protocol: TCP
+        - containerPort: 9091
+          name: health
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - DAC_OVERRIDE
+            drop:
+            - ALL
+          runAsGroup: 0
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /etc/ssl/private-ca
+          name: private-ca
+          readOnly: true
+        - mountPath: /var/lib/ate
+          mountPropagation: HostToContainer
+          name: ate-base
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns-ca
+          readOnly: true
+        - mountPath: /var/lib/kubelet/plugins
+          name: kubelet-plugins
+        - mountPath: /var/lib/kubelet/device-plugins
+          name: device-plugins
+        - mountPath: /host/dev
+          name: host-dev
+          readOnly: true
+      initContainers:
+      - args:
+        - node
+        - --socket=/run/objectstore-plugin/node.sock
+        - --root=/var/lib/ate
+        - --asset-staging-dir=/var/lib/objectstore-plugin/asset-staging
+        - --asset-staging-capacity=8Gi
+        env:
+        - name: ATE_STORAGE_BACKEND
+          value: s3
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ENDPOINT_URL
+          value: http://rustfs-svc.rustfs.svc:9000
+        - name: AWS_S3_USE_PATH_STYLE
+          value: "true"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: rustfs-substrate
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: rustfs-substrate
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1ccc33f1b437bc1963daf6f2435a159bbc9c0e9ea05d0b36148ca89469b4e340
+        name: objectstore-plugin
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 0
+          runAsUser: 0
+        startupProbe:
+          exec:
+            command:
+            - /ko-app/objectstore-plugin
+            - healthcheck
+            - --socket=/run/objectstore-plugin/node.sock
+          failureThreshold: 30
+          periodSeconds: 2
+        volumeMounts:
+        - mountPath: /var/lib/ate
+          mountPropagation: HostToContainer
+          name: ate-base
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns-ca
+          readOnly: true
+        - mountPath: /var/lib/objectstore-plugin/asset-staging
+          name: asset-staging
+      priorityClassName: ate-node-critical
+      serviceAccountName: atelet
+      terminationGracePeriodSeconds: 330
+      tolerations:
+      - effect: NoSchedule
+        key: ate.dev/sandboxClass
+        operator: Exists
+      - effect: NoSchedule
+        key: cloud.google.com/compute-class
+        operator: Exists
+      volumes:
+      - configMap:
+          name: private-ca
+        name: private-ca
+      - emptyDir: {}
+        name: objectstore-plugin
+      - emptyDir:
+          sizeLimit: 9Gi
+        name: asset-staging
+      - hostPath:
+          path: /var/lib/ate
+          type: DirectoryOrCreate
+        name: ate-base
+      - hostPath:
+          path: /var/lib/kubelet/plugins
+          type: DirectoryOrCreate
+        name: kubelet-plugins
+      - hostPath:
+          path: /var/lib/kubelet/device-plugins
+          type: DirectoryOrCreate
+        name: device-plugins
+      - hostPath:
+          path: /dev
+          type: Directory
+        name: host-dev
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: podidentity.podcert.ate.dev/identity
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: podidentity.podcert.ate.dev/identity
+      - name: servicedns-ca
+        projected:
+          sources:
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: servicedns.podcert.ate.dev/identity

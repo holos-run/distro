@@ -91,6 +91,10 @@ import (
 	// policy that selects ambient pods. Namespaced too.
 	AuthorizationPolicy?: [_]: {apiVersion: "security.istio.io/v1", metadata: {...}, ...}
 
+	// Substrate's WorkerPool, ate.dev/v1, the one version its CRD serves
+	// (components/substrate). Namespaced too.
+	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}
+
 	// ReferenceGrant is two kinds of one name: the Gateway API's, the
 	// default, and holos-controller's security.holos.run one, which
 	// authorizes a reference from another namespace to an Instance or a

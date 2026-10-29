@@ -1,0 +1,21 @@
+apiVersion: ate.dev/v1
+kind: SandboxConfig
+metadata:
+  annotations:
+    sandboxconfig.ate.dev/is-class-default: "true"
+  name: gvisor-default
+spec:
+  defaultVersion: v6
+  sandboxClass: gvisor
+  versions:
+  - assets:
+      amd64:
+        gvisor:
+          sha256: 708afc62f2ee82d19930c703e85f9dab4f27a78c0aec40c0f55eb1040107f1a7
+          url: gs://gvisor/releases/release/20261026.0/x86_64/gvisor.tar.zstd
+      arm64:
+        gvisor:
+          sha256: 6257e49955f13e6caceb2c4181c5dc5406c460e805940c944e67ad65553f5b02
+          url: gs://gvisor/releases/release/20261026.0/aarch64/gvisor.tar.zstd
+    name: v6
+    state: Enabled

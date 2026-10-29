@@ -210,6 +210,14 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			// its own. It still answers on its Service's port 443, unencrypted.
 			params: "server.insecure": true
 
+			// The repo server does not fetch git submodules. deploy/ is
+			// rendered before it is committed, and Argo CD syncs only plain
+			// manifests from it; holos/vendor/substrate, the Substrate fork,
+			// is a submodule only so a render reads the fork's install tree
+			// at its pin. Fetching it would cost every refresh a clone of a
+			// second repository that nothing synced reads.
+			params: "reposerver.enable.git.submodule": "false"
+
 			// The keys that sign main's commits (ArgoCD.signingKeys), in Argo
 			// CD's keyring, so the platform AppProject can require them.
 			gpg: keys: {
