@@ -190,16 +190,20 @@ func publishSubstrate(ctx context.Context, x *executor, o *options) (*build, []s
 	}
 
 	repo := o.registry + "/substrate"
-	stdout, err := x.tee(ctx, dir, forkEnv(
-		"KO_DOCKER_REPO="+repo,
-		"KO_DEFAULTPLATFORMS="+strings.Join(o.platforms, ","),
-		"VERSION="+b.Version,
-		// Build and push every time, even when the registry already holds the
-		// tag, so the run reports and attests only what it built. A tag may
-		// move to a new digest; the platform pins digests, and a digest pinned
-		// earlier stays in the registry.
-		"ATE_PUBLISH_OVERWRITE=true",
-	), "go", "run", "./cmd/ate-setup", "publish", "release-images")
+	var stdout []byte
+	err = retryDenied(ctx, x, "substrate", func(x *executor) error {
+		stdout, err = x.tee(ctx, dir, forkEnv(
+			"KO_DOCKER_REPO="+repo,
+			"KO_DEFAULTPLATFORMS="+strings.Join(o.platforms, ","),
+			"VERSION="+b.Version,
+			// Build and push every time, even when the registry already holds
+			// the tag, so the run reports and attests only what it built. A tag
+			// may move to a new digest; the platform pins digests, and a digest
+			// pinned earlier stays in the registry.
+			"ATE_PUBLISH_OVERWRITE=true",
+		), "go", "run", "./cmd/ate-setup", "publish", "release-images")
+		return err
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -278,21 +282,23 @@ func publishKagent(ctx context.Context, x *executor, o *options) (*build, []subj
 		// which overrides the Makefile and the environment alike, so nothing
 		// inherited can send the push elsewhere.
 		start = time.Now()
-		if err := x.run(ctx, dir, forkEnv(), "make", img.target,
-			"CONTAINER_RUNTIME=docker",
-			"VERSION="+b.Version,
-			"DOCKER_REGISTRY="+host,
-			"DOCKER_REPO="+dockerRepo,
-			img.tagVar+"="+b.Version,
-			img.imgVar+"="+ref,
-			"BUILDX_BUILDER_NAME="+builder,
-			"DOCKER_BUILDER=docker buildx build",
-			// Substrate labels its images with the commit; the fork's
-			// Dockerfiles label only the version, so the revision is added here.
-			"DOCKER_BUILD_ARGS=--push --platform "+strings.Join(o.platforms, ",")+
-				" --label org.opencontainers.image.revision="+b.SHA+
-				" --metadata-file "+metadata,
-		); err != nil {
+		if err := retryDenied(ctx, x, "kagent "+img.name, func(x *executor) error {
+			return x.run(ctx, dir, forkEnv(), "make", img.target,
+				"CONTAINER_RUNTIME=docker",
+				"VERSION="+b.Version,
+				"DOCKER_REGISTRY="+host,
+				"DOCKER_REPO="+dockerRepo,
+				img.tagVar+"="+b.Version,
+				img.imgVar+"="+ref,
+				"BUILDX_BUILDER_NAME="+builder,
+				"DOCKER_BUILDER=docker buildx build",
+				// Substrate labels its images with the commit; the fork's
+				// Dockerfiles label only the version, so the revision is added here.
+				"DOCKER_BUILD_ARGS=--push --platform "+strings.Join(o.platforms, ",")+
+					" --label org.opencontainers.image.revision="+b.SHA+
+					" --metadata-file "+metadata,
+			)
+		}); err != nil {
 			return nil, nil, err
 		}
 		elapsed(x.stderr, start, "kagent "+img.name+" build")
@@ -332,11 +338,17 @@ func publishKagent(ctx context.Context, x *executor, o *options) (*build, []subj
 		// One writer for both streams, so exec writes to it from one
 		// goroutine: helm prints the Pushed and Digest lines to stderr.
 		var out bytes.Buffer
-		w := io.MultiWriter(&out, x.stderr)
-		cmd := x.command(ctx, dir, forkEnv(), w, "helm", args...)
-		cmd.Stderr = w
-		if err := cmd.Run(); err != nil {
-			return nil, nil, fmt.Errorf("helm %s: %w", strings.Join(args, " "), err)
+		if err := retryDenied(ctx, x, "kagent chart "+chart, func(x *executor) error {
+			out.Reset()
+			w := io.MultiWriter(&out, x.stderr)
+			cmd := x.command(ctx, dir, forkEnv(), w, "helm", args...)
+			cmd.Stderr = w
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("helm %s: %w", strings.Join(args, " "), err)
+			}
+			return nil
+		}); err != nil {
+			return nil, nil, err
 		}
 		name := helmRepo + "/" + chart
 		digest, err := helmPushDigest(out.String(), name+":"+b.Version)
