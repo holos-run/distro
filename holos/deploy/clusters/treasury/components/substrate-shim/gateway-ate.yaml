@@ -1,0 +1,61 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+    annotations:
+        gateway.istio.io/service-account: ate-gateway
+        networking.istio.io/service-type: ClusterIP
+    name: ate
+    namespace: substrate-shim
+spec:
+    allowedListeners:
+        namespaces:
+            from: Same
+    gatewayClassName: istio
+    infrastructure:
+        parametersRef:
+            group: ""
+            kind: ConfigMap
+            name: ate-gateway
+    listeners:
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: HTTPRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
+                            - ate-system
+          hostname: '*.demo.ate.bank.internal'
+          name: demo
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+                - kind: Secret
+                  name: demo-wildcard-tls
+            mode: Terminate
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: HTTPRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
+                            - ate-system
+          hostname: '*.kagent.ate.bank.internal'
+          name: kagent
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+                - kind: Secret
+                  name: kagent-wildcard-tls
+            mode: Terminate

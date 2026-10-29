@@ -1,0 +1,38 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    name: ate
+    namespace: substrate-shim
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.bank.internal/realms/holos/*
+          to:
+            - operation:
+                hosts:
+                    - '*.demo.ate.bank.internal'
+                    - '*.demo.ate.bank.internal:443'
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.bank.internal/realms/holos/*
+          to:
+            - operation:
+                hosts:
+                    - '*.kagent.ate.bank.internal'
+                    - '*.kagent.ate.bank.internal:443'
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate

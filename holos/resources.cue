@@ -91,6 +91,14 @@ import (
 	// policy that selects ambient pods. Namespaced too.
 	AuthorizationPolicy?: [_]: {apiVersion: "security.istio.io/v1", metadata: {...}, ...}
 
+	// The rest of the Substrate shim's Istio policy (components/substrate-shim):
+	// the RequestAuthentication and the DestinationRule at the versions
+	// Istio 1.31 stores, and the TrafficExtension, which is served only as
+	// v1alpha1. Namespaced too.
+	RequestAuthentication?: [_]: {apiVersion: "security.istio.io/v1", metadata: {...}, ...}
+	DestinationRule?: [_]: {apiVersion: "networking.istio.io/v1", metadata: {...}, ...}
+	TrafficExtension?: [_]: {apiVersion: "extensions.istio.io/v1alpha1", metadata: {...}, ...}
+
 	// Substrate's WorkerPool, ate.dev/v1, the one version its CRD serves
 	// (components/substrate). Namespaced too.
 	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}

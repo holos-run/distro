@@ -62,7 +62,9 @@ fixed by sending the ID token, not by an audience mapper.
   (`holos/components/secrets-manager.cue`); v0.19.0, which sends the access
   token, has every API call after login refused.
 - **substrate-shim, holos-authenticator and kagent's oauth2-proxy** check
-  the ID token, `aud` their own client ID, when they are built. None of them
+  the ID token when they are built: holos-authenticator and kagent's
+  oauth2-proxy with `aud` their own client ID, substrate-shim with `aud`
+  `kubectl`, since curl carries the token kubectl does (below). None of them
   accepts an access token, and none needs an audience mapper in the realm.
 - **Argo CD and `kubectl`** already use ID tokens: Argo CD's OIDC login
   verifies the ID token for client `argocd`, and kubelogin presents the ID

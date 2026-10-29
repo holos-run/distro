@@ -195,7 +195,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			// scopes, the claims a policy line's subject is matched
 			// against, is the chart's default, [groups], stated.
 			rbac: {
-				"policy.csv": "g, /platform/owners, role:admin\n"
+				"policy.csv": "g, \(Keycloak.groups.owners.path), role:admin\n"
 				scopes:       "[\(Keycloak.groupsClaim)]"
 			}
 

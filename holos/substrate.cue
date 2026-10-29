@@ -72,7 +72,8 @@ Substrate: {
 	router: {
 		name: "atenet-router"
 		host: "\(name).\(namespace).svc"
-		url:  "https://\(host):443"
+		port: 443
+		url:  "https://\(host):\(port)"
 	}
 	// client is the ServiceAccount kubectl ate mints its token for when it
 	// is given none: a bootstrap owner, so whoever can mint its token is a

@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+    name: ate-demo
+    namespace: ate-system
+spec:
+    parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate
+          namespace: substrate-shim
+          sectionName: demo
+    rules:
+        - backendRefs:
+            - name: atenet-router
+              port: 443
