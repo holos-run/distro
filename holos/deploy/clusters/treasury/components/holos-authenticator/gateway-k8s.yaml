@@ -1,0 +1,31 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  annotations:
+    gateway.istio.io/service-account: k8s-gateway
+    networking.istio.io/service-type: ClusterIP
+  name: k8s
+  namespace: holos-authenticator
+spec:
+  gatewayClassName: istio
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: k8s-gateway
+  listeners:
+  - allowedRoutes:
+      kinds:
+      - group: gateway.networking.k8s.io
+        kind: HTTPRoute
+      namespaces:
+        from: Same
+    hostname: k8s.bank.internal
+    name: https
+    port: 443
+    protocol: HTTPS
+    tls:
+      certificateRefs:
+      - kind: Secret
+        name: k8s-tls
+      mode: Terminate

@@ -73,14 +73,10 @@ let UserSecret = "holos-user-jeff"
 // session. Its Secret is named after it.
 let QuayUser = Quay.controller
 
-// The milestone's user (interview Q6). Its group membership is the
-// controller's, below, not the import's.
-let User = {
-	username:  "jeff"
-	email:     "jeff@bank.internal"
-	firstName: "Jeff"
-	lastName:  "McCune"
-}
+// The milestone's user (interview Q6), Keycloak.users.jeff, whose username
+// holos-authenticator's impersonator may impersonate too. Its group
+// membership is the controller's, below, not the import's.
+let User = KC.users.jeff
 
 // Owners is the group whose members are Argo CD admins (components/argocd),
 // Keycloak.groups.owners, which the Substrate shim's policy reads too. The

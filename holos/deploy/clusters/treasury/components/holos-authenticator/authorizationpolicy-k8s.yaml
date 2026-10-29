@@ -1,0 +1,15 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: k8s
+  namespace: holos-authenticator
+spec:
+  action: CUSTOM
+  provider:
+    name: holos-authenticator
+  rules:
+  - {}
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: k8s

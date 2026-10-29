@@ -143,6 +143,21 @@ registry: [
 			jsonPointers: ["/spec/caBundle"]
 		}]
 	},
+	// holos-authenticator is the Kubernetes API at k8s.<domain> behind a
+	// Keycloak login: its Backend CRD, the manager and its RBAC, the
+	// impersonator and its grants, the Backend, and its own Gateway behind
+	// the ingress Gateway's k8s listener, with the ext_authz policy, the
+	// Lua and the TLS to the API server (components/holos-authenticator).
+	// It needs istiod's extension provider, the k8s listener of
+	// ingress-gateway, the private-ca ClusterIssuer and ConfigMap, and
+	// Keycloak's issuer, so it comes after them. It comes straight after
+	// keycloak-realm, whose users and groups it impersonates; its Backend
+	// is a kind it installs, so the dry run skips it until the CRD is
+	// established.
+	{
+		name: "holos-authenticator"
+		syncOptions: ["SkipDryRunOnMissingResource=true"]
+	},
 	// secrets-manager is the Holos Secrets Manager: its Deployment, RBAC and
 	// route, and the holos-controller Client it logs in through, with the
 	// ReferenceGrant that lets the Client name the Instance in keycloak. It

@@ -1,0 +1,21 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holos-authenticator-impersonator
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - oidc:jeff
+  resources:
+  - users
+  verbs:
+  - impersonate
+- apiGroups:
+  - ""
+  resourceNames:
+  - /platform/owners
+  resources:
+  - groups
+  verbs:
+  - impersonate

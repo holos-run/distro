@@ -99,6 +99,11 @@ import (
 	DestinationRule?: [_]: {apiVersion: "networking.istio.io/v1", metadata: {...}, ...}
 	TrafficExtension?: [_]: {apiVersion: "extensions.istio.io/v1alpha1", metadata: {...}, ...}
 
+	// holos-authenticator's Backend, authenticator.holos.run/v1alpha1, the
+	// one version its 0.21.0 CRD serves (components/holos-authenticator).
+	// Namespaced too.
+	Backend?: [_]: {apiVersion: "authenticator.holos.run/v1alpha1", metadata: {...}, ...}
+
 	// Substrate's WorkerPool, ate.dev/v1, the one version its CRD serves
 	// (components/substrate). Namespaced too.
 	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}

@@ -1,0 +1,19 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: holos-authenticator-grpc
+  namespace: holos-authenticator
+spec:
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/holos-authenticator/sa/k8s-gateway
+    to:
+    - operation:
+        ports:
+        - "9000"
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: holos-authenticator

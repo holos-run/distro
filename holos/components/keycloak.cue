@@ -55,6 +55,26 @@ Keycloak: {
 		}
 	}
 
+	// users are the realm's people whom other components name, by username,
+	// and HolosAuthenticator.users lists those who may use kubectl.
+	// keycloak-realm's import reads only users.jeff, with his generated
+	// password; anyone else is created in the realm by hand.
+	users: [USERNAME=string]: {
+		username:  USERNAME
+		email:     string
+		firstName: string
+		lastName:  string
+	}
+	users: {
+		// jeff is the milestone's user (interview Q6), a member of
+		// groups.owners.
+		jeff: {
+			email:     "jeff@bank.internal"
+			firstName: "Jeff"
+			lastName:  "McCune"
+		}
+	}
+
 	// clients are the realm's client IDs that other components name: the
 	// realm import creates each of them.
 	clients: {

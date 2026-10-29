@@ -169,6 +169,16 @@ data:
           }
         },
         "enablePrometheusMerge": true,
+        "extensionProviders": [
+          {
+            "envoyExtAuthzGrpc": {
+              "port": 9000,
+              "service": "holos-authenticator.holos-authenticator.svc.cluster.local",
+              "timeout": "2s"
+            },
+            "name": "holos-authenticator"
+          }
+        ],
         "serviceScopeConfigs": [
           {
             "scope": "GLOBAL",
@@ -286,6 +296,16 @@ data:
       },
       "image": "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a",
       "meshConfig": {
+        "extensionProviders": [
+          {
+            "envoyExtAuthzGrpc": {
+              "port": 9000,
+              "service": "holos-authenticator.holos-authenticator.svc.cluster.local",
+              "timeout": "2s"
+            },
+            "name": "holos-authenticator"
+          }
+        ],
         "trustDomain": "cluster.local"
       },
       "profile": "ambient",

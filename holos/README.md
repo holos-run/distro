@@ -92,13 +92,13 @@ old one and every webhook call is refused. Then change the router's
 | `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook reached through the gateway |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
 | `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
-| `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks reached through the gateway and the private root as its JWKS trust |
+| `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks reached through the gateway, the private root as its JWKS trust and holos-authenticator as an ext_authz provider |
 | `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
 | `ztunnel` | Ambient's node proxy on every worker |
 | `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks reached through the gateway; no `Cluster` |
 | `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook reached through the gateway; no store, no `ExternalSecret` |
 | `management-namespaces` | The Secrets Manager's management organization `holos-org-platform` and project `holos-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
-| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the admission webhooks' TLS passthrough listener and `TLSRoute`s, and the `ate` passthrough listener for `*.ate.bank.internal` |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the admission webhooks' TLS passthrough listener and `TLSRoute`s, the `ate` passthrough listener for `*.ate.bank.internal`, and the `k8s` passthrough listener for `k8s.bank.internal` |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
@@ -107,6 +107,7 @@ old one and every webhook call is refused. Then change the router's
 | `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `holos-controller` | holos-controller 0.22.0 from aavis-ops' manifests, vendored, in the ambient namespace `holos-controller`, with its eight CRDs and the private root in its trust; no resources of its kinds |
 | `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
+| `holos-authenticator` | holos-authenticator 0.21.0 in the ambient namespace `holos-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
 | `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
@@ -545,8 +546,13 @@ digest, and the trust domain, `cluster.local`. A workload's mesh identity is
   read metrics as `Degraded`.
 - `ENABLE_INGRESS_WAYPOINT_ROUTING` is set, Istio 1.31's default stated: a
   gateway sends a request for a Service labeled
-  `istio.io/ingress-use-waypoint` through the Service's waypoint, which
-  holos-authenticator relies on.
+  `istio.io/ingress-use-waypoint` through the Service's waypoint. It was
+  turned on for holos-authenticator, which in the end runs on a Gateway of
+  its own and needs no waypoint, so nothing relies on it yet.
+- The mesh configuration lists one extension provider,
+  `holos-authenticator`: ext_authz over gRPC to
+  `holos-authenticator.holos-authenticator.svc.cluster.local:9000`, two
+  seconds, not failing open (holos-authenticator, below).
 - A namespace joins the mesh with the label
   `istio.io/dataplane-mode=ambient` (`Istio.ambient`). Substrate's
   namespaces stay out: their port-scoped NetworkPolicies would have to admit
@@ -648,6 +654,12 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   to the Substrate shim's own Gateway (The Substrate shim, below). `ingress`
   never terminates those connections, so none of the shim's policy runs on
   it.
+- **K8s listener.** `k8s` on 443 for `k8s.<privateDomain>`, protocol `TLS`
+  in `Passthrough` mode, an exact name, so it wins over `https`'s wildcard.
+  It accepts only `TLSRoute`s from `holos-authenticator`, whose one route
+  forwards the connection to holos-authenticator's own Gateway
+  (holos-authenticator, below). The impersonator's token and the Lua that
+  writes `Impersonate-Group` never run on `ingress`.
 - **ServiceAccount.** The `gateway.istio.io/service-account` annotation names
   it `ingress-gateway`, so the gateway's mesh identity is
   `spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`. Without the
@@ -1385,6 +1397,201 @@ curl -s --cacert root.pem -H "Authorization: Bearer $t" \
   jq -c '{aud, groups}'                          # {"aud":"kubectl","groups":["/platform/owners"]}
 curl -s --cacert root.pem https://keycloak.bank.internal/realms/holos/protocol/openid-connect/auth/device \
   -d client_id=kubectl -d scope=openid | jq 'has("device_code")'   # true
+```
+
+### holos-authenticator
+
+`holos-authenticator` puts the Kubernetes API at `https://k8s.bank.internal`
+behind a Keycloak login (interview Q60 to Q63): a person's kubeconfig
+carries the ID token kubelogin prints for the `kubectl` client, and the API
+server sees the request as an impersonation of them, `oidc:<username>` with
+their groups by full path, so Kubernetes RBAC does the rest.
+`HolosAuthenticator` (`components/holos-authenticator.cue`) has the release,
+the names, and the users and groups that may be impersonated.
+
+holos-authenticator 0.21.0, from aavis-ops, is an Envoy external
+authorization server, plaintext gRPC on 9000, and a controller of
+`Backend` resources (`authenticator.holos.run/v1alpha1`) in its own
+namespace. It is not a proxy: Envoy asks it about each request. A request
+takes this path:
+
+1. `ingress`'s `k8s` listener passes the connection through, on SNI, to the
+   ClusterIP Service `k8s-istio` of the `Gateway` `holos-authenticator/k8s`
+   (`TLSRoute` `holos-authenticator/k8s`).
+2. That Gateway terminates TLS with the `Certificate` `k8s` from the
+   `private-ca` ClusterIssuer.
+3. The `CUSTOM` `AuthorizationPolicy` `k8s` sends every request to the
+   extension provider `holos-authenticator` (Istio, above). The manager
+   refuses with 403 a request carrying any `Impersonate-*` header or
+   `x-impersonate-groups`, and with 401 one with no bearer token or a token
+   it cannot verify. A request for any other host gets 404 from the
+   gateway, which has no route for it. It verifies the
+   token as an ID token (ADR 0002): signature against the realm's JWKS,
+   `iss`, `aud` holding `kubectl`, `exp` and `nbf`. It answers OK with
+   three headers to overwrite: `Impersonate-User: oidc:<preferred_username>`,
+   `x-impersonate-groups` with the forwarded groups joined by `|`, and
+   `Authorization: Bearer <the impersonator's token>`.
+4. The `TrafficExtension` `impersonate-groups`, a few lines of Lua, splits
+   `x-impersonate-groups` into one `Impersonate-Group` per group and removes
+   it. Envoy's ext_authz drops an appended header the request did not
+   carry, which is why the groups come back as one header.
+5. The `HTTPRoute` `holos-authenticator/kubernetes` sends the request to the
+   `kubernetes` Service in `default`, which the `ReferenceGrant`
+   `default/holos-authenticator-kubernetes` allows, and the
+   `DestinationRule` `kubernetes` originates TLS to it, checking the API
+   server's certificate against the cluster's CA at the ServiceAccount path
+   for `kubernetes.default.svc`.
+6. The API server authenticates the impersonator, checks that it may
+   impersonate the user and each group, adds `system:authenticated`, and
+   authorizes the request as the impersonated user.
+
+- **Its own Gateway.** As the Substrate shim has (The Substrate shim,
+  below), for a different reason: the Lua turns a header into
+  `Impersonate-Group` lines and the gateway holds the impersonator's token,
+  and neither should be on `ingress`, in front of every other backend. Two
+  replicas, preferably on two nodes. Its pods carry
+  `istio.io/dataplane-mode: none`, as every gateway istiod deploys does, so
+  the ambient namespace does not capture them.
+- **The filter order.** `TrafficExtension` has no phase, so istiod puts it
+  after the authorization filters. The gateway's listener, from
+  `pilot-agent request GET config_dump`, runs `istio.metadata_exchange`,
+  `envoy.filters.http.rbac`, `envoy.filters.http.ext_authz`, the Lua, then
+  the stats and CORS filters and the router: the Lua sees the manager's
+  headers. Had it run first, a client's `x-impersonate-groups` would have
+  reached the manager as `Impersonate-Group` and been refused, so the
+  order fails closed either way.
+- **The manager.** `Deployment` `holos-authenticator`, two replicas, each
+  answering ext_authz from its own copy of the Backends; leader election
+  decides only which writes their status. It watches only its own namespace
+  (`POD_NAMESPACE`), so a `Backend` anywhere else is never served, and a
+  `Role` there is all its RBAC: Backends, their status, events, its
+  `Lease`, and a token for the impersonator alone. It trusts the private
+  root as holos-controller does, by `SSL_CERT_DIR` on a mount of the
+  `private-ca` ConfigMap, so the `Backend`'s `oidc.caBundle`, base64 PEM,
+  stays empty and out of git. Metrics are off.
+- **Who may call it.** The Check response carries the impersonator's token,
+  so `AuthorizationPolicy` `holos-authenticator-grpc` admits port 9000 only
+  from the gateway's mesh identity,
+  `cluster.local/ns/holos-authenticator/sa/k8s-gateway`. The namespace is in
+  ambient, so ztunnel enforces it; any other pod gets its connection reset
+  (`policy rejection: allow policies exist, but none allowed` in ztunnel's
+  log). The gateway speaks HBONE to the manager itself. The exception is
+  the node's own network namespace, which istio-cni lets through unchecked
+  for the kubelet's probes: a hostNetwork pod on a manager's node can reach
+  port 9000. Only cilium and the ceph-csi node plugin run there today.
+- **The Backend.** `kubernetes`, for host `k8s.bank.internal`, matched
+  exactly against `:authority`, so a client that sends `:443` in `Host` is
+  refused as an unknown host. `oidc.clientID` is `kubectl` (Q61, ADR 0002):
+  the audience kubelogin's token already has, so one login serves the API
+  and the shim. The user is `oidc:` and `preferred_username` (Q62); the
+  groups are the `groups` claim, forwarded only if in
+  `groupMapping.anyOf`. The credential is a token for
+  `holos-authenticator-impersonator`, minted with the TokenRequest API for
+  an hour and renewed.
+- **The allowlist.** `HolosAuthenticator.users` and `.groups`.
+  The impersonator's `ClusterRole` may impersonate exactly those users, with
+  the `oidc:` prefix, and those groups, and nothing else, so its token can
+  become only them. `groups` is also the `Backend`'s `anyOf`, so a group in
+  a token but not on the list is dropped, and logged, rather than refusing
+  the whole request, which the API server would do for a group the
+  impersonator may not impersonate. A user not on `users` is refused by the
+  API server with 403. Today `users` is `jeff` (`Keycloak.users.jeff`, the
+  one user the realm import creates) and `groups` is `/platform/owners`; the ProjectClaim
+  collection adds each project's owner group.
+- **What a group may do** is a binding of its own: `ClusterRoleBinding`
+  `platform-owners-cluster-admin` makes `/platform/owners` `cluster-admin`
+  (Q63), as it is Argo CD's `role:admin`.
+- **Streaming.** `get -w`, `logs -f`, `exec`, `exec -i` and
+  `port-forward` work with kubectl 1.37, which upgrades to WebSocket
+  (`v5.channel.k8s.io`): Envoy passes WebSocket upgrades and the route has
+  no timeout. A client that speaks only SPDY, kubectl before 1.30 for
+  `exec` or with `KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false`, gets `unable to
+  upgrade connection: empty server response`: Envoy does not pass the
+  `SPDY/3.1` upgrade.
+- **Client addresses.** `ingress` passes the connection through, so the
+  API server's audit log has the gateway pod's address, not the client's.
+  The route removes `X-Forwarded-For` and `X-Real-IP`, since the gateway
+  appends to a client's own `X-Forwarded-For` and the API server records
+  every entry in `sourceIPs`.
+
+#### Logging in with kubectl
+
+From a machine that trusts the private root (The private CA, above), with
+kubelogin (`kubectl oidc-login`). `--grant-type=device-code` prints a URL to
+open anywhere, for a machine without a browser; leave it out on a laptop,
+and kubelogin opens the browser and listens on `localhost:8000`, a redirect
+the `kubectl` client allows.
+
+```sh
+kubectl config set-cluster treasury-oidc --server=https://k8s.bank.internal \
+  --certificate-authority="$HOME/treasury-root-ca.pem" --embed-certs
+kubectl config set-credentials oidc --exec-api-version=client.authentication.k8s.io/v1 \
+  --exec-interactive-mode=IfAvailable --exec-command=kubectl \
+  --exec-arg=oidc-login --exec-arg=get-token \
+  --exec-arg=--oidc-issuer-url=https://keycloak.bank.internal/realms/holos \
+  --exec-arg=--oidc-client-id=kubectl --exec-arg=--grant-type=device-code
+kubectl config set-context treasury-oidc --cluster=treasury-oidc --user=oidc
+kubectl --context treasury-oidc auth whoami   # oidc:jeff, [/platform/owners system:authenticated]
+```
+
+The ID token lasts five minutes; kubelogin renews it with its refresh token
+from its cache, the same cache `kubectl oidc-login get-token` reads for the
+Substrate shim.
+
+#### Adding a person or a group
+
+- **A person**: add them to `Keycloak.users` and their username to
+  `HolosAuthenticator.users`, and create them in the realm by hand, as
+  `svc-quay-controller` was (Quay, below). The realm import creates only
+  `jeff`; it does not read the rest of `Keycloak.users`.
+- **A group**: add its full path to `HolosAuthenticator.groups`, and bind
+  it to what it may do, with a binding of its own.
+
+Render and commit. The sync changes the impersonator's `ClusterRole` and the
+`Backend`, which the manager reloads.
+
+#### Rotation
+
+- **The impersonator's token** is minted for an hour and renewed by the
+  manager before it expires.
+- **Keycloak's signing keys**: the manager fetches the JWKS itself and
+  refreshes it when it sees an unknown key.
+- **The private root**: Go reads the pool once, so a new root needs a
+  restart of the manager (`kubectl -n holos-authenticator rollout restart
+  deploy/holos-authenticator`).
+- **The certificate** `k8s` is renewed by cert-manager, and istiod hands it
+  to the gateway as it changes.
+
+#### Checking holos-authenticator
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+kubectl -n holos-authenticator get gateway,certificate,backend,pods -o wide
+    # k8s PROGRAMMED True; k8s Ready; backend kubernetes READY True;
+    # two holos-authenticator and two k8s-istio pods, on two nodes each
+kubectl -n istio-ingress get gateway ingress \
+  -o jsonpath='{range .status.listeners[*]}{.name} {.attachedRoutes}{"\n"}{end}'   # k8s 1
+# The Lua after ext_authz:
+kubectl -n holos-authenticator exec deploy/k8s-istio -c istio-proxy -- \
+  pilot-agent request GET 'config_dump?resource=dynamic_listeners' \
+  | jq -r '.. | .http_filters? // empty | [.[].name] | join(" -> ")'
+# With $TOKEN a kubectl ID token for a member of /platform/owners (The Substrate shim):
+kubectl --kubeconfig=/dev/null --server=https://k8s.bank.internal \
+  --certificate-authority="$HOME/treasury-root-ca.pem" --token="$TOKEN" auth whoami
+curl --cacert ~/treasury-root-ca.pem https://k8s.bank.internal/api                  # 401
+curl --cacert ~/treasury-root-ca.pem -H "Authorization: Bearer $TOKEN" \
+  -H 'Impersonate-Group: system:masters' https://k8s.bank.internal/api            # 403
+curl --cacert ~/treasury-root-ca.pem -H "Authorization: Bearer $TOKEN" \
+  -H 'x-impersonate-groups: system:masters' https://k8s.bank.internal/api         # 403
+# An ID token for another client, such as argocd, gets 401. The impersonator
+# may impersonate only the listed users and groups:
+kubectl create -o jsonpath='{.status.allowed}{"\n"}' -f - <<'YAML'                 # false
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  user: system:serviceaccount:holos-authenticator:holos-authenticator-impersonator
+  resourceAttributes: {verb: impersonate, resource: users, name: "oidc:svc-quay-controller"}
+YAML
 ```
 
 ### Secrets Manager

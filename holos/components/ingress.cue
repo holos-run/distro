@@ -51,12 +51,15 @@ IngressGateway: {
 	// listeners are the Gateway's listener names. https terminates TLS for
 	// every host; http answers every request with a redirect to https;
 	// webhooks passes TLS through to the admission webhooks (webhooks.cue);
-	// ate passes TLS through to the Substrate shim's Gateway (AteGateway).
+	// ate passes TLS through to the Substrate shim's Gateway (AteGateway);
+	// k8s passes TLS through to holos-authenticator's Gateway
+	// (HolosAuthenticator).
 	listeners: {
 		https:    "https"
 		http:     "http"
 		webhooks: "webhooks"
 		ate:      "ate"
+		k8s:      "k8s"
 	}
 
 	// webhooks is the listener the API server reaches every admission

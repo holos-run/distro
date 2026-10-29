@@ -1,6 +1,6 @@
 # 0002. OIDC ID tokens, never access tokens
 
-Status: accepted, 2026-10-27
+Status: accepted, 2026-10-27; amended 2026-10-29 (holos-authenticator's audience)
 
 ## Context
 
@@ -62,10 +62,11 @@ fixed by sending the ID token, not by an audience mapper.
   (`holos/components/secrets-manager.cue`); v0.19.0, which sends the access
   token, has every API call after login refused.
 - **substrate-shim, holos-authenticator and kagent's oauth2-proxy** check
-  the ID token when they are built: holos-authenticator and kagent's
-  oauth2-proxy with `aud` their own client ID, substrate-shim with `aud`
-  `kubectl`, since curl carries the token kubectl does (below). None of them
-  accepts an access token, and none needs an audience mapper in the realm.
+  the ID token when they are built: kagent's oauth2-proxy with `aud` its own
+  client ID, substrate-shim and holos-authenticator with `aud` `kubectl`,
+  since curl carries the token kubectl does (below) and kubectl is
+  holos-authenticator's client (Amendment, below). None of them accepts an
+  access token, and none needs an audience mapper in the realm.
 - **Argo CD and `kubectl`** already use ID tokens: Argo CD's OIDC login
   verifies the ID token for client `argocd`, and kubelogin presents the ID
   token of client `kubectl`, whose `aud` is `kubectl`, the audience
@@ -78,3 +79,26 @@ fixed by sending the ID token, not by an audience mapper.
 - ID tokens are not refreshed by the resource server. A browser client
   refreshes them with the refresh token, as the Secrets Manager's SPA does
   with `offline_access`, and a CLI with kubelogin's cache.
+
+## Amendment, 2026-10-29: holos-authenticator accepts the kubectl audience
+
+The consequence above first said holos-authenticator would check `aud`
+against a client ID of its own. It checks `kubectl` instead (interview Q61).
+
+holos-authenticator stands in front of the Kubernetes API at
+`k8s.bank.internal`, and the program that calls it is kubectl, through
+kubelogin, logging in to the realm's `kubectl` client. The ID token kubelogin
+caches for that client already has `aud` `kubectl`, and the Substrate shim
+accepts that token for the same reason. With its own client, a person would
+log in twice, once per audience, and keep two kubelogin caches, and the
+realm would need one more public client with the device grant for no gain.
+
+The rule this decision states still holds: a service accepts an ID token
+only where its `aud` is meant to be accepted. holos-authenticator and the
+shim are both services the `kubectl` client is for, a person's command-line
+access to the platform, so a `kubectl` token presented to either is not
+replayed at a stranger. A token for any other client, such as `argocd`, is
+refused by both with 401. The authenticator's verifier is go-oidc's ID
+token verifier, which requires `aud` to hold the client ID; Keycloak's
+access tokens carry no `aud` in this realm, so an access token is refused
+too.
