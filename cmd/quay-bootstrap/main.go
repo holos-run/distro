@@ -1,10 +1,9 @@
 // Command quay-bootstrap makes the few things in Quay that holos-controller
-// cannot make for itself, and writes their credentials as platform secrets,
-// so bringing Quay up needs no browser. Ported from aavis-ops'
+// cannot make for itself, and writes holos-controller's token as a platform
+// secret, so bringing Quay up needs no browser. Ported from aavis-ops'
 // hack/quay-bootstrap.
 //
-//	go run ./cmd/quay-bootstrap token  [flags]
-//	go run ./cmd/quay-bootstrap robots [flags]
+//	go run ./cmd/quay-bootstrap token [flags]
 //
 // token mints holos-controller's OAuth token. A Quay OAuth Application lives
 // in an organization, platform-automation here, and its token acts as the user
@@ -19,20 +18,9 @@
 // live until someone revokes it, so minting on any other failure would leave
 // another live superuser token behind. To replace it on purpose, delete the Secret.
 //
-// robots makes a push robot and a pull robot in each organization named by
-// -orgs, once the Organizations are Ready, with holos-controller's token. A
-// Quay robot belongs to one organization and may be granted nothing outside
-// it. The push robot is in team pushers, role creator, so its first push makes
-// a repository, of which it is then admin; the pull robot reads. Both get
-// their role on every repository already there and, by a default
-// permission, on every one made later. It writes quay-robot-push-<org>
-// (username, token) for each organization and one quay-robot-pull, a
-// kubernetes.io/dockerconfigjson whose auths are keyed by
-// <host>/<organization>, which the kubelet matches by path prefix.
-//
 // Platform secrets carry the label app.kubernetes.io/managed-by=holos.run and
 // the platform owners' grant, so they show under Platform in the Secrets
-// Manager. Both commands converge: a second run reports no change and writes
+// Manager. The command converges: a second run reports no change and writes
 // nothing. The program talks to the cluster through kubectl, with its current
 // context unless -context is given, and trusts the cluster's private root,
 // from ConfigMap private-ca, or -ca-file, beside the system roots.
@@ -40,8 +28,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,8 +42,7 @@ import (
 const usage = `usage: quay-bootstrap <command> [flags]
 
 commands:
-  token   mint holos-controller's Quay token into platform secret quay-controller-token
-  robots  make each organization's push and pull robots and their platform secrets
+  token  mint holos-controller's Quay token into platform secret quay-controller-token
 
 Run quay-bootstrap <command> -h for the flags.
 `
@@ -80,11 +65,6 @@ type options struct {
 	automationOrg     string
 	application       string
 	tokenSecret       string
-
-	// robots
-	orgs       string
-	pushSecret string
-	pullSecret string
 }
 
 func main() {
@@ -121,10 +101,6 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		fs.StringVar(&o.username, "username", "svc-quay-controller", "realm user to log in as; a Quay superuser")
 		fs.StringVar(&o.passwordNamespace, "password-namespace", "keycloak", "namespace of the user's password Secret, named after the user")
 		fs.StringVar(&o.application, "application", "holos-controller", "OAuth Application name")
-	case "robots":
-		fs.StringVar(&o.orgs, "orgs", "substrate,kagent", "organizations to make robots in, comma separated")
-		fs.StringVar(&o.pushSecret, "push-secret", "quay-robot-push", "push robots' platform secrets, suffixed -<org>")
-		fs.StringVar(&o.pullSecret, "pull-secret", "quay-robot-pull", "pull robots' platform secret")
 	default:
 		fmt.Fprint(stderr, usage)
 		return fmt.Errorf("unknown command %q", cmd)
@@ -147,10 +123,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if cmd == "token" {
-		return runToken(ctx, k, o, roots)
-	}
-	return runRobots(ctx, k, o, roots)
+	return runToken(ctx, k, o, roots)
 }
 
 // privateRoot returns the PEM the Quay client trusts beside the system's:
@@ -271,107 +244,6 @@ func orgEmail(quayURL, username, org string) string {
 		}
 	}
 	return fmt.Sprintf("%s+%s@%s", username, org, domain)
-}
-
-// dockerAuth is one entry of a docker config's auths.
-type dockerAuth struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Auth     string `json:"auth"`
-}
-
-// dockerConfig renders a .dockerconfigjson. Keys are sorted by
-// encoding/json, so the same robots render the same bytes.
-func dockerConfig(auths map[string]dockerAuth) ([]byte, error) {
-	for k, a := range auths {
-		a.Auth = base64.StdEncoding.EncodeToString([]byte(a.Username + ":" + a.Password))
-		auths[k] = a
-	}
-	return json.Marshal(map[string]any{"auths": auths})
-}
-
-func runRobots(ctx context.Context, k kube, o *options, roots []byte) error {
-	cred, err := readCredential(ctx, k, o.namespace, o.tokenSecret)
-	if err != nil {
-		return err
-	}
-	if cred == nil {
-		return fmt.Errorf("no token in Secret %s/%s; run quay-bootstrap token first", o.namespace, o.tokenSecret)
-	}
-	q, err := newQuayClient(cred.url, roots)
-	if err != nil {
-		return err
-	}
-	if _, err := q.verifyToken(ctx, cred.token, o.automationOrg); err != nil {
-		return fmt.Errorf("the stored token does not work; run quay-bootstrap token: %w", err)
-	}
-	q.bearer = cred.token
-	u, err := url.Parse(cred.url)
-	if err != nil {
-		return err
-	}
-
-	changed := false
-	note := func(c bool, err error) error {
-		changed = changed || c
-		return err
-	}
-	pull := map[string]dockerAuth{}
-	for _, org := range strings.Split(o.orgs, ",") {
-		org = strings.TrimSpace(org)
-		if org == "" {
-			continue
-		}
-		pusher, c, err := q.ensureRobot(ctx, org, "push")
-		if err := note(c, err); err != nil {
-			return err
-		}
-		puller, c, err := q.ensureRobot(ctx, org, "pull")
-		if err := note(c, err); err != nil {
-			return err
-		}
-		if err := note(q.ensureTeamMember(ctx, org, "pushers", "creator", "Robots that push, made by cmd/quay-bootstrap", pusher.Name)); err != nil {
-			return err
-		}
-		if err := note(q.ensureDefaultPermission(ctx, org, pusher.Name, "write")); err != nil {
-			return err
-		}
-		if err := note(q.ensureDefaultPermission(ctx, org, puller.Name, "read")); err != nil {
-			return err
-		}
-		repos, err := q.listRepositories(ctx, org)
-		if err != nil {
-			return err
-		}
-		for _, repo := range repos {
-			if err := note(q.ensureRepositoryRole(ctx, org, repo, pusher.Name, "write")); err != nil {
-				return err
-			}
-			if err := note(q.ensureRepositoryRole(ctx, org, repo, puller.Name, "read")); err != nil {
-				return err
-			}
-		}
-		if err := note(applySecret(ctx, k, platformSecret(o.namespace, o.pushSecret+"-"+org, "Opaque", map[string][]byte{
-			"username": []byte(pusher.Name),
-			"token":    []byte(pusher.Token),
-		}))); err != nil {
-			return err
-		}
-		pull[u.Host+"/"+org] = dockerAuth{Username: puller.Name, Password: puller.Token}
-	}
-	cfg, err := dockerConfig(pull)
-	if err != nil {
-		return err
-	}
-	if err := note(applySecret(ctx, k, platformSecret(o.namespace, o.pullSecret, "kubernetes.io/dockerconfigjson", map[string][]byte{
-		".dockerconfigjson": cfg,
-	}))); err != nil {
-		return err
-	}
-	if !changed {
-		logf("no change")
-	}
-	return nil
 }
 
 // logf prints one progress line. Every change prints one, so a first run and

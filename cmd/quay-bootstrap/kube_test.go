@@ -109,8 +109,8 @@ func TestApplySecret(t *testing.T) {
 }
 
 func TestSecretPatchType(t *testing.T) {
-	have := platformSecret("ns", "pull", "Opaque", nil)
-	want := platformSecret("ns", "pull", "kubernetes.io/dockerconfigjson", map[string][]byte{".dockerconfigjson": []byte("{}")})
+	have := platformSecret("ns", "s", "Opaque", nil)
+	want := platformSecret("ns", "s", "kubernetes.io/dockerconfigjson", map[string][]byte{".dockerconfigjson": []byte("{}")})
 	if _, err := secretPatch(have, want); err == nil {
 		t.Error("a type change was patched; a Secret's type is immutable")
 	}
@@ -128,20 +128,6 @@ func TestEncodeDecodeSecret(t *testing.T) {
 	}
 	if got.name != "n" || got.namespace != "ns" || string(got.data["k"]) != "v\x00" || got.labels[managedByLabel] != managedBy || got.annotations[shareRoles] != ownersGrant {
 		t.Errorf("round trip: %+v", got)
-	}
-}
-
-func TestDockerConfig(t *testing.T) {
-	a, err := dockerConfig(map[string]dockerAuth{
-		"quay.example/kagent":    {Username: "kagent+pull", Password: "p2"},
-		"quay.example/substrate": {Username: "substrate+pull", Password: "p1"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := `{"auths":{"quay.example/kagent":{"username":"kagent+pull","password":"p2","auth":"a2FnZW50K3B1bGw6cDI="},"quay.example/substrate":{"username":"substrate+pull","password":"p1","auth":"c3Vic3RyYXRlK3B1bGw6cDE="}}}`
-	if string(a) != want {
-		t.Errorf("got  %s\nwant %s", a, want)
 	}
 }
 

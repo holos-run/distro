@@ -1,8 +1,8 @@
 package holos
 
-// Quay names the platform's registry (interview Q13, Q56 to Q59): the release
-// the quay component runs, its namespace and URL, its Keycloak client, its
-// superusers and the organizations holos-controller makes in it. Anything
+// Quay names the platform's registry (interview Q13, Q56, Q57 and Q59):
+// the release the quay component runs, its namespace and URL, its Keycloak
+// client, its superusers and the organizations holos-controller makes in it. Anything
 // that pushes to, pulls from or reconciles Quay reads it here, as
 // cmd/quay-bootstrap's defaults do by hand.
 Quay: {
@@ -50,17 +50,12 @@ Quay: {
 	superUsers: [controller.username, "jeff"]
 
 	// organizations are the holos-controller Organizations in Quay's
-	// namespace (Q58). substrate and kagent hold the images the garage
-	// runner builds, private, their repositories made by the push robots'
-	// first push; demo holds the actor's public repository (Q13). Each
-	// syncs one team, platformowners, from the platform owners' group, as
-	// admin.
+	// namespace. demo holds the actor's public repository (Q13); the
+	// Substrate and kagent images are on ghcr.io, not here (docs/forks.md).
+	// Each syncs one team, platformowners, from the platform owners' group,
+	// as admin.
 	organizations: [NAME=string]: {name: NAME}
-	organizations: {
-		substrate: _
-		kagent:    _
-		demo:      _
-	}
+	organizations: demo: _
 
 	// ownersTeam is the synced team every organization has. It is not
 	// owners: Quay makes a team owners in every new organization, with its

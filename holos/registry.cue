@@ -158,7 +158,7 @@ registry: [
 	// bootstrap writes it with kubectl, before Argo CD.
 	{name: "secrets-manager"},
 	// quay is the registry: its CloudNativePG cluster, Redis, the Quay
-	// Deployment and route, its Keycloak Client, the Organizations and the
+	// Deployment and route, its Keycloak Client, the demo Organization and
 	// Repository holos-controller makes in it, and the copies of the RustFS
 	// keys and of holos-controller's Quay credential. It needs the CRDs of
 	// cloudnative-pg, external-secrets and holos-controller, the Instance

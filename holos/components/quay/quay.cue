@@ -7,14 +7,14 @@ import (
 	"strings"
 )
 
-// quay is the platform's registry (interview Q13, Q56 to Q59), at
+// quay is the platform's registry (interview Q13, Q56, Q57 and Q59), at
 // https://quay.bank.internal: Quay 3.17.6 as one plain Deployment, ported
 // from aavis-ops' quay component, with no Quay Operator, no Clair, no mirror
 // worker and no config editor. Its database is its own one-instance
 // CloudNativePG cluster, its blobs are in RustFS's bucket quay, and its
 // build-log and event queues are in an ephemeral Redis beside it. It holds
-// the Substrate and kagent images the garage runner builds, private, and the
-// demo actor's image, public.
+// the demo actor's image, public; the Substrate and kagent images are on
+// ghcr.io (docs/forks.md).
 //
 // Quay (components/quay.cue) holds the release, the names and the URL. Quay
 // serves plain HTTP on 8080 behind the ingress gateway, which terminates TLS
@@ -29,7 +29,7 @@ import (
 // (#GeneratedSecret), copied from rustfs (#ScopedSecretStore) or delivered
 // by the controller. Nothing secret is in git.
 //
-// holos-controller reconciles the Organizations and the Repository here
+// holos-controller reconciles the demo Organization and its Repository here
 // against Quay's API with an OAuth token minted by cmd/quay-bootstrap, which
 // writes it as the platform secret quay-controller-token; this component
 // copies that into the controller's namespace. Until bootstrap has run, the
@@ -532,7 +532,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// The organizations (Q58), each with the platformowners team synced
+		// The organizations (Q13), each with the platformowners team synced
 		// from the platform owners' group as admin. They name no caBundle: the
 		// controller trusts the private root through SSL_CERT_DIR
 		// (components/holos-controller), and reads its token from
