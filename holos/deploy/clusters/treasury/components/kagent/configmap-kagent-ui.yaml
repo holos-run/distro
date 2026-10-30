@@ -1,0 +1,16 @@
+apiVersion: v1
+data:
+  KAGENT_UI_API_BASE_URL: /api
+  KAGENT_UI_SSO_REDIRECT_PATH: /oauth2/start
+  KAGENT_UI_STREAM_TIMEOUT_MS: "1800000"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/version: 0.0.0-holos.20261028.fa2cb23
+    helm.sh/chart: kagent-0.0.0-holos.20261028.fa2cb23
+  name: kagent-ui
+  namespace: kagent

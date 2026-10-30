@@ -46,6 +46,7 @@ IngressGateway: {
 	hosts: {
 		argocd:   _
 		hello:    _
+		kagent:   _
 		keycloak: _
 		quay:     _
 		secrets:  _

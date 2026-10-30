@@ -1,0 +1,22 @@
+apiVersion: v1
+data:
+  sign_in.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta http-equiv="refresh" content="0;url=/login?rd={{ or .Redirect "/" | urlquery }}">
+      <script>window.location.href = "/login?rd={{ or .Redirect "/" | urlquery }}";</script>
+    </head>
+    <body>Redirecting to login...</body>
+    </html>
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/version: 0.0.0-holos.20261028.fa2cb23
+    helm.sh/chart: kagent-0.0.0-holos.20261028.fa2cb23
+  name: kagent-oauth2-proxy-templates
+  namespace: kagent

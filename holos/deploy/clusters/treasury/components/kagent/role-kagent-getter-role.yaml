@@ -1,0 +1,106 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/version: 0.0.0-holos.20261028.fa2cb23
+    helm.sh/chart: kagent-0.0.0-holos.20261028.fa2cb23
+  name: kagent-getter-role
+  namespace: kagent
+rules:
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - harnesses
+  - agents
+  - egresspolicies
+  - sandboxtemplates
+  - agenttemplates
+  - modelconfigs
+  - modelproviderconfigs
+  - remotemcpservers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - harnesses/finalizers
+  - agents/finalizers
+  - modelconfigs/finalizers
+  - modelproviderconfigs/finalizers
+  - remotemcpservers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - harnesses/status
+  - agents/status
+  - modelconfigs/status
+  - modelproviderconfigs/status
+  - remotemcpservers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ate.dev
+  resources:
+  - workerpools
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - agents.x-k8s.io
+  resources:
+  - sandboxes
+  verbs:
+  - get
+  - list
+  - watch

@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/version: 0.0.0-holos.20261028.fa2cb23
+    helm.sh/chart: kagent-0.0.0-holos.20261028.fa2cb23
+  name: kagent-controller
+  namespace: kagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/instance: kagent
+      app.kubernetes.io/name: kagent
+  template:
+    metadata:
+      annotations:
+        checksum/configmap: 7cfe6d358fd01d274e7a03c7b75333fd26908a0caec0fbe5f2b71b6514cf1b81
+      labels:
+        app.kubernetes.io/component: controller
+        app.kubernetes.io/instance: kagent
+        app.kubernetes.io/name: kagent
+    spec:
+      containers:
+      - args:
+        - --config=/etc/kagent/controller.yaml
+        env:
+        - name: K8S_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: K8S_POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: K8S_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        image: ghcr.io/holos-run/kagent/controller:0.0.0-holos.20261028.fa2cb23@sha256:5da882d7f78cd17d155ab3a24f145d7ddc2ad91e71f40f8c04e0312b615cb69c
+        imagePullPolicy: IfNotPresent
+        name: controller
+        ports:
+        - containerPort: 8083
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 30
+        resources:
+          limits:
+            cpu: 2
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 15
+        volumeMounts:
+        - mountPath: /etc/kagent
+          name: controller-config
+          readOnly: true
+        - mountPath: /etc/kagent/secrets
+          name: controller-secrets
+          readOnly: true
+        - mountPath: /run/substrate-servicedns
+          name: substrate-servicedns
+          readOnly: true
+        - mountPath: /run/substrate-podidentity
+          name: substrate-podidentity
+          readOnly: true
+        - mountPath: /etc/private-ca
+          name: private-ca
+          readOnly: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: kagent-controller
+      volumes:
+      - configMap:
+          name: kagent-controller
+        name: controller-config
+      - name: controller-secrets
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: readWriteConnectionString
+                path: database-readwrite-url
+              name: kagent-postgres-readwrite
+          - secret:
+              items:
+              - key: ownerConnectionString
+                path: database-owner-url
+              name: kagent-postgres-owner
+      - name: substrate-servicedns
+        projected:
+          sources:
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: servicedns.podcert.ate.dev/identity
+      - name: substrate-podidentity
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: podidentity.podcert.ate.dev/identity
+      - configMap:
+          name: private-ca
+        name: private-ca

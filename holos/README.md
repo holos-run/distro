@@ -17,7 +17,7 @@ holos/
 ├── private-ca.cue  the names of the private CA and its trust bundle, and the shape of its requesters
 ├── istio.cue       the mesh's release, namespace, images and trust domain
 ├── substrate.cue   the Substrate fork's commit and image digests, and the names Substrate is reached by
-├── kagent.cue      kagent's namespace and controller identity, which Substrate trusts
+├── kagent.cue      the kagent fork's pins, its namespace and controller identity, which Substrate trusts
 ├── signing-keys/   the public keys commits on main are signed with
 ├── projects/       the ProjectClaim collection: its schema, and a file per project
 ├── platform/       the Platform: the registry, rendered per cluster
@@ -114,6 +114,8 @@ old one and every webhook call is refused. Then change the router's
 | `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
+| `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
+| `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and holos-controller's Quay credential |
 | `project-<name>` | One per ProjectClaim in `projects/`, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, and its `AppProject` and `Application`; none today |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
@@ -2485,6 +2487,166 @@ curl https://foo.nope.ate.bank.internal/                             # exit 35, 
 # Checking Substrate, above, step 2, under ServiceAccount default.
 docker pull quay.bank.internal/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
     # ingress still passes Quay's own bearer tokens
+```
+
+### kagent
+
+kagent runs agents as Substrate actors (interview Q26), from the holos-run
+fork ([docs/forks.md](../docs/forks.md)), at `https://kagent.bank.internal`
+behind a Keycloak login. `Kagent` (`kagent.cue`, and `components/kagent.cue`
+for the names that need the Gateway or Keycloak) holds the pins and the
+names, and the substrate component reads the same definition for the
+router's allowed list, the bootstrap owners and the credential provider's
+namespace policy. Two components: `kagent-crds`, the CRD chart, and
+`kagent`, the main chart with the CUE-made objects beside it.
+
+- **Pins.** The charts and the controller and UI images are the fork's, on
+  `ghcr.io/holos-run/kagent`, by digest. The fork builds nothing else, so
+  `config.harnessImages` (`kagent`, `claude`, `codex`) and
+  `config.sandboxes.guestImage` are upstream kagent-dev's
+  `v1.0.0-alpha17`, the release nearest the fork's base: the harnesses by
+  the index digests that release's chart lists in
+  `files/builtin-harness-images.json`, and the guest, which that file does
+  not list, by the index digest of its `sandbox-guest:1.0.0-alpha17` tag.
+  The catalog's fourth key, `release`, stays unset: the controller refuses to
+  start when it is set and differs from its own version, which is the
+  fork's tag. The tool server and oauth2-proxy images are the subcharts'
+  defaults, by digest.
+- **Substrate.** `controller.substrateClientCertificate` mounts the pod
+  identity certificate and the servicedns trust bundle; the controller dials
+  `api.ate-system.svc:443` and `https://atenet-router.ate-system.svc:443`
+  with them, and the router admits it by
+  `spiffe://cluster.local/ns/kagent/sa/kagent-controller`. The namespace
+  carries `ate.dev/api-access: "true"`, which the API server's NetworkPolicy
+  admits. kagent creates its atespace, `kagent`, itself, on its first agent
+  or sandbox, and writes each actor's egress policy itself, through the API,
+  from the agent's model and `EgressPolicy` references: the model's origin
+  with its key as an `ate-secret://k8s.io/default/kagent/<secret>/<key>`
+  reference, and the controller's URL with an actor JWT. The platform writes
+  no egress policy. The credential provider resolves the reference through
+  the `Role` `k8s-credential-provider-model-keys` here, which lets it get
+  `kagent-anthropic` by name and no other Secret: a ModelConfig names its
+  key Secret and may name its own base URL, so with the whole namespace an
+  agent's author could have the egress gateway send the OIDC client secret
+  or a database password to a server of theirs. A model key added through
+  the UI, or any other, must be added to `modelKeys` in
+  `components/kagent/kagent.cue` before an agent can use it.
+- **The database.** kagent shares `substrate-db`, with its own schema
+  `kagent`, roles `kagent_owner` and `kagent_readwrite` and logins
+  `kagent_owner_user` and `kagent_readwrite_user`. The `kagent-db-setup`
+  Job, a Sync hook in `ate-system` beside Substrate's own, runs kagent's
+  `setup.sql`, copied from the fork into `components/kagent/`, as the
+  superuser. The two passwords are generated once in `ate-system`, as
+  `kagent-db-users`, the one copy the Job reads; the connection strings in
+  `kagent`, `kagent-postgres-owner` and `kagent-postgres-readwrite`, are
+  templated from it through a store that may read that Secret alone, with
+  `sslmode=verify-full` against the private root. The `kagent-db`
+  NetworkPolicy in `ate-system` admits the controller and the Job on 5432.
+  The controller runs its migrations as the owner at start.
+- **Login.** The chart's oauth2-proxy, with the confidential client
+  `kagent`, which a holos-controller `Client` creates, and a generated
+  cookie secret, combined into `kagent-oidc` by an `ExternalSecret`. A
+  visitor with no session gets kagent's sign-in page, whose button goes to
+  `/oauth2/start` and from there to Keycloak. oauth2-proxy forwards the ID
+  token to the UI, whose nginx proxies `/api/`, `/a2a/` and `/mcp` to the
+  controller, which runs in `trusted-proxy` mode and takes the user from the
+  token's `email` claim without verifying it. `skip-jwt-bearer-tokens`
+  admits a bearer ID token for the `kagent` client from the realm, which
+  oauth2-proxy verifies itself; a `kubectl` token is refused for its
+  audience, a forged one for its signature. The ID token lasts five minutes
+  and the controller refuses an expired one, so `cookie-refresh` is `1m`:
+  on a request to a session older than that, oauth2-proxy redeems the
+  session's refresh token for a new ID token, for as long as the realm's
+  SSO session lasts. `reverse-proxy` is off. The ingress Gateway passes a
+  client's `X-Forwarded-*` headers through, and with `reverse-proxy`
+  oauth2-proxy matches its skip-auth rules against `X-Forwarded-Uri`, so a
+  request claiming `/login` would skip the login.
+- **Isolation.** The controller accepts any well-formed token it is handed,
+  so the network keeps everyone but the proxy out. The namespace is not in
+  the mesh, and each pod's NetworkPolicy admits only the hop before it: the
+  controller, the UI and Substrate's egress gateway; the UI, oauth2-proxy;
+  oauth2-proxy, the ingress Gateway's pods; the tool server, the controller
+  and the egress gateway. Anyone who may port-forward or exec into `kagent`
+  bypasses this.
+- **The controller's RBAC** is `Role`s in `kagent` alone (the chart's
+  `rbac.namespaces`), and it watches only `kagent`: whoever reaches it acts
+  with its rights, so the chart's `ClusterRole`s, which read every core
+  resource and write core, apps and batch in every namespace, would be
+  theirs. Agents, Harnesses, ModelConfigs, Secrets and the placeholder pool
+  are all in `kagent`. The tool server's subchart is not scoped: its
+  read-only role covers the cluster, so agents can read it.
+- **Exposure.** `kagent.bank.internal` is under the Gateway's wildcard. The
+  `HTTPRoute` `kagent` sends every path to oauth2-proxy on 4180, never to
+  the UI or the controller; the chart's own route is off.
+- **The tool server** runs with `--read-only`, which leaves out every tool
+  that writes, and binds a read-only `ClusterRole`, get, list and watch
+  without Secrets, in place of `cluster-admin`.
+
+#### Adding the Anthropic key
+
+The model key is the platform secret `anthropic-api-key`, key
+`ANTHROPIC_API_KEY` (Adding a platform secret, under Secrets Manager,
+above). The `ExternalSecret` `kagent/kagent-anthropic` copies it within the
+hour, or at once with:
+
+```sh
+kubectl -n kagent annotate externalsecret kagent-anthropic force-sync=$(date +%s) --overwrite
+kubectl -n kagent get externalsecret kagent-anthropic   # SecretSynced
+```
+
+Until then that `ExternalSecret`, and so the `kagent` Application, is
+`Degraded`, and an agent's `ResolvedRefs` is False with `secret
+kagent-anthropic not found`. kagent is the last component before
+`argocd-apps` (`registry.cue`), so on a new cluster no other component waits
+on the key, but the root Application's own sync does, as it does on Quay's
+step.
+
+#### Agents and the worker pool
+
+A Harness's `workerPoolRef` names a `WorkerPool` in the Harness's own
+namespace, and the controller reads the pool's sandbox class from it, but
+places the actors only by the two `kagent.dev/worker-pool-*` labels, which
+Substrate matches against every worker in the cluster. The platform's pool,
+`ate-workers/gvisor`, carries those labels, so a Harness in `kagent` naming
+`gvisor` gets its actors on that pool's workers. The kagent component renders
+a placeholder `WorkerPool` `kagent/gvisor` for the controller to find: the
+same name and sandbox class, `replicas: 0`, and no `kagent.dev` labels.
+`kagent` enforces baseline Pod Security, which refuses a worker pod, so the
+placeholder cannot run one even if scaled up. ate-controller still makes its
+worker `Deployment`, at 0, and an unused `ateworker` ServiceAccount.
+
+A Harness for the platform pool, with snapshots in RustFS's `substrate`
+bucket:
+
+```yaml
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata: {name: kagent, namespace: kagent}
+spec:
+  kagent: {}
+  substrate:
+    workerPoolRef: {name: gvisor}
+    snapshotPolicy: {location: "s3://substrate/kagent/"}
+```
+
+#### Checking kagent
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+kubectl -n kagent get pods,client,externalsecret   # four pods 1/1; Client READY True; all SecretSynced but kagent-anthropic
+kubectl -n ate-system exec substrate-db-1 -c postgres -- psql -d substrate -At \
+  -c "select version_id from kagent.schema_migrations" \
+  -c "select usename, ssl from pg_stat_activity join pg_stat_ssl using (pid) where usename like 'kagent%'"
+    # the migrations; kagent_readwrite_user connections with ssl t
+curl -s --cacert root.pem -o /dev/null -w '%{http_code} %{redirect_url}\n' https://kagent.bank.internal/oauth2/start
+    # 302 to https://keycloak.bank.internal/realms/holos/protocol/openid-connect/auth?...client_id=kagent...
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://kagent.bank.internal/api/   # 403 without a session
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-Uri: /login' https://kagent.bank.internal/api/   # 403 too
+kubectl auth can-i get secrets -n keycloak --as=system:serviceaccount:kagent:kagent-controller   # no
+# From a pod outside kagent, every kagent port times out:
+kubectl -n default run np-test --image=curlimages/curl:8.11.1 --restart=Never --command -- sleep 600
+kubectl -n default exec np-test -- curl -s -m 5 http://kagent-controller.kagent.svc:8083/health   # exit 28
+kubectl -n default delete pod np-test
 ```
 
 ### Quay

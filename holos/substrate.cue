@@ -93,6 +93,11 @@ Substrate: {
 		host:     "\(cluster)-rw.\(namespace).svc"
 		port:     5432
 		database: "substrate"
+		// image is keycloak's and quay's, CloudNativePG 1.30.1's default,
+		// PostgreSQL 18.6, stated so an operator upgrade does not move the
+		// database to a new major version by itself. The role Jobs,
+		// Substrate's and kagent's, run psql from it.
+		image: "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"
 	}
 
 	// workerPool is the platform's one gVisor WorkerPool, in its own
@@ -100,6 +105,10 @@ Substrate: {
 	workerPool: {
 		namespace: "ate-workers"
 		name:      "gvisor"
+		// sandboxClass is the pool's one sandbox class, whose class default
+		// SandboxConfig is gvisor-default. kagent's placeholder pool
+		// (components/kagent) names the same class.
+		sandboxClass: "gvisor"
 	}
 
 	// trustDomain is the pod identity signer's SPIFFE trust domain, fixed

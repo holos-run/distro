@@ -55,10 +55,9 @@ let NS = S.namespace
 let DB = S.database
 let Pool = S.workerPool
 
-// PostgreSQLImage is keycloak's and quay's, CloudNativePG 1.30.1's default,
-// PostgreSQL 18.6, stated so an operator upgrade does not move the database
-// to a new major version by itself. The role Job runs psql from it.
-let PostgreSQLImage = "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"
+// PostgreSQLImage is the database's, which the role Job runs psql from
+// (Substrate.database.image).
+let PostgreSQLImage = DB.image
 
 // Roles are pkg/postgressetup's defaults, which ateapi's flags and
 // setup.sql's variables name: two NOLOGIN roles and a login user for each,
@@ -874,8 +873,12 @@ _Resources: #Resources & {
 	// gvisor-default, fetches gVisor from Google's bucket, anonymously
 	// (Holos_Distro/substrate-bank-hardening). ate-controller creates the
 	// worker ServiceAccount, ateworker, which needs no pull secret: the image
-	// is public. kagent's ActorTemplates select the pool by its two labels,
-	// whose namespace is kagent's, the agents', not the pool's.
+	// is public. kagent's ActorTemplates select the pool's workers by its two
+	// labels, which Substrate copies from the pool onto each worker, and
+	// whose namespace is kagent's, the agents', not the pool's. kagent also
+	// reads the class from a WorkerPool of the same name in its own
+	// namespace, so the kagent component renders a placeholder there with
+	// no workers (components/kagent).
 	Namespace: (Pool.namespace): metadata: labels: "pod-security.kubernetes.io/enforce": "privileged"
 	WorkerPool: (Pool.name): {
 		metadata: {
@@ -888,7 +891,7 @@ _Resources: #Resources & {
 		spec: {
 			replicas:    3
 			workerImage: S.images["ateworker-gvisor"]
-			sandboxClasses: [{name: "gvisor"}]
+			sandboxClasses: [{name: Pool.sandboxClass}]
 			template: nodeSelector: "holos.run/nodepool": "general"
 		}
 	}

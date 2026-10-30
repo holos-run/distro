@@ -231,8 +231,9 @@ registry: [
 	// cluster by itself: the credential's ExternalSecret reports Degraded
 	// until cmd/quay-bootstrap is run against the running Quay and writes
 	// the platform secret it copies (README.md, Quay). Anything after it
-	// would wait on that by hand; only the projects, whose Quay
-	// organizations need that credential anyway, do.
+	// waits on that by hand at a bootstrap: the projects, whose Quay
+	// organizations need that credential anyway, and kagent, which waits on
+	// a step of its own, and comes after them for that reason.
 	{name: "quay"},
 	// The ProjectClaim collection's components, project-<name>, one per
 	// claim in projects/ (collections.cue), each the project's namespace,
@@ -244,6 +245,29 @@ registry: [
 	// repository's tree: the collection is empty until a pull request adds
 	// a claim (interview Q67).
 	for R in #ProjectRegistrations {R},
+	// kagent-crds is kagent's CRDs, from the fork's kagent-crds chart, which
+	// Argo CD neither prunes nor deletes. It needs nothing, but comes
+	// straight before kagent, whose chart writes objects of its kinds.
+	{name: "kagent-crds"},
+	// kagent is kagent on Substrate (components/kagent): the fork's chart,
+	// with its controller, UI, tool server and oauth2-proxy, and beside it
+	// the namespace, the Keycloak Client, the role Job and its passwords in
+	// Substrate's namespace, the connection strings, the copy of the
+	// Anthropic key, the placeholder WorkerPool, the NetworkPolicies and the
+	// route. It needs substrate's database, router, API server and worker
+	// pool, which already trust its controller and carry its labels,
+	// substrate-shim, which serves the kagent atespace, the Client CRD from
+	// holos-controller and the Instance from keycloak-realm, the management
+	// namespace, and kagent-crds.
+	//
+	// It cannot be Healthy on a new cluster by itself: the Anthropic key's
+	// ExternalSecret reports Degraded until the key is written by hand,
+	// through the Secrets Manager, as the platform secret anthropic-api-key
+	// (README.md, kagent). So it comes last before argocd-apps, after
+	// everything it needs and after quay and the projects, which need
+	// nothing of it: at a bootstrap only the root Application's own sync
+	// waits on the key, as it already waits on quay's step.
+	{name: "kagent"},
 	// argocd-apps is the platform AppProject and every component's
 	// Application, its own included: its Application is the root Application.
 	// It is last, so the root syncs every other Application before it waits

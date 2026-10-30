@@ -1,0 +1,91 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/version: 0.0.0-holos.20261028.fa2cb23
+    helm.sh/chart: kagent-0.0.0-holos.20261028.fa2cb23
+  name: kagent-writer-role
+  namespace: kagent
+rules:
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - harnesses
+  - agents
+  - sandboxtemplates
+  - agenttemplates
+  - modelconfigs
+  - modelproviderconfigs
+  - remotemcpservers
+  verbs:
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - sandboxtemplates/status
+  verbs:
+  - update
+  - patch
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - harnesses/finalizers
+  - agents/finalizers
+  - sandboxtemplates/finalizers
+  - modelconfigs/finalizers
+  - modelproviderconfigs/finalizers
+  - remotemcpservers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - '*'
+  verbs:
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - '*'
+  verbs:
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - batch
+  resources:
+  - '*'
+  verbs:
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - '*'
+  verbs:
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - agents.x-k8s.io
+  resources:
+  - sandboxes
+  verbs:
+  - create
+  - update
+  - patch
+  - delete
