@@ -1,0 +1,24 @@
+apiVersion: security.holos.run/v1alpha1
+kind: ReferenceGrant
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: ledger
+    name: project-ledger
+    namespace: keycloak
+spec:
+    from:
+        - group: keycloak.holos.run
+          kind: Group
+          namespace: ledger
+        - group: keycloak.holos.run
+          kind: User
+          namespace: ledger
+        - group: keycloak.holos.run
+          kind: GroupMembership
+          namespace: ledger
+    to:
+        - group: keycloak.holos.run
+          kind: Instance
+          name: holos

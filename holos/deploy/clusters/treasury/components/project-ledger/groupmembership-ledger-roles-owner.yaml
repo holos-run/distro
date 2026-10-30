@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: GroupMembership
+metadata:
+    labels:
+        holos.run/project: ledger
+    name: ledger-roles-owner
+    namespace: ledger
+spec:
+    groupRef:
+        name: ledger-roles-owner
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    members:
+        - email: bob@bank.internal
