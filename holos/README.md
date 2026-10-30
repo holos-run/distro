@@ -337,7 +337,9 @@ start first.
 So to rebuild `treasury`, or to build a new cluster:
 
 1. Leave `webhooks.enforcing` at its default, false, for the cluster in
-   `clusters.cue`, render, merge, and bootstrap (Bootstrap Argo CD, below).
+   `clusters.cue`, render and merge. To rebuild, tear the old cluster down
+   and create the new one (Tearing a cluster down, below). Then bootstrap
+   (Bootstrap Argo CD, below).
 2. Once every `Application` is `Synced` and `Healthy`, check every webhook
    with the requests above. A webhook that answers refuses them under
    `Ignore` too.
@@ -385,6 +387,37 @@ whose objects a webhook matches cannot be until the path works again; then
 apply `gateway-ingress.yaml` and `tlsroute-*.yaml` from a good checkout by
 hand with `--server-side --field-manager=argocd-controller` and
 `argocd app sync ingress-gateway`.
+
+#### Tearing a cluster down
+
+Destroying the VMs leaves two things behind. `cluster.sh gen` reuses a
+`secrets.yaml` it finds, so the state directory must move aside for the new
+cluster to get new secrets. Its RBD images also stay in the cluster's Ceph
+pool, because nothing deletes the PersistentVolumes. Each image is named in
+its PV, so list the images while the cluster still answers, then remove them
+once the VMs are gone. From the repository's root:
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+images=$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeAttributes.imageName}{"\n"}{end}')
+echo "$images"   # csi-vol-..., one per volume
+
+set -a; . ~/.config/holos/proxmox.env; set +a
+go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury        # prints the calls only
+go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury -yes
+mv ~/.config/holos/talos/treasury ~/.config/holos/talos/treasury.old-$(date +%FT%H%M)
+
+# printf, so zsh splits the list too.
+for i in $(printf '%s\n' "$images"); do ssh root@r620a rbd rm --no-progress "k8s-rbd/$i"; done
+ssh root@r620a rbd ls k8s-rbd   # empty: the pool is treasury's alone
+```
+
+`rbd rm` refuses an image that still has a watcher. A destroyed VM's watch
+expires within about 30 seconds, so retry once if it refuses. Keep the old
+state directory until the new cluster is up, then delete it, since it holds
+the old cluster's secrets. The new cluster comes up by the usage in
+`../providers/proxmox/talos/README.md`, from `talosvm create` to `cluster.sh
+up`. Its private root is new (The private CA, below).
 
 ### The private CA
 
@@ -2201,15 +2234,20 @@ after a rebuild, whose root is new, restart atelet
 go build -o ~/bin/kubectl-ate ./cmd/kubectl-ate   # from holos/vendor/substrate; ~/bin on PATH
 kubectl ate create atespace demo
 
-# Into Quay, with the controller's token; buildx trusts the root through
-# SSL_CERT_DIR, not docker's certs.d.
+# Into Quay, with the controller's token. buildx copies from the client, so
+# neither the daemon nor docker login is involved: the credential goes
+# straight into a throwaway config, and the cluster's root, new on every
+# rebuild, is trusted through SSL_CERT_DIR.
 digest=sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
 export DOCKER_CONFIG=$(mktemp -d)
-kubectl -n holos-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d |
-  docker login quay.bank.internal -u '$oauthtoken' --password-stdin
-SSL_CERT_DIR=/etc/docker/certs.d/quay.bank.internal docker buildx imagetools create \
+kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > $DOCKER_CONFIG/root.pem
+tok=$(kubectl -n holos-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d)
+printf '{"auths":{"quay.bank.internal":{"auth":"%s"}}}' \
+  "$(printf '%s' "\$oauthtoken:$tok" | base64 -w0)" > $DOCKER_CONFIG/config.json
+unset tok
+SSL_CERT_DIR=$DOCKER_CONFIG docker buildx imagetools create \
   -t quay.bank.internal/demo/echo:v1.12.0 docker.io/traefik/whoami:v1.12.0@$digest
-docker logout quay.bank.internal; rm -rf $DOCKER_CONFIG; unset DOCKER_CONFIG
+rm -rf $DOCKER_CONFIG; unset DOCKER_CONFIG
 
 image=quay.bank.internal/demo/echo@$digest
 for a in echo other; do
@@ -3325,6 +3363,25 @@ secret made by `cmd/quay-bootstrap` against the running Quay: once Quay's
 pod is up, run the steps under Bringing Quay up, and patch the workers'
 trust and restart them with `talosvm restart` (Trusting the root on the
 workers), both under Quay, above.
+
+Last comes `kagent`, which stays `Degraded` until the Anthropic key is in
+(Adding the Anthropic key, under kagent, above); the platform secret can be
+written before `kagent` exists. The root's sync retries 10 times, backing
+off from 5 seconds to 3 minutes. That is about 17 minutes for the whole
+bootstrap, shared by every hand step that leaves an `Application`
+`Degraded`: Quay's, the workers' trust, then kagent's key. If the retries
+run out, the root stays `OutOfSync` until the next commit to `main`, and the
+`Application`s after the one it stopped at are not created. Once the hand
+steps are done, sync the root again with the automated policy's prune and
+retry. This needs no `argocd` CLI:
+
+```sh
+kubectl -n argocd patch app argocd-apps --type merge -p '{"operation":{
+  "initiatedBy":{"username":"bootstrap"},
+  "sync":{"prune":true,"syncOptions":["ServerSideApply=true"]},
+  "retry":{"limit":10,"backoff":{"duration":"5s","factor":2,"maxDuration":"3m"}}}}'
+kubectl -n argocd get app argocd-apps   # Synced Healthy
+```
 
 The hand applies use Argo CD's own field manager, `argocd-controller`, so
 Argo CD's first sync finds itself the objects' only manager. Under any other
