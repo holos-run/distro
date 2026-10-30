@@ -16,15 +16,15 @@ Both forks are public, since a fork of a public repository cannot be private.
 
 | Fork | Branch | Commit |
 | --- | --- | --- |
-| holos-run/substrate | `holos-2026-10-28` | `475f49b023352b47b8504ffead596953f28d7e7f` |
-| holos-run/kagent | `holos-2026-10-28` | `fa2cb2361ee45da4b3e757a618128c298680d458` |
+| holos-run/substrate | `holos-2026-10-30` | `f475d8b4cc8ad071bac7ba8fcace30212f1b56b0` |
+| holos-run/kagent | `holos-2026-10-30` | `e1696d861ac609c3e7ae8c5f294623ade261cffd` |
 
-The Substrate pin is upstream `main` on 2026-10-28 with nothing added. It
-will also be the submodule commit the platform vendors Substrate from, once
-the Substrate package adds the submodule.
+The Substrate pin is upstream `main` on 2026-10-30 with nothing added. It is
+also the submodule commit the platform vendors Substrate from
+(`holos/vendor/substrate`, `Substrate.commit` in `holos/substrate.cue`).
 
 The kagent pin is the commit kagent's images are built from. It is upstream
-`main` at `d9cc3a826511e80c7621ff55b6341d469c6bb8c1` with the two commits
+`main` at `8f6910c8bdf0a4fd0aa5a747c9c241594666409f` with the two commits
 described below.
 
 A pin is always a full commit SHA in a fork, never a tag or a branch name. A
@@ -50,13 +50,14 @@ The kagent fork carries two commits on top of upstream:
   as before. This change is meant to go upstream.
 - **kagent builds against the Substrate fork.** Upstream kagent's `go/go.mod`
   replaces `go.ate.dev/substrate` with kagent-dev's own Substrate fork at a
-  sync tag. The commit points the replace at `github.com/holos-run/substrate`
-  at the Substrate pin, so kagent's ate-api client and the Substrate it talks
-  to come from one tree. Upstream Substrate renamed `SnapshotStorage.status` to
-  `state`, which kagent-dev's fork did not have yet, so the commit also follows
-  that rename in kagent's Go code. The field numbers did not change, so the
-  vendored `proto/` copy and the UI's generated TypeScript, which still use
-  the old names, decode the new messages correctly over binary protobuf.
+  sync tag, `v0.7.0-alpha2` at the pin. The commit points the replace at
+  `github.com/holos-run/substrate` at the Substrate pin, so kagent's ate-api
+  client and the Substrate it talks to come from one tree. Upstream Substrate
+  renamed `SnapshotStorage.status` to `state`, which kagent-dev's fork does
+  not have yet, so the commit also follows that rename in kagent's Go code.
+  The field numbers did not change, so the vendored `proto/` copy and the
+  UI's generated TypeScript, which still use the old names, decode the new
+  messages correctly over binary protobuf.
 
 The replace commit leaves one thing stale. kagent's `Makefile` and
 `go/Makefile` derive `SUBSTRATE_VERSION` from the `kagent-dev/substrate` line
@@ -69,7 +70,7 @@ rather than through `kagent install`.
 ## Branches
 
 Each fork has dated branches named `holos-<date>`, such as
-`holos-2026-10-28`. A dated branch is cut from the upstream head on that date
+`holos-2026-10-30`. A dated branch is cut from the upstream head on that date
 and carries the Holos commits on top. Once pushed, it is never rewritten,
 force pushed or deleted, and no tag is moved to it. A rebase makes a new
 dated branch instead.
@@ -232,7 +233,7 @@ Each fork's images and charts are tagged
 `0.0.0-holos.<YYYYMMDD>.<7-character SHA>`, with a `v` in front for
 Substrate, whose publish command accepts only a `vMAJOR.MINOR.PATCH[-PRERELEASE]`
 tag. Helm wants a chart version without the `v`. At the pins above they are
-`v0.0.0-holos.20261028.475f49b` and `0.0.0-holos.20261028.fa2cb23`.
+`v0.0.0-holos.20261030.f475d8b` and `0.0.0-holos.20261030.e1696d8`.
 
 The date is the commit's committer date in UTC, not the day of the run, so
 publishing one pin again gives the same tag. SemVer forbids a leading zero in
@@ -254,8 +255,8 @@ branch of its fork:
 
 ```sh
 gh workflow run publish-images.yaml --repo holos-run/distro \
-  -f substrate_sha=475f49b023352b47b8504ffead596953f28d7e7f \
-  -f kagent_sha=fa2cb2361ee45da4b3e757a618128c298680d458
+  -f substrate_sha=f475d8b4cc8ad071bac7ba8fcace30212f1b56b0 \
+  -f kagent_sha=e1696d861ac609c3e7ae8c5f294623ade261cffd
 gh run watch --repo holos-run/distro \
   "$(gh run list --repo holos-run/distro --workflow publish-images.yaml --limit 1 --json databaseId --jq '.[0].databaseId')"
 ```
@@ -282,11 +283,12 @@ content again. Any other failure is not retried.
 
 The run's output is the source of the digests: the Publish job's summary
 lists each `<name>:<tag>@<digest>`, and the program writes the same subjects
-as JSON with `-out`. A person copies them by hand into a CUE pin file and
-commits it; the run never commits. The pin file does not exist yet: the
-Substrate package and kagent items create it, under `holos/`, and their
-components read it. Everything in the platform names these images and charts
-by digest, pulled anonymously, with no pull secret and no private CA.
+as JSON with `-out`. A person copies them by hand into the pin files,
+`holos/substrate.cue` (`Substrate`) and `holos/kagent.cue` (`Kagent`), and
+commits them; the run never commits. The components read the pins from
+there ([holos/README.md](../holos/README.md), Substrate, Bumping the pin).
+Everything in the platform names these images and charts by digest, pulled
+anonymously, with no pull secret and no private CA.
 
 ### Package visibility, once
 

@@ -50,7 +50,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/atelet@sha256:8ef83c880bf6db3445a419fae172ef4f6f4c0ea0b055a489bb5f9a3713ced26b
+        image: ghcr.io/holos-run/substrate/atelet@sha256:a61b4b21078ae2e640e23bad20c18a209c46d2a76c2aa8a0c02147d573588d47
         livenessProbe:
           httpGet:
             path: /healthz
@@ -82,7 +82,10 @@ spec:
           allowPrivilegeEscalation: false
           capabilities:
             add:
+            - CHOWN
             - DAC_OVERRIDE
+            - FOWNER
+            - FSETID
             drop:
             - ALL
           runAsGroup: 0
@@ -141,7 +144,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1ccc33f1b437bc1963daf6f2435a159bbc9c0e9ea05d0b36148ca89469b4e340
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:fbf8d4ed43a4ef1fb14db699133e07c6fe0d7e935a7639b7b18f55c05ad707fb
         name: objectstore-plugin
         resources:
           requests:

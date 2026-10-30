@@ -2245,12 +2245,67 @@ git diff deploy/clusters/treasury/components/substrate   # what the bump changes
 git add vendor/substrate substrate.cue components/substrate deploy
 ```
 
+A kagent bump goes with it, since kagent's replace names the Substrate
+pin ([docs/forks.md](../docs/forks.md), Rebasing on upstream):
+
+```sh
+# kagent.cue: commit, version, the two chart digests and the two image digests
+# components/kagent/setup.sql: re-copy go/core/pkg/postgressetup/setup.sql if it changed
+rm -rf components/kagent/vendor components/kagent-crds/vendor   # the render pulls both charts at Kagent.version
+cue vet ./... && rm -rf deploy/clusters && holos render platform
+git diff deploy/clusters/treasury/components/kagent deploy/clusters/treasury/components/kagent-crds
+git add kagent.cue components/kagent components/kagent-crds deploy
+```
+
 If the bump's diff changes ConfigMap `atenet-router-envoy-config` or
 `atenet-egress`, the Envoy bootstrap upstream ships, restart their readers
 once Argo CD has synced it, since no hash covers them:
 
 ```sh
 kubectl -n ate-system rollout restart deploy/atenet-router deploy/atenet-egress
+```
+
+Test the bump on treasury before it merges with automation paused on the
+root `argocd-apps` **and** on `substrate`, `kagent-crds` and `kagent`, and
+keep the root paused until the merge: the root renders the children's
+`syncPolicy`, so restoring it alone re-applies `automated` to the three and
+`selfHeal` puts the old pins back within a poll. Apply the three renders
+server-side as `argocd-controller` with Argo CD's tracking-id annotations,
+then restore all four after the merge.
+
+A Substrate bump rolls every worker, and an actor whose worker goes away is
+`ACTOR_STATE_CRASHED`, which the router does not resume: `kubectl ate
+revert actor <name> -a <atespace>` puts it back to its latest snapshot,
+suspended, and the next request resumes it. Suspend what matters first.
+
+atelet keeps an image cache under `/var/lib/ate/image-cache` on each node
+with a layout version, and refuses to start on an older layout ("image
+cache ... has layout version "2" and this atelet supports "3", so delete it
+once no actor runs on this node"). The 2026-10-30 bump moved it from 2 to
+3 (upstream #2392). The DaemonSet then stalls, one node at a time, on a
+crash-looping atelet. On each such node, with no actor running there,
+delete the directory from a privileged pod with the host path mounted and
+delete the atelet pod; atelet re-creates the cache and pulls what it needs:
+
+```sh
+kubectl -n ate-system apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata: {name: cache-reset, namespace: ate-system}
+spec:
+  nodeName: <node>
+  restartPolicy: Never
+  containers:
+  - name: rm
+    image: curlimages/curl:8.14.1
+    securityContext: {privileged: true, runAsUser: 0}
+    command: [sh, -c, 'cat /host/image-cache/version; rm -rf /host/image-cache && echo deleted']
+    volumeMounts: [{name: ate, mountPath: /host}]
+  volumes: [{name: ate, hostPath: {path: /var/lib/ate, type: Directory}}]
+EOF
+kubectl -n ate-system wait pod/cache-reset --for=jsonpath='{.status.phase}'=Succeeded
+kubectl -n ate-system logs cache-reset && kubectl -n ate-system delete pod cache-reset
+kubectl -n ate-system delete pod -l app=atelet --field-selector spec.nodeName=<node>
 ```
 
 The render refuses a `Substrate.commit` that is not the submodule's, and a
@@ -2260,6 +2315,30 @@ flag ate-setup appends, a new file it applies on its own or a new
 ConfigMap key does not fail the render; only the re-read finds it. A
 schema change is migrated by ate-api-server on start, through the owner's
 connection.
+
+kagent's schema is not always. Before its RC, kagent changes
+`go/core/pkg/migrations/core/000001_initial.sql`, its one migration, in
+place rather than adding a second: the 2026-10-30 bump added four columns
+to `runtime_revision` there (`actor_template_spec_digest`, `golden_retries`,
+`golden_failure_uid`, `golden_failed_at`). A schema migrated by the old
+controller is at version 1 already, so the new controller runs nothing and
+the columns stay missing. Compare the fork's migration with the old
+pin's on every kagent bump; when it changed, drop and re-create the
+`kagent` schema and sync `kagent`: the `kagent-db-setup` Job, a Sync hook,
+re-creates the roles and the schema (every statement converges), and the
+controller migrates on start. Every session, memory and revision kagent
+holds in the schema is lost; the `Agent`, `Harness` and `ModelConfig`
+objects in `kagent` are not, and the controller reconciles them again.
+
+```sh
+kubectl -n ate-system exec substrate-db-1 -c postgres -- psql -d substrate \
+  -c 'drop schema kagent cascade'
+argocd app sync kagent
+```
+
+The old controller keeps running until the sync rolls it; a pod of it
+started between the drop and the sync fails on the missing schema and is
+restarted.
 
 #### Rotation
 
@@ -2555,7 +2634,9 @@ namespace policy. Two components: `kagent-crds`, the CRD chart, and
   templated from it through a store that may read that Secret alone, with
   `sslmode=verify-full` against the private root. The `kagent-db`
   NetworkPolicy in `ate-system` admits the controller and the Job on 5432.
-  The controller runs its migrations as the owner at start.
+  The controller runs its migrations as the owner at start; a bump that
+  changes kagent's one migration in place needs the schema dropped first
+  (Substrate, Bumping the pin, above).
 - **Login.** The chart's oauth2-proxy, with the confidential client
   `kagent`, which a holos-controller `Client` creates, and a generated
   cookie secret, combined into `kagent-oidc` by an `ExternalSecret`. A
@@ -2637,10 +2718,28 @@ kind: Harness
 metadata: {name: kagent, namespace: kagent}
 spec:
   kagent: {}
+  workload:
+    args: ["--filepath", "/data/config"]
   substrate:
     workerPoolRef: {name: gvisor}
     snapshotPolicy: {location: "s3://substrate/kagent/"}
 ```
+
+`snapshotPolicy.location` is required by the CRD. The controller passes it
+to Substrate as the ActorTemplate's `snapshotConfig.storageLocation`, which
+ate-api-server accepts only with its `PerTemplateSnapshotLocation` preview
+gate; the substrate component enables it (`PreviewGates` in
+`components/substrate/substrate.cue`), and an agent's snapshots then go
+under this location instead of the cluster's `s3://substrate/`.
+
+`workload.args` is needed since Substrate runs an actor as its image's
+`USER` and `WORKDIR` (upstream #2392, in the 2026-10-30 pin). kagent's
+`golang-adk` harness image is user 65532 at `/`, and the harness writes its
+agent config to `/config` by default, which that user cannot create, so the
+golden build fails with `GoldenActorCrashed` and `mkdir /config: permission
+denied` in the worker's log. `/data` is the user's own in the image. Drop
+the field once an upstream harness image allows for a non-root config
+directory.
 
 #### Checking kagent
 

@@ -42,6 +42,7 @@ spec:
         - --objectstore-plugin-socket=/run/objectstore-plugin/control.sock
         - --snapshot-location=@env
         - --authz-bootstrap-owners=system:serviceaccount:ate-system:ate-client,spiffe://cluster.local/ns/kagent/sa/kagent-controller
+        - --preview=PerTemplateSnapshotLocation
         env:
         - name: POD_NAME
           valueFrom:
@@ -66,7 +67,7 @@ spec:
         - secretRef:
             name: ate-api-server-secret-envvars
             optional: true
-        image: ghcr.io/holos-run/substrate/ateapi@sha256:0f686185f3b109e3c749d19619a5b1d3fc25b15029bbc1e798c9ab8381393041
+        image: ghcr.io/holos-run/substrate/ateapi@sha256:743244e3ac1886310f47355e69a3c0e9274564351e9e9da83b3361a50fecbb43
         livenessProbe:
           httpGet:
             path: /healthz
@@ -168,7 +169,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1ccc33f1b437bc1963daf6f2435a159bbc9c0e9ea05d0b36148ca89469b4e340
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:fbf8d4ed43a4ef1fb14db699133e07c6fe0d7e935a7639b7b18f55c05ad707fb
         name: objectstore-plugin
         ports:
         - containerPort: 8445
