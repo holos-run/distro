@@ -3,13 +3,15 @@ package holos
 // registry lists the platform's components in sync order. Every cluster in
 // clusters (clusters.cue) gets every component (platform/platform.cue), and
 // every component gets an Argo CD Application (components/argocd-apps) whose
-// sync wave is its index here. The waves order only the root Application
-// creating the Applications, when a cluster is bootstrapped: it creates one,
-// waits for it to report Healthy, then creates the next. Once created, each
-// Application polls main and syncs on its own, so a later merge syncs the
-// components it touches in parallel, and a component whose dependency is
-// not ready yet relies on its sync retry. The order is also the order to
-// apply components by hand in.
+// sync wave is its index here. The waves order the root Application's own
+// syncs: when a cluster is bootstrapped it creates one Application, waits
+// for it to be Synced and Healthy (argocd-cm's health check for
+// Applications, components/argocd), then creates the next, and a later sync
+// of the root, such as one adding a component, walks the same waves. Once
+// created, each Application polls main and syncs on its own, so a later
+// merge syncs the components it touches in parallel, and a component whose
+// dependency is not ready yet relies on its sync retry. The order is also
+// the order to apply components by hand in.
 registry: [...#Registration]
 
 // #Registration is one component in the registry.

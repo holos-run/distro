@@ -117,26 +117,117 @@ holos: spec: artifacts: [(#HelmArtifact & {
 				// does not match.
 				"application.resourceTrackingMethod": "annotation"
 
-				// An Application reports the health of what it syncs: Missing
-				// until its objects exist, then Healthy once they are. It is
-				// health, not sync status: a component whose last sync failed
-				// but whose objects are healthy counts as Healthy. Argo CD
-				// dropped this check for Applications in 1.8; without it the
-				// root Application, when it first creates the Applications
-				// wave by wave (argocd-apps), would not wait for one component
-				// before creating the next.
+				// The health of a component's Application, as the root
+				// Application sees it when it creates them wave by wave
+				// (argocd-apps). Argo CD dropped its check for Applications in
+				// 1.8. A sync (v3.5.6, gitops-engine/pkg/sync/sync_context.go,
+				// Sync) holds a wave while an object in it is anything but
+				// Healthy or Degraded: Healthy starts the next wave, and
+				// Degraded fails the sync, which the root's retry starts over.
+				// An Application's own health counts only the objects that
+				// exist (controller/health.go, setApplicationHealth), so one
+				// whose sync has created only its Namespace is Healthy. Passed
+				// on as it is, that let the root create the next component
+				// seconds after quay and after substrate at the 2026-10-30
+				// rebuild. So the check is Healthy only once the Application
+				// is Healthy and Synced to the source its spec names now,
+				// not to one an earlier comparison saw; the root's revision is
+				// out of a health check's sight. Otherwise:
+				//
+				// - No status yet, or a sync asked for or running, retries
+				//   included: Progressing, whatever the health. A component
+				//   still retrying may come good, and failing the root for it
+				//   would spend the root's own retries.
+				// - Degraded once its sync has ended: Degraded, so a broken
+				//   component shows and the root's sync fails and retries.
+				// - OutOfSync after a sync that failed: Degraded. An automated
+				//   sync does not retry a revision it failed on, so it gets no
+				//   further by itself.
+				// - Anything else (Missing, Progressing, Suspended, Unknown,
+				//   OutOfSync, or a comparison of an earlier spec):
+				//   Progressing, so the root waits.
+				//
+				// The source comparison is by the fields that say what is
+				// synced: repoURL, path, targetRevision, chart and ref, absent
+				// counting as empty. A whole-object comparison never matches
+				// for some Applications: comparedTo is the spec's Go round
+				// trip, which drops zero values the stored spec keeps and
+				// writes an empty source for a multi-source one, and such a
+				// child would hold the root forever. A source hydrator's
+				// Application has no source of its own to compare. Argo CD's
+				// Lua has no string library, so only equality and
+				// concatenation.
 				"resource.customizations.health.argoproj.io_Application": """
-					hs = {}
-					hs.status = "Progressing"
-					hs.message = ""
-					if obj.status ~= nil then
-					  if obj.status.health ~= nil then
-					    hs.status = obj.status.health.status
-					    if obj.status.health.message ~= nil then
-					      hs.message = obj.status.health.message
+					local hs = {}
+					local function field(s, k)
+					  if s == nil or s[k] == nil then
+					    return ""
+					  end
+					  return s[k]
+					end
+					local function sameSource(a, b)
+					  for _, k in ipairs({"repoURL", "path", "targetRevision", "chart", "ref"}) do
+					    if field(a, k) ~= field(b, k) then
+					      return false
 					    end
 					  end
+					  return true
 					end
+					local function current(spec, compared)
+					  if spec.sourceHydrator ~= nil then
+					    return true
+					  end
+					  if spec.sources ~= nil and #spec.sources > 0 then
+					    local sources = compared.sources or {}
+					    if #sources ~= #spec.sources then
+					      return false
+					    end
+					    for i, source in ipairs(spec.sources) do
+					      if not sameSource(source, sources[i]) then
+					        return false
+					      end
+					    end
+					    return true
+					  end
+					  return sameSource(spec.source, compared.source)
+					end
+					if obj.status == nil or obj.status.health == nil or obj.status.sync == nil then
+					  hs.status = "Progressing"
+					  hs.message = "Waiting for the application controller"
+					  return hs
+					end
+					local health = obj.status.health.status or "Unknown"
+					local sync = obj.status.sync.status or "Unknown"
+					local op = obj.status.operationState
+					local state = health .. ", " .. sync
+					if obj.operation ~= nil then
+					  hs.status = "Progressing"
+					  hs.message = state .. ", sync requested"
+					  return hs
+					end
+					if op ~= nil and op.phase == "Running" then
+					  hs.status = "Progressing"
+					  hs.message = state .. ", syncing: " .. (op.message or "")
+					  return hs
+					end
+					if health == "Degraded" then
+					  hs.status = "Degraded"
+					  hs.message = obj.status.health.message or state
+					  return hs
+					end
+					if sync ~= "Synced" and op ~= nil and (op.phase == "Failed" or op.phase == "Error") then
+					  hs.status = "Degraded"
+					  hs.message = state .. ", sync failed: " .. (op.message or "")
+					  return hs
+					end
+					local compared = obj.status.sync.comparedTo or {}
+					if health == "Healthy" and sync == "Synced" and current(obj.spec, compared) then
+					  hs.status = "Healthy"
+					  hs.message = ""
+					  return hs
+					end
+					hs.status = "Progressing"
+					hs.message = state
 					return hs
 					"""
 
