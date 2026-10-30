@@ -410,12 +410,13 @@ holos: spec: artifacts: [(#FileArtifact & {
 
 		// k8s.<domain>'s certificate, from the private CA, ECDSA P-256 as the
 		// other gateways', renewed by cert-manager, which istiod hands to
-		// the gateway as it changes.
+		// the gateway as it changes. Its name is its entry's in
+		// PrivateCA.requesters (components/private-ca.cue).
 		Certificate: (GW.name): {
 			metadata: namespace: NS
 			spec: {
+				PrivateCA.requesters[NS][GW.name]
 				secretName: "\(GW.name)-tls"
-				dnsNames: [HA.host]
 				privateKey: {
 					algorithm: "ECDSA"
 					size:      256

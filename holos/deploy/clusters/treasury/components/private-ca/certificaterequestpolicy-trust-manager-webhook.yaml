@@ -1,0 +1,23 @@
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata:
+    name: trust-manager-webhook
+spec:
+    allowed:
+        commonName:
+            required: true
+            value: trust-manager.cert-manager.svc
+        dnsNames:
+            required: true
+            values:
+                - trust-manager.cert-manager.svc
+                - trust-manager.cert-manager.webhooks.treasury.bank.internal
+        isCA: false
+    selector:
+        issuerRef:
+            group: cert-manager.io
+            kind: Issuer
+            name: trust-manager
+        namespace:
+            matchNames:
+                - cert-manager

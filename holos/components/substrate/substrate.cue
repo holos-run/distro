@@ -55,10 +55,6 @@ let NS = S.namespace
 let DB = S.database
 let Pool = S.workerPool
 
-// DNSDomain is the cluster's, read here because inside the resources below
-// Cluster names CloudNativePG's kind.
-let DNSDomain = Cluster.network.dnsDomain
-
 // PostgreSQLImage is keycloak's and quay's, CloudNativePG 1.30.1's default,
 // PostgreSQL 18.6, stated so an operator upgrade does not move the database
 // to a new major version by itself. The role Job runs psql from it.
@@ -716,20 +712,15 @@ _Resources: #Resources & {
 	}
 
 	// The database's serving certificate, for the names a client in the
-	// cluster reaches the -rw Service by. cert-manager writes the issuing
-	// CA, the private root, as ca.crt beside it, which CloudNativePG reads
-	// as the server CA.
+	// cluster reaches the -rw Service by, with server auth alone, from its
+	// entry in PrivateCA.requesters (components/private-ca.cue).
+	// cert-manager writes the issuing CA, the private root, as ca.crt
+	// beside it, which CloudNativePG reads as the server CA.
 	Certificate: "\(DB.cluster)-server": {
 		metadata: namespace: NS
 		spec: {
+			PrivateCA.requesters[NS]["\(DB.cluster)-server"]
 			secretName: Secrets.serverTLS
-			dnsNames: [
-				"\(DB.cluster)-rw",
-				"\(DB.cluster)-rw.\(NS)",
-				DB.host,
-				"\(DB.host).\(DNSDomain)",
-			]
-			usages: ["server auth"]
 			privateKey: {
 				algorithm:      "ECDSA"
 				size:           256

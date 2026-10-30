@@ -86,18 +86,17 @@ holos: spec: artifacts: [(#HelmArtifact & {
 
 		// The webhook's serving certificate, from the private CA, with the
 		// Service's cluster name and the hostname the API server dials
-		// through the Gateway (webhooks.cue). The webhook validates the
-		// .svc name and the chain to ca.crt, which a private-ca Secret
-		// carries. The CA's root, which cainjector writes into the caBundle,
-		// does not change when the certificate is renewed.
+		// through the Gateway (webhooks.cue), from its entry in
+		// PrivateCA.requesters (components/private-ca.cue). The webhook
+		// validates the .svc name and the chain to ca.crt, which a
+		// private-ca Secret carries. The CA's root, which cainjector writes
+		// into the caBundle, does not change when the certificate is
+		// renewed.
 		Certificate: (WebhookCertificate): {
 			metadata: namespace: Webhook.namespace
 			spec: {
+				PrivateCA.requesters[Webhook.namespace][WebhookCertificate]
 				secretName: WebhookCertificate
-				dnsNames: [
-					"\(Webhook.name).\(Webhook.namespace).svc",
-					Cluster.webhooks.hosts[Webhook.name],
-				]
 				privateKey: {
 					algorithm:      "ECDSA"
 					size:           256

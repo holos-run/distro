@@ -1,0 +1,24 @@
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata:
+    name: private-ca-ate-system
+spec:
+    allowed:
+        dnsNames:
+            required: true
+            values:
+                - substrate-db-rw
+                - substrate-db-rw.ate-system
+                - substrate-db-rw.ate-system.svc
+                - substrate-db-rw.ate-system.svc.cluster.local
+        isCA: false
+        usages:
+            - server auth
+    selector:
+        issuerRef:
+            group: cert-manager.io
+            kind: ClusterIssuer
+            name: private-ca
+        namespace:
+            matchNames:
+                - ate-system

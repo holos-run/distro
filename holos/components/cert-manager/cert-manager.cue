@@ -1,7 +1,7 @@
 package holos
 
 // cert-manager issues the cluster's certificates; private-ca configures the
-// CA it issues from.
+// CA it issues from and the policies approver-policy approves requests by.
 //
 // v1.21.3, the latest stable, from the OCI chart Jetstack publishes, with the
 // images the chart names on quay.io, pinned by digest (the tag is kept for
@@ -45,6 +45,26 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			// but it renders the URL without a port.
 			extraArgs: ["--dynamic-serving-dns-names=\(Cluster.webhooks.hosts[Webhook.name])"]
 		}
+		// cert-manager's own approver approves every CertificateRequest for
+		// any Issuer or ClusterIssuer, so anyone who may create a Certificate
+		// could have the private CA sign any name, or a CA. Once the cluster
+		// enforces its webhooks it is off, with the RBAC that lets it
+		// approve, and approver-policy decides alone, against the
+		// CertificateRequestPolicies in private-ca (README.md, "The private
+		// CA").
+		//
+		// It follows the enforcing flag, not true everywhere, because of how
+		// a cluster bootstraps. While its webhooks fail open, a request
+		// created while cert-manager's webhook is unreachable carries no
+		// spec.username or spec.groups, which the webhook stamps. approver-
+		// policy can bind no policy to a request with no user, so it leaves
+		// it unprocessed, and on a rebuild that would hold back the root and
+		// the ingress Gateway's wildcard, which the webhooks are reached
+		// through: a deadlock. So cert-manager approves as before while the
+		// cluster bootstraps. Once enforcing, cert-manager's webhook refuses
+		// a request it cannot stamp, so every request has a user.
+		disableAutoApproval: Cluster.webhooks.enforcing
+
 		// startupapicheck is a post-install Helm hook Job, which holos does
 		// not render (helm template --no-hooks). Off, so the values say so.
 		startupapicheck: enabled: false

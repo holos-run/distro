@@ -56,17 +56,15 @@ holos: spec: artifacts: [(#HelmArtifact & {
 
 		// The webhook's serving certificate, from the private CA, with the
 		// Service's cluster name and the hostname the API server dials
-		// through the Gateway (webhooks.cue). The CA's root, which
-		// cainjector writes into the caBundle, does not change when the
-		// certificate is renewed.
+		// through the Gateway (webhooks.cue), from its entry in
+		// PrivateCA.requesters (components/private-ca.cue). The CA's root,
+		// which cainjector writes into the caBundle, does not change when
+		// the certificate is renewed.
 		Certificate: "cnpg-webhook": {
 			metadata: namespace: Webhook.namespace
 			spec: {
+				PrivateCA.requesters[Webhook.namespace]["cnpg-webhook"]
 				secretName: "cnpg-webhook-tls"
-				dnsNames: [
-					"\(Webhook.name).\(Webhook.namespace).svc",
-					Cluster.webhooks.hosts[Webhook.name],
-				]
 				privateKey: {
 					algorithm:      "ECDSA"
 					size:           256

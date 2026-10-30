@@ -1,0 +1,34 @@
+{{- if and .Values.app.metrics.service.enabled .Values.app.metrics.service.servicemonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cert-manager-approver-policy.name" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- /*
+      Merged as one map so no key can be emitted twice, keeping the precedence
+      the concatenated form had: "app" stays overridable, while the prometheus
+      instance label and .Values.app.metrics.service.servicemonitor.labels
+      still win over .Values.commonLabels.
+    */}}
+    {{- $labels := mergeOverwrite
+          (dict "app" (include "cert-manager-approver-policy.name" .))
+          (include "cert-manager-approver-policy.labels" . | fromYaml)
+          (dict "prometheus" .Values.app.metrics.service.servicemonitor.prometheusInstance)
+          (.Values.app.metrics.service.servicemonitor.labels | default dict)
+    -}}
+    {{- toYaml $labels | nindent 4 }}
+spec:
+  jobLabel: {{ include "cert-manager-approver-policy.name" . }}
+  selector:
+    matchLabels:
+      app: {{ include "cert-manager-approver-policy.name" . }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+  - port: metrics
+    path: "/metrics"
+    interval: {{ .Values.app.metrics.service.servicemonitor.interval }}
+    scrapeTimeout: {{ .Values.app.metrics.service.servicemonitor.scrapeTimeout }}
+{{- end }}

@@ -11,7 +11,8 @@ import "encoding/yaml"
 // Also the HTTPRoutes of components installed before the Gateway API CRDs,
 // so that each of those can still be applied by hand at bootstrap: Argo CD's.
 // And the TLS passthrough listener the API server reaches the admission
-// webhooks through, with a TLSRoute per webhook Service (webhooks.cue), the
+// webhooks through, with a TLSRoute per webhook Service (webhooks.cue) and a
+// listener of its own for a webhook hostname outside the webhooks domain, the
 // one the Substrate shim's hosts pass through to its own Gateway
 // (AteGateway), whose TLSRoute substrate-shim renders, and the one the
 // Kubernetes API's host passes through to holos-authenticator's Gateway
@@ -34,12 +35,13 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// The listener's certificate: the zone's wildcard, from the private
 		// CA, renewed by cert-manager, which istiod hands to the gateway as it
-		// changes.
+		// changes. Its name is its entry's in PrivateCA.requesters
+		// (components/private-ca.cue).
 		Certificate: wildcard: {
 			metadata: namespace: IG.namespace
 			spec: {
+				PrivateCA.requesters[IG.namespace].wildcard
 				secretName: "wildcard-tls"
-				dnsNames: [IG.wildcard]
 				privateKey: {
 					algorithm: "ECDSA"
 					size:      256
@@ -134,6 +136,29 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 							}
 						}
 					},
+					// A webhook hostname outside the webhooks domain, such as
+					// approver-policy's .svc name (webhooks.cue), gets a
+					// listener of its own on the same port, otherwise like
+					// webhooks, taking TLSRoutes only from its Service's
+					// namespace.
+					for N, L in IG.webhooks.own {
+						name:     N
+						hostname: L.hostname
+						port:     IG.webhooks.port
+						protocol: "TLS"
+						tls: mode: "Passthrough"
+						allowedRoutes: {
+							kinds: [{group: "gateway.networking.k8s.io", kind: "TLSRoute"}]
+							namespaces: {
+								from: "Selector"
+								selector: matchExpressions: [{
+									key:      "kubernetes.io/metadata.name"
+									operator: "In"
+									values: [L.namespace]
+								}]
+							}
+						}
+					},
 					{
 						name:     IG.listeners.ate
 						hostname: AteGateway.wildcard
@@ -212,9 +237,10 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// The admission webhooks: one TLSRoute per webhook Service, in the
 		// Service's namespace, matching its hostname (Cluster.webhooks.hosts)
-		// as SNI on the webhooks listener and forwarding to the Service's
-		// port. Rendered here, from the registry, so the listener and its
-		// routes change together.
+		// as SNI on the webhooks listener, or on the entry's own listener for
+		// a hostname outside the webhooks domain (IG.webhooks.sections), and
+		// forwarding to the Service's port. Rendered here, from the registry,
+		// so the listeners and their routes change together.
 		for K, S in webhookServices {
 			TLSRoute: (K): {
 				metadata: namespace: S.namespace
@@ -224,7 +250,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 						kind:        IG.parentRef.kind
 						namespace:   IG.namespace
 						name:        IG.name
-						sectionName: IG.listeners.webhooks
+						sectionName: IG.webhooks.sections[K]
 					}]
 					hostnames: [Cluster.webhooks.hosts[K]]
 					rules: [{
