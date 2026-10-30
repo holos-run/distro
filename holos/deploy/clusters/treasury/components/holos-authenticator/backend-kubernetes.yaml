@@ -7,6 +7,7 @@ spec:
   groupMapping:
     anyOf:
     - /platform/owners
+    - /projects/checkout/roles/owner
     - /projects/ledger/roles/owner
   groupsHeaderSeparator: '|'
   host: k8s.bank.internal

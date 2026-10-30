@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: checkout
+    name: checkout
+    namespace: argocd
+spec:
+    description: The project checkout, synced from https://github.com/holos-run/distro.git
+    destinations:
+        - namespace: checkout
+          server: https://kubernetes.default.svc
+    namespaceResourceBlacklist:
+        - group: rbac.authorization.k8s.io
+          kind: Role
+        - group: rbac.authorization.k8s.io
+          kind: RoleBinding
+        - group: keycloak.holos.run
+          kind: '*'
+        - group: quay.holos.run
+          kind: '*'
+        - group: security.holos.run
+          kind: '*'
+    namespaceResourceWhitelist:
+        - group: '*'
+          kind: '*'
+    signatureKeys:
+        - keyID: 7716CCA9F8F7BE25
+        - keyID: B5690EEEBB952194
+    sourceRepos:
+        - https://github.com/holos-run/distro.git

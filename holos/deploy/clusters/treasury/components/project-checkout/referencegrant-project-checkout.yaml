@@ -1,0 +1,24 @@
+apiVersion: security.holos.run/v1alpha1
+kind: ReferenceGrant
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: checkout
+    name: project-checkout
+    namespace: keycloak
+spec:
+    from:
+        - group: keycloak.holos.run
+          kind: Group
+          namespace: checkout
+        - group: keycloak.holos.run
+          kind: User
+          namespace: checkout
+        - group: keycloak.holos.run
+          kind: GroupMembership
+          namespace: checkout
+    to:
+        - group: keycloak.holos.run
+          kind: Instance
+          name: holos
