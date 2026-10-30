@@ -15,7 +15,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-backup
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: mbackup.cnpg.io
   rules:
   - apiGroups:
@@ -33,7 +33,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-cluster
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: mcluster.cnpg.io
   rules:
   - apiGroups:
@@ -51,7 +51,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-database
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: mdatabase.cnpg.io
   rules:
   - apiGroups:
@@ -69,7 +69,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-scheduledbackup
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: mscheduledbackup.cnpg.io
   rules:
   - apiGroups:

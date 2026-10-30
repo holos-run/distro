@@ -201,10 +201,10 @@ clusters: treasury: {
 	}
 	// The control plane endpoint, treasury-cp-1.
 	serviceAccountIssuer: "https://10.20.0.50:6443"
-	// Every webhook answers through the gateway's webhooks listener, so the
-	// cluster enforces. A rebuild starts with this false (README.md,
-	// "Admission webhooks").
-	webhooks: enforcing: true
+	// Rebuilding: the webhooks fail open until every Application is Synced
+	// and Healthy, then this turns true (README.md, "Building a cluster with
+	// enforcement").
+	webhooks: enforcing: false
 	// Volumes are images in k8s-rbd, as client.k8s.
 	ceph: {
 		pool: "k8s-rbd"
