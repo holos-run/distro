@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kagent-oauth2-proxy
+  namespace: kagent
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-ingress
+      podSelector:
+        matchLabels:
+          gateway.networking.k8s.io/gateway-name: ingress
+    ports:
+    - port: 4180
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: kagent
+      app.kubernetes.io/name: oauth2-proxy
+  policyTypes:
+  - Ingress

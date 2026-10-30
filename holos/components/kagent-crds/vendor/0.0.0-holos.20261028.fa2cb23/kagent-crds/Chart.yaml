@@ -1,0 +1,7 @@
+annotations:
+  org.opencontainers.image.source: https://github.com/kagent-dev/kagent
+apiVersion: v2
+description: CRDs for kagent
+name: kagent-crds
+type: application
+version: 0.0.0-holos.20261028.fa2cb23

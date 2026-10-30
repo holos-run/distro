@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: oauth2-proxy
+    app.kubernetes.io/component: authentication-proxy
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: oauth2-proxy
+    app.kubernetes.io/part-of: oauth2-proxy
+    app.kubernetes.io/version: 7.15.5
+    helm.sh/chart: oauth2-proxy-10.7.1
+  name: kagent-oauth2-proxy
+  namespace: kagent
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: kagent
+      app.kubernetes.io/name: oauth2-proxy
+  template:
+    metadata:
+      annotations:
+        checksum/config: 052b3706583beb7047e0b3b36032555fdf49a204a18c93f7097d078005c2b9bf
+        checksum/google-secret: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        checksum/redis-secret: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+        checksum/secret: bc51d28490f7963a08cc40ecbe74f45bb9587d9b8ac9591b0797b4537d2ade01
+      labels:
+        app: oauth2-proxy
+        app.kubernetes.io/component: authentication-proxy
+        app.kubernetes.io/instance: kagent
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: oauth2-proxy
+        app.kubernetes.io/part-of: oauth2-proxy
+        app.kubernetes.io/version: 7.15.5
+        helm.sh/chart: oauth2-proxy-10.7.1
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --http-address=0.0.0.0:4180
+        - --https-address=0.0.0.0:4443
+        - --metrics-address=0.0.0.0:44180
+        - --approval-prompt=auto
+        - --cookie-refresh=1m
+        - --cookie-samesite=lax
+        - --cookie-secure=true
+        - --custom-templates-dir=/templates
+        - --email-domain=*
+        - --oidc-issuer-url=$(OIDC_ISSUER_URL)
+        - --pass-authorization-header=true
+        - --provider=oidc
+        - --redirect-url=$(OIDC_REDIRECT_URL)
+        - --scope=openid profile email groups
+        - --set-authorization-header=true
+        - --skip-auth-regex=^/(login|assets/|env-config\.js|logo-.*\.png|favicon\.ico).*$
+        - --skip-auth-route=^/(health|login)$
+        - --skip-jwt-bearer-tokens=true
+        - --upstream=$(UPSTREAM_URL)
+        - --config=/etc/oauth2_proxy/oauth2_proxy.cfg
+        env:
+        - name: OAUTH2_PROXY_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: client-id
+              name: kagent-oidc
+        - name: OAUTH2_PROXY_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: kagent-oidc
+        - name: OAUTH2_PROXY_COOKIE_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: cookie-secret
+              name: kagent-oidc
+        - name: KAGENT_OAUTH2_PROXY_SIGNIN_TEMPLATE_CHECKSUM
+          value: 41963eed4b6300e97cdc9e3ef7a12c51fcb768fe4eca89fee776252171e8d1fc
+        - name: OIDC_ISSUER_URL
+          value: https://keycloak.bank.internal/realms/holos
+        - name: OIDC_REDIRECT_URL
+          value: https://kagent.bank.internal/oauth2/callback
+        - name: UPSTREAM_URL
+          value: http://kagent-ui:8080
+        - name: SSL_CERT_FILE
+          value: /etc/private-ca/ca.crt
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 0
+          timeoutSeconds: 1
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          name: http
+          protocol: TCP
+        - containerPort: 44180
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 2000
+          runAsNonRoot: true
+          runAsUser: 2000
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /etc/oauth2_proxy/oauth2_proxy.cfg
+          name: configmain
+          subPath: oauth2_proxy.cfg
+        - mountPath: /templates
+          name: custom-templates
+          readOnly: true
+        - mountPath: /etc/private-ca
+          name: private-ca
+          readOnly: true
+      enableServiceLinks: true
+      serviceAccountName: kagent-oauth2-proxy
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: kagent-oauth2-proxy
+        name: configmain
+      - configMap:
+          name: kagent-oauth2-proxy-templates
+        name: custom-templates
+      - configMap:
+          name: private-ca
+        name: private-ca

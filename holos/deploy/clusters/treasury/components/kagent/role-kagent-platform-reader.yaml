@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kagent-platform-reader
+  namespace: holos-prj-platform
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - anthropic-api-key
+  resources:
+  - secrets
+  verbs:
+  - get

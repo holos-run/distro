@@ -1,0 +1,16 @@
+annotations:
+  org.opencontainers.image.source: https://github.com/kagent-dev/kagent
+apiVersion: v2
+dependencies:
+- condition: kagent-tools.enabled
+  name: kagent-tools
+  repository: oci://ghcr.io/kagent-dev/tools/helm
+  version: 0.3.0
+- condition: oauth2-proxy.enabled
+  name: oauth2-proxy
+  repository: https://oauth2-proxy.github.io/manifests
+  version: ~10.7.0
+description: A Helm chart for kagent, built with Google ADK
+name: kagent
+type: application
+version: 0.0.0-holos.20261028.fa2cb23

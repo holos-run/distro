@@ -1,0 +1,18 @@
+apiVersion: api.kagent.dev/v1alpha3
+kind: RemoteMCPServer
+metadata:
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/version: 0.0.0-holos.20261028.fa2cb23
+    helm.sh/chart: kagent-0.0.0-holos.20261028.fa2cb23
+  name: kagent-api
+  namespace: kagent
+spec:
+  description: Kagent API tools for Sessions, checkpoints, and sandboxes
+  protocol: STREAMABLE_HTTP
+  sseReadTimeout: 5m0s
+  timeout: 30s
+  url: http://kagent-controller.kagent.svc.cluster.local:8083/mcp

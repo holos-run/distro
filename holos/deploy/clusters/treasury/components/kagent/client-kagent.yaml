@@ -1,0 +1,17 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Client
+metadata:
+  name: kagent
+  namespace: kagent
+spec:
+  clientId: kagent
+  description: kagent
+  instanceRef:
+    name: holos
+    namespace: keycloak
+  redirectUris:
+  - https://kagent.bank.internal/oauth2/callback
+  secretRef:
+    key: client-secret
+    name: kagent-oidc-client
+  type: confidential
