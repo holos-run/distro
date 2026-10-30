@@ -16,22 +16,27 @@ package holos
 //
 // To bump, set commit and version to the new publish run's, copy every digest
 // from its references, re-read the chart's values.yaml against the kagent
-// component's, and move harnessImages and guestImage to the upstream release
-// nearest the new fork's base.
+// component's, re-copy components/kagent/setup.sql if the fork's changed, and
+// move harnessImages and guestImage to the upstream release nearest the new
+// fork's base. Before its RC kagent edits its initial migration in place
+// rather than adding one, so a bump may need the kagent schema dropped and
+// re-created on the cluster (README.md, kagent, Bumping the pin).
 Kagent: {
 	namespace: "kagent"
 	// atespace is the Substrate atespace kagent creates for its agents
 	// through the API.
 	atespace: namespace
 
-	// commit is the fork's, on its holos-2026-10-28 branch, which is
-	// upstream kagent-dev/kagent main at d9cc3a82 with the fork's two
-	// changes on top.
-	commit: "fa2cb2361ee45da4b3e757a618128c298680d458"
+	// commit is the fork's, on its holos-2026-10-30 branch, which is
+	// upstream kagent-dev/kagent main at 8f6910c8 with the fork's two
+	// changes on top: the router dialers' mutual TLS, and the build against
+	// the holos-run Substrate fork at Substrate.commit, where upstream builds
+	// against kagent-dev/substrate v0.7.0-alpha2 (docs/forks.md).
+	commit: "e1696d861ac609c3e7ae8c5f294623ade261cffd"
 	// version is the tag publish-images.yaml published the images and the
 	// charts under. It is also the controller's version.Version, which the
 	// controller compares with harnessImages.release.
-	version:  "0.0.0-holos.20261028.fa2cb23"
+	version:  "0.0.0-holos.20261030.e1696d8"
 	registry: "ghcr.io/holos-run/kagent"
 
 	// charts are the fork's two OCI charts. The digests are for the reader:
@@ -40,29 +45,46 @@ Kagent: {
 	charts: {
 		crds: {
 			name:   "oci://\(registry)/helm/kagent-crds"
-			digest: "sha256:440ad8ea2681f48f4dde0305f5eac03bd734267f9af43cc22135de36cacd68c8"
+			digest: "sha256:c32d9fdb25d9d6aebd145e31bb7e786c1123fd5e53fff36eb03ca5e9f0c8db40"
 		}
 		kagent: {
 			name:   "oci://\(registry)/helm/kagent"
-			digest: "sha256:725614ef1ae69d3b3481ecaa731d67b007a05a6d43566c9a50b88f0e2c62c1ac"
+			digest: "sha256:d0683909f325e64a4c9ba2c56ee22e544c93ba80284edc3914eb37612bb8ebb8"
 		}
 	}
 
 	// digests are the index digests of the fork's two images, public and
 	// pulled anonymously, by the image's name under registry.
 	digests: {
-		controller: "sha256:5da882d7f78cd17d155ab3a24f145d7ddc2ad91e71f40f8c04e0312b615cb69c"
-		ui:         "sha256:36e29c6a21d607eb78e4e58383ed7515d59563dc939ae76fe29ce92f1a593514"
+		controller: "sha256:1e1aee64e0484b92572fb1bb6fc66e5d538d3eb61019935b6ac98f763635178e"
+		ui:         "sha256:e4ed5be8ddec69fbc15d0a8f468255d2091f45314ae072bc40fd1c8b40335552"
 	}
 
-	// upstream is the kagent-dev release nearest the fork's base: d9cc3a82
-	// is v1.0.0-alpha17 and 38 commits, and no later release exists. The
+	// upstream is the kagent-dev release nearest the fork's base: 8f6910c8
+	// is v1.0.0-alpha17 and 48 commits, and no later release exists. The
 	// fork builds only the controller and the UI, so the agents' images
 	// come from this release, by the index digests its chart's
 	// files/builtin-harness-images.json lists, which the fork's chart does
-	// not carry. Between alpha17 and d9cc3a82 the harnesses gained only
-	// fields whose zero value is the old behavior (disableAskUser,
-	// strictOutputSchema), which the controller's protojson omits.
+	// not carry. Between alpha17 and 8f6910c8 the agent config the
+	// controller writes to a harness (proto/kagent/config, ADKAgentConfig and
+	// what it holds) gained only fields whose zero value is the old behavior
+	// (disableAskUser, strictOutputSchema), which the controller's protojson
+	// omits, and lost ADKAgentConfig's network and share_tools (upstream
+	// #3454), which the controller never set; their field numbers are not
+	// reused. The other additions in that package (CLIConfig.tui,
+	// AuthenticationConfig.service_account, PushConfig's max_concurrency and
+	// send_timeout) are controller and CLI messages a harness never reads.
+	// The runtime API the harnesses call (proto/kagent/runtime) changed
+	// only in comments and dropped reserved statements, reusing no number.
+	// So alpha17's harnesses read what this controller writes as before.
+	//
+	// What did change for them is Substrate: since upstream #2392 (in this
+	// pin) an actor runs as its image's USER and WORKDIR, and golang-adk's
+	// is 65532 at /, so the harness can no longer create its default config
+	// directory /config. A Harness sets workload.args to
+	// ["--filepath", "/data/config"], a directory that user owns in the
+	// image (README.md, kagent, Agents and the worker pool), until an
+	// upstream harness image allows for it.
 	upstream: {
 		release:  "1.0.0-alpha17"
 		registry: "ghcr.io/kagent-dev/kagent"

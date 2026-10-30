@@ -7,8 +7,8 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: kagent
     app.kubernetes.io/part-of: kagent
-    app.kubernetes.io/version: 0.0.0-holos.20261028.fa2cb23
-    helm.sh/chart: kagent-0.0.0-holos.20261028.fa2cb23
+    app.kubernetes.io/version: 0.0.0-holos.20261030.e1696d8
+    helm.sh/chart: kagent-0.0.0-holos.20261030.e1696d8
   name: kagent-controller
   namespace: kagent
 spec:
@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/configmap: 7cfe6d358fd01d274e7a03c7b75333fd26908a0caec0fbe5f2b71b6514cf1b81
+        checksum/configmap: d12baeef7f6562dec3d510b3938d3f3d80b74c648715c1f25f0e5c3cf1c06d3b
       labels:
         app.kubernetes.io/component: controller
         app.kubernetes.io/instance: kagent
@@ -43,7 +43,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
-        image: ghcr.io/holos-run/kagent/controller:0.0.0-holos.20261028.fa2cb23@sha256:5da882d7f78cd17d155ab3a24f145d7ddc2ad91e71f40f8c04e0312b615cb69c
+        image: ghcr.io/holos-run/kagent/controller:0.0.0-holos.20261030.e1696d8@sha256:1e1aee64e0484b92572fb1bb6fc66e5d538d3eb61019935b6ac98f763635178e
         imagePullPolicy: IfNotPresent
         name: controller
         ports:

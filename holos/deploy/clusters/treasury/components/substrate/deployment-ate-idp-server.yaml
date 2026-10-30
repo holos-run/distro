@@ -22,7 +22,7 @@ spec:
         - --actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json
         - --server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem
         - --issuer=https://idp.ate-system.svc
-        image: ghcr.io/holos-run/substrate/ate-idp-server@sha256:f93be95c1ee43fcbc619e6eb43d5392bef15c19d3fdf25e5d2251e28203c67b7
+        image: ghcr.io/holos-run/substrate/ate-idp-server@sha256:406d4e7bdfd07e9af8e826382f2d69ea3359257ba5ccad10ba783838718745cd
         livenessProbe:
           httpGet:
             path: /healthz

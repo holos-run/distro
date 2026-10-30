@@ -244,6 +244,22 @@ AteGateway: spiffeID: "spiffe://\(S.trustDomain)/ns/\(AteGateway.namespace)/sa/\
 // controller, by the principal its pod certificate authenticates as.
 let BootstrapOwners = [S.client.principal, Kagent.controller.spiffeID]
 
+// PreviewGates are the --preview gates ate-api-server runs with. Every ko
+// binary accepts the flag (internal/preview), and ate-setup appends
+// --preview=<gates> to every ko container (injectPreviewArg), empty when none
+// are enabled; here the flag goes only to the binary that reads the one gate
+// enabled, which is ate-api-server (cmd/ateapi).
+// PerTemplateSnapshotLocation lets an ActorTemplate's
+// snapshotConfig.storageLocation override the cluster --snapshot-location.
+// kagent sets that field on every template it creates, from the Harness's
+// required substrate.snapshotPolicy.location, and since upstream #3357 the
+// API server refuses the field while the gate is off, so kagent cannot run
+// without it. kagent's own installer enables the same gate
+// (go/core/pkg/install/plan.go). With it, an agent's snapshots go under the
+// Harness's location, s3://substrate/kagent/ on treasury, which the
+// location allowlist (#2784) accepts.
+let PreviewGates = ["PerTemplateSnapshotLocation"]
+
 // CredentialProvider is the bundled Kubernetes Secrets provider, ate-setup's
 // {"name":"k8s.io"}: the egress gateway's flags name it, its Service's
 // address and its serving certificate's name.
@@ -404,13 +420,20 @@ let Patches = [
 		patch: yaml.Marshal([{op: "replace", path: "/data/namespace-policy.yaml", value: NamespacePolicy}])
 	},
 
-	// ate-api-server: the bootstrap owners (setAPIServerAuthzArgs).
+	// ate-api-server: the bootstrap owners (setAPIServerAuthzArgs) and the
+	// preview gates (injectPreviewArg, PreviewGates). Its
+	// --egress-gateway-spiffe-id (setAPIServerEgressGatewayArgs) is not set:
+	// with no extra egress client ate-setup leaves the flag out too, and the
+	// default is atenet-egress's own ID.
 	(#AppendArgs & {
 		kind:      "Deployment"
 		name:      "ate-api-server"
 		index:     0
 		container: "ate-api-server"
-		args: ["--authz-bootstrap-owners=" + strings.Join(BootstrapOwners, ",")]
+		args: [
+			"--authz-bootstrap-owners=" + strings.Join(BootstrapOwners, ","),
+			"--preview=" + strings.Join(PreviewGates, ","),
+		]
 	}).out,
 	// Each workload's config hash (ConfigHashes).
 	for KIND, WORKLOADS in ConfigHashes for NAME, READS in WORKLOADS {
@@ -472,7 +495,9 @@ let Patches = [
 
 	// atenet-egress: the Envoy image, and the credential provider's flags
 	// on ext-proc, which ate-setup splices over a YAML comment that
-	// kustomize drops (patchAtenetEgressInject).
+	// kustomize drops (patchAtenetEgressInject), in emitEgressInjectFlags's
+	// order: each provider's name, address and server name, then the CA and
+	// client certificate every provider shares. One provider here.
 	(#ContainerPatch & {
 		kind:      "Deployment"
 		name:      "atenet-egress"
@@ -488,9 +513,9 @@ let Patches = [
 		args: [
 			"--credential-provider-name=\(CredentialProvider.name)",
 			"--credential-provider-address=\(CredentialProvider.address)",
+			"--credential-provider-server-name=\(CredentialProvider.serverName)",
 			"--credential-provider-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem",
 			"--credential-provider-client-cert=/run/podidentity.podcert.ate.dev/credential-bundle.pem",
-			"--credential-provider-server-name=\(CredentialProvider.serverName)",
 		]
 	}).out,
 

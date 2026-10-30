@@ -55,7 +55,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/atenet@sha256:92cb0ffb6b74cc30c9b559648d95500bf9f79ddd97b3067833d90b974342f6fa
+        image: ghcr.io/holos-run/substrate/atenet@sha256:eab33c963d7a6eb2a83647b13e1ef906ef02897362cebcbce1d933f88325f766
         livenessProbe:
           httpGet:
             path: /healthz
@@ -94,7 +94,7 @@ spec:
         - /usr/local/bin/envoy
         - -c
         - /etc/envoy/envoy.yaml
-        image: ghcr.io/holos-run/substrate/envoy-dataplane@sha256:e1016f18e8e30236cc0535a7eb9955a9f9892ed23044447d4c87f446a1dc6bf6
+        image: ghcr.io/holos-run/substrate/envoy-dataplane@sha256:590650c5db48cc88b4c363ab91dce076e15be4e76c6bbb83316068d44b6c553f
         lifecycle:
           preStop:
             exec:

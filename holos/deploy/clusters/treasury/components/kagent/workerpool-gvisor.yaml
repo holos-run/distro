@@ -7,4 +7,4 @@ spec:
   replicas: 0
   sandboxClasses:
   - name: gvisor
-  workerImage: ghcr.io/holos-run/substrate/ateworker-gvisor:v0.0.0-holos.20261028.475f49b@sha256:9f16968c56534b9fbf92ceb5853a9dafddfe3ff498edabe9ba6010fbcbb3ac23
+  workerImage: ghcr.io/holos-run/substrate/ateworker-gvisor:v0.0.0-holos.20261030.f475d8b@sha256:33b4e6dcd8d236063e44e5f3b92fbb6d85de470c6719f2643b5ffcb43a5bad68
