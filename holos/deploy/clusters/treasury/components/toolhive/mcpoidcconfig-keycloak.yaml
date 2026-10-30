@@ -1,0 +1,14 @@
+apiVersion: toolhive.stacklok.dev/v1beta1
+kind: MCPOIDCConfig
+metadata:
+    name: keycloak
+    namespace: toolhive
+spec:
+    inline:
+        caBundleRef:
+            configMapRef:
+                key: ca.crt
+                name: private-ca
+        issuer: https://keycloak.bank.internal/realms/holos
+        jwksAllowPrivateIP: true
+    type: inline

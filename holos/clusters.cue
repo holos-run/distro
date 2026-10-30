@@ -46,6 +46,16 @@ import "net"
 	// generates the cluster with.
 	serviceAccountIssuer: =~"^https://"
 
+	// apiServer is the address and port the API server listens on, the
+	// endpoints of the default/kubernetes Service, which a NetworkPolicy
+	// admitting a pod's egress to the API server names: the control plane
+	// runs no Cilium agent (interview Q33), so no selector reaches it.
+	// Recorded, not chosen, as serviceAccountIssuer is.
+	apiServer: {
+		address: string
+		port:    int | *6443
+	}
+
 	// The Kubernetes networks, as Talos configures them (KubeNetworkConfig
 	// in the control plane's machine config). Recorded here, not chosen
 	// here: Cilium allocates pod addresses from the node podCIDRs the
@@ -201,6 +211,7 @@ clusters: treasury: {
 	}
 	// The control plane endpoint, treasury-cp-1.
 	serviceAccountIssuer: "https://10.20.0.50:6443"
+	apiServer: address: "10.20.0.50"
 	// Every webhook answers through the gateway's webhooks listener, so the
 	// cluster enforces. A rebuild starts with this false (README.md,
 	// "Admission webhooks").

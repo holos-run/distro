@@ -1,0 +1,6 @@
+apiVersion: v2
+appVersion: 0.59.0
+description: A Helm chart for installing the ToolHive Operator CRDs into Kubernetes.
+name: toolhive-operator-crds
+type: application
+version: 0.59.0

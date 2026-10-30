@@ -304,6 +304,34 @@ holos: spec: artifacts: [(#HelmArtifact & {
 					hs.message = "Waiting for approver-policy"
 					return hs
 					"""
+
+				// ToolHive's MCPServer (components/toolhive), which Argo CD
+				// has no check for: Healthy once the operator has seen the
+				// current spec and reports it Ready, which it does once the
+				// proxy runner is ready; Degraded when it reports Failed, such
+				// as for a missing MCPOIDCConfig or an invalid Cedar policy;
+				// Suspended when scaled to zero; otherwise Progressing, so
+				// the root waits for the server rather than for the object.
+				"resource.customizations.health.toolhive.stacklok.dev_MCPServer": """
+					local hs = {}
+					if obj.status == nil or obj.status.observedGeneration == nil or obj.status.observedGeneration ~= obj.metadata.generation then
+					  hs.status = "Progressing"
+					  hs.message = "Waiting for the ToolHive operator"
+					  return hs
+					end
+					local phase = obj.status.phase
+					hs.message = obj.status.message or phase or ""
+					if phase == "Ready" then
+					  hs.status = "Healthy"
+					elseif phase == "Failed" then
+					  hs.status = "Degraded"
+					elseif phase == "Stopped" then
+					  hs.status = "Suspended"
+					else
+					  hs.status = "Progressing"
+					end
+					return hs
+					"""
 			}
 
 			// /platform/owners, the group the keycloak-realm component makes

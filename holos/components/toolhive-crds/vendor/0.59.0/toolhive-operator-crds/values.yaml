@@ -1,0 +1,6 @@
+# -- Custom resource definition (CRD) installation and retention settings.
+crds:
+  # -- Add the `helm.sh/resource-policy: keep` annotation to each CRD so Helm retains it when you uninstall the release.
+  keep: true
+  # -- Include the chart's CRDs in the Helm release for installation and upgrades.
+  install: true

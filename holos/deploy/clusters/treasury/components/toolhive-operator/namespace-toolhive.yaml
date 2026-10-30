@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: toolhive
+    pod-security.kubernetes.io/enforce: restricted
+  name: toolhive

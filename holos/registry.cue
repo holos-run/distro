@@ -188,6 +188,19 @@ registry: [
 	// cannot get a platform secret by itself. The Ceph key is the exception:
 	// bootstrap writes it with kubectl, before Argo CD.
 	{name: "secrets-manager"},
+	// toolhive-crds is ToolHive's CRDs, from its toolhive-operator-crds
+	// chart, which Argo CD neither prunes nor deletes; toolhive-operator is
+	// its operator, which watches them, in toolhive-system; and toolhive is
+	// the one MCP server, in its own namespace, with its OIDC and Cedar
+	// configs, NetworkPolicies and route (components/toolhive.cue). The MCP
+	// server needs Keycloak's realm, whose ID tokens it checks, the ingress
+	// Gateway and trust-manager's private-ca bundle, and nothing after
+	// them needs it. They come straight after secrets-manager, ahead of
+	// substrate, quay and kagent, so a bootstrap holding at any of their
+	// hand steps has ToolHive up already.
+	{name: "toolhive-crds"},
+	{name: "toolhive-operator"},
+	{name: "toolhive"},
 	// substrate is Agent Substrate's control plane, rendered from the fork's
 	// install tree in vendor/substrate (substrate.cue): its CRDs, the pod
 	// certificate controller, the API server, the IdP, the controller, the
