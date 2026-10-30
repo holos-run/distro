@@ -18,7 +18,7 @@ webhooks:
   - v1
   clientConfig:
     url: https://istiod.istio-system.webhooks.treasury.bank.internal:9443/validate
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: rev.validation.istio.io
   objectSelector:
     matchExpressions:
