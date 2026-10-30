@@ -598,15 +598,28 @@ entry in the registry, for its cluster:
   directory the `Application`s are rendered to. A component added to the
   registry gets its `Application` from the merge alone. Each `Application`'s
   sync wave is the component's index in the registry, and `argocd-cm` has
-  the health check for `Application`s that Argo CD dropped in 1.8: an
-  `Application` reports the health of its objects, `Missing` until they
-  exist. The waves order only the root creating the `Application`s at
-  bootstrap: it creates one, waits for it to report `Healthy`, then creates
-  the next. Once created, each `Application` polls `main` and syncs on its
-  own, so a later merge syncs the components it touches in parallel, and a
-  component whose dependency is not ready yet relies on its retry. The
-  `AppProject` is wave -1. `argocd-cm` also overrides Argo CD's health check
-  for `ExternalSecret`, for generated secrets (External Secrets, below).
+  the health check for `Application`s that Argo CD dropped in 1.8. Argo
+  CD's own health for an `Application` counts only the objects that exist,
+  so one that has created only its namespace is `Healthy`; the check is
+  `Healthy` only once the `Application` is also `Synced` to its spec's
+  source. Until then, and while its sync runs or retries, it is
+  `Progressing`, and a sync waits on a wave while anything in it is. It is
+  `Degraded` once its sync has ended with the component `Degraded`, or has
+  failed and left it `OutOfSync`, and a `Degraded` object fails the sync,
+  which then retries from the first wave. A component that is done but
+  never `Synced`, such as one with a diff that comes back after every sync,
+  holds the root with no timeout. The waves order the root's own syncs: at
+  bootstrap it creates one `Application`, waits for it to be `Synced` and
+  `Healthy`, then creates the next, and every later sync of the root, such
+  as a merge that adds a component, walks the same waves, so it creates the
+  new `Application` only once every component ahead of it is `Synced` and
+  `Healthy`. They do not order the components themselves: once created,
+  each `Application` polls `main` and syncs on its own, so a later merge
+  syncs the components it touches in parallel, and a component whose
+  dependency is not ready yet relies on its retry. The `AppProject` is
+  wave -1.
+  `argocd-cm` also overrides Argo CD's health check for `ExternalSecret`,
+  for generated secrets (External Secrets, below).
 - Every `Application` syncs automatically, with `prune` and `selfHeal`: a
   change made by hand is reverted, and an object the render no longer has is
   deleted. Pruning considers only objects carrying the `Application`'s
@@ -2190,7 +2203,8 @@ namespaces. They are the root of every pod identity, actor token and MITM
 certificate: ate-setup creates them as Secrets that Argo CD does not track,
 so it never prunes them, and that never pass through the Secrets Manager.
 Until they exist the pods that project them wait in ContainerCreating and
-the Application is Progressing; the kubelet retries within about two
+the Application is Progressing, and `Degraded` once its Deployments pass
+their ten-minute progress deadline; the kubelet retries within about two
 minutes of their creation. Each command creates only what is missing, so a
 second run changes nothing. ate-setup uses `KUBECONFIG`'s current context
 (`--context` to choose), and `go run` builds it, about a minute the first
@@ -2465,7 +2479,8 @@ kubectl ate get actor echo -a demo -o yaml | grep -A1 'snapshotUri: s3://substra
 
 The same pod under ServiceAccount `default` fails the handshake with
 `alert certificate unknown`. On a new cluster Argo CD reports the
-`substrate` Application Progressing until the key pools exist.
+`substrate` Application Progressing until the key pools exist, and
+`Degraded` if they still do not after ten minutes.
 
 ### The Substrate shim
 
@@ -2923,11 +2938,12 @@ nothing. It uses `kubectl`'s current context (or `-context`) and trusts the
 private root from the cluster's `private-ca` ConfigMap (or `-ca-file`)
 beside the system's; `-h` lists the rest.
 
-On a new cluster the root reaches `quay` next to last and waits there:
-the credential's `ExternalSecret` reports `SecretSyncedError`, and the
-Application `Degraded`, until the steps below. Quay itself comes up once
-the `Client` has delivered `quay-oidc`, `quay-db` is healthy and
-`rustfs-quay` is copied.
+On a new cluster the root reaches `quay` ahead of the projects and kagent
+and waits there: the credential's `ExternalSecret` reports
+`SecretSyncedError`, and the Application `Degraded`, until the steps below,
+so the root's sync fails at `quay` and retries (Bootstrap Argo CD,
+below). Quay itself comes up once the `Client` has delivered `quay-oidc`,
+`quay-db` is healthy and `rustfs-quay` is copied.
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
@@ -3291,10 +3307,10 @@ before it can sync anything, so a new cluster gets four components by hand: `cil
 `coredns`, `argocd` and the root `Application` with its `AppProject`. It
 also gets `management-namespaces` and the Ceph key in it (Storage, above),
 which no component renders. The root then creates every component's
-`Application` in registry order, waiting for each to report `Healthy` before
-the next, and takes over the hand-applied components as it goes. Apply
-from a checkout of `main`, since that is what Argo CD will sync, and from this
-directory:
+`Application` in registry order, waiting for each to be `Synced` and
+`Healthy` before the next, and takes over the hand-applied components as it
+goes. Apply from a checkout of `main`, since that is what Argo CD will sync,
+and from this directory:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
@@ -3356,24 +3372,34 @@ kubectl -n argocd rollout restart deploy/argocd-server
 The root then waits on `substrate` until its key pools exist: once its
 namespaces are synced, run the key pool commands under Bringing Substrate
 up (Substrate, above). Its pods that project the pools wait in
-ContainerCreating until then, so the Application stays Progressing.
+ContainerCreating until then, so the Application stays Progressing, and
+the root holds there without spending a retry. Run them within ten
+minutes: a Deployment that has not progressed by then passes its progress
+deadline and reports `Degraded`, and once `substrate`'s own sync has ended,
+that fails the root's sync and starts its retries (below).
 
-The root then waits on `quay`, next to last, whose credential is a platform
-secret made by `cmd/quay-bootstrap` against the running Quay: once Quay's
-pod is up, run the steps under Bringing Quay up, and patch the workers'
-trust and restart them with `talosvm restart` (Trusting the root on the
-workers), both under Quay, above.
+The root then waits on `quay`, ahead of the projects and kagent, whose
+credential is a platform secret made by `cmd/quay-bootstrap` against the
+running Quay: once Quay's pod is up, run the steps under Bringing Quay up,
+and patch the workers' trust and restart them with `talosvm restart`
+(Trusting the root on the workers), both under Quay, above. Until then the
+credential's `ExternalSecret`, and so `quay`, is `Degraded`: the root's sync
+fails at `quay` and retries, and creates nothing after it until `quay` is
+`Healthy`.
 
 Last comes `kagent`, which stays `Degraded` until the Anthropic key is in
 (Adding the Anthropic key, under kagent, above); the platform secret can be
 written before `kagent` exists. The root's sync retries 10 times, backing
 off from 5 seconds to 3 minutes. That is about 17 minutes for the whole
 bootstrap, shared by every hand step that leaves an `Application`
-`Degraded`: Quay's, the workers' trust, then kagent's key. If the retries
-run out, the root stays `OutOfSync` until the next commit to `main`, and the
-`Application`s after the one it stopped at are not created. Once the hand
-steps are done, sync the root again with the automated policy's prune and
-retry. This needs no `argocd` CLI:
+`Degraded`: Quay's, the workers' trust, then kagent's key. A step that
+leaves one `Progressing`, as the key pools do for their first ten minutes,
+spends none. Quay takes minutes to come up before its steps can start, so
+the retries often run out at `quay`. If they run out, the root stays
+`OutOfSync` until the next commit to `main`, and the `Application`s after
+the one it stopped at are not created. Once the hand steps are done,
+kagent's key included, sync the root again with the automated policy's
+prune and retry. This needs no `argocd` CLI:
 
 ```sh
 kubectl -n argocd patch app argocd-apps --type merge -p '{"operation":{

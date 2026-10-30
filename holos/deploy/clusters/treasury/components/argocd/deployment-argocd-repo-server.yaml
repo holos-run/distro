@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/cm: c6072551ed7ef4757514aaa5da6b78d527226722be8008979d3797a64ee16815
+        checksum/cm: 90c0a80203304f5d01fb721b459fa5319f74a748e8ce16fa6f7d5ffe0b960669
         checksum/cmd-params: 4534263be3c43fdb81611737a7f36746d398618f9ff7eea03f5fe609540d2f4a
       labels:
         app.kubernetes.io/component: repo-server
