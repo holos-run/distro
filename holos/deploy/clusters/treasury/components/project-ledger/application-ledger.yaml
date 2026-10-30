@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+    labels:
+        holos.run/project: ledger
+    name: ledger
+    namespace: argocd
+spec:
+    destination:
+        namespace: ledger
+        server: https://kubernetes.default.svc
+    project: ledger
+    source:
+        path: holos/deploy/clusters/treasury/projects/ledger
+        repoURL: https://github.com/holos-run/distro.git
+        targetRevision: main
+    syncPolicy:
+        automated:
+            prune: true
+            selfHeal: true
+        retry:
+            backoff:
+                duration: 5s
+                factor: 2
+                maxDuration: 3m
+            limit: 10
+        syncOptions:
+            - ServerSideApply=true

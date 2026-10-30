@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    labels:
+        holos.run/project: ledger
+    name: bob
+    namespace: ledger
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: bob@bank.internal
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    username: bob

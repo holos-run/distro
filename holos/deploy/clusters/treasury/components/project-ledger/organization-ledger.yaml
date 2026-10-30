@@ -1,0 +1,26 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    labels:
+        holos.run/project: ledger
+    name: ledger
+    namespace: ledger
+spec:
+    deletionPolicy: Orphan
+    email: quay+ledger@bank.internal
+    name: ledger
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin
+        - name: projectowners
+          oidcGroup: /projects/ledger/roles/owner
+          role: admin
+        - name: projecteditors
+          oidcGroup: /projects/ledger/roles/editor
+          repositoryPermission: write
+          role: creator
+        - name: projectviewers
+          oidcGroup: /projects/ledger/roles/viewer
+          repositoryPermission: read
+          role: member
