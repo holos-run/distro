@@ -10,7 +10,7 @@ import (
 let Patches = talos
 
 // `cue cmd talos`, run in this directory, writes every cluster's Talos patches
-// (talos.cue) to providers/proxmox/talos/clusters/<cluster>/. Run it with
+// (talos.cue) to providers/talos/clusters/<cluster>/. Run it with
 // every render (README.md, "Render") and commit the result.
 command: talos: {
 	for K, T in Patches {

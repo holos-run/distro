@@ -333,7 +333,7 @@ else
 fi
 
 # talosvm writes this MTU into every node's network snippet (VnetMTU in
-# internal/talosvm/network.go), so the zone must carry it. An EVPN zone's MTU
+# providers/proxmox/network.go), so the zone must carry it. An EVPN zone's MTU
 # is set on the zone; unset, Proxmox derives a smaller one.
 if get "/cluster/sdn/zones/$ZONE" >"$tmp/zone.json"; then
 	mtu=$(json 'print $d->{mtu} // ""' <"$tmp/zone.json")

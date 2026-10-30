@@ -1,4 +1,4 @@
-package talosvm
+package talos
 
 import (
 	"bytes"
@@ -6,18 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/netip"
-	"net/url"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
-	"go.holos.run/distro/providers/proxmox/internal/pve"
+	"go.holos.run/distro/providers/infra"
 )
 
 // Restart modes.
@@ -26,10 +23,10 @@ const (
 	// enough for any change inside the guest, such as containerd reading a
 	// new trust store.
 	ModeReboot = "reboot"
-	// ModePowerCycle shuts the VM down and starts it again through the
-	// Proxmox API, which starts a new QEMU process. A changed VM config,
-	// such as new memory, applies only this way: a guest reboot keeps the
-	// running process and the hardware it was started with.
+	// ModePowerCycle shuts the VM down and starts it again through compute,
+	// which on Proxmox starts a new QEMU process. A changed VM config, such
+	// as new memory, applies only this way: a guest reboot keeps the running
+	// process and the hardware it was started with.
 	ModePowerCycle = "power-cycle"
 )
 
@@ -40,7 +37,7 @@ const (
 	// three minutes.
 	DefaultRestartTimeout = 15 * time.Minute
 	// DefaultShutdownTimeout is how long power-cycle lets the guest shut
-	// down cleanly before Proxmox stops it hard.
+	// down cleanly before compute stops it hard.
 	DefaultShutdownTimeout = 5 * time.Minute
 
 	restartPoll = 5 * time.Second
@@ -151,7 +148,7 @@ type RestartOptions struct {
 	// available again.
 	Timeout time.Duration
 	// ShutdownTimeout is how long power-cycle lets the guest shut down
-	// before Proxmox stops it hard.
+	// before compute stops it hard.
 	ShutdownTimeout time.Duration
 	// RequireDaemonSets are DaemonSets, as namespace/name, a worker must
 	// have a Ready pod of before its restart and again before it is
@@ -403,7 +400,7 @@ func orphans(pods []kubePod, node string) (out []kubePod, reasons []string) {
 
 // restartNode is one node to restart.
 type restartNode struct {
-	vm      pve.Resource
+	vm      infra.VM
 	role    string
 	address string // the Talos API address
 
@@ -518,12 +515,12 @@ func (x *restarter) checkNodes(ctx context.Context) (map[string]kubeNode, error)
 
 // targets returns the VMs to restart: the ones named, in that order, or
 // every worker by name.
-func (x *restarter) targets(owned []pve.Resource) ([]pve.Resource, error) {
+func (x *restarter) targets(owned []infra.VM) ([]infra.VM, error) {
 	cluster := x.r.Config.Cluster
 	if len(x.o.Nodes) == 0 {
-		var out []pve.Resource
+		var out []infra.VM
 		for _, v := range owned {
-			if RoleOf(v) == RoleWorker {
+			if v.Label(LabelRole) == RoleWorker {
 				out = append(out, v)
 			}
 		}
@@ -532,10 +529,10 @@ func (x *restarter) targets(owned []pve.Resource) ([]pve.Resource, error) {
 		}
 		return out, nil
 	}
-	var out []pve.Resource
+	var out []infra.VM
 	var unknown []string
 	for _, n := range x.o.Nodes {
-		i := slices.IndexFunc(owned, func(v pve.Resource) bool { return v.Name == n })
+		i := slices.IndexFunc(owned, func(v infra.VM) bool { return v.Name == n })
 		if i < 0 {
 			unknown = append(unknown, n)
 			continue
@@ -553,14 +550,18 @@ func (x *restarter) targets(owned []pve.Resource) ([]pve.Resource, error) {
 }
 
 // talosAddress picks the address talosctl reaches the node at: the VM's own
-// static address, from its config or network snippet, and otherwise the
-// Kubernetes node's InternalIP. When both are known they must agree, which
-// also catches a kubeconfig of another cluster whose nodes happen to have
-// the same names.
-func talosAddress(vmAddr string, n kubeNode) (string, error) {
+// static address, as compute reports it from its config or network snippet,
+// and otherwise the Kubernetes node's InternalIP on the VM's subnet. When
+// both are known they must agree, which also catches a kubeconfig of another
+// cluster whose nodes happen to have the same names.
+func talosAddress(nic infra.NIC, n kubeNode) (string, error) {
+	vmAddr := ""
+	if nic.Address.IsValid() {
+		vmAddr = nic.Address.Addr().String()
+	}
 	nodeAddr := ""
 	for _, a := range n.Status.Addresses {
-		if ip, err := netip.ParseAddr(a.Address); a.Type == "InternalIP" && err == nil && NodeSubnet.Contains(ip) {
+		if ip, err := netip.ParseAddr(a.Address); a.Type == "InternalIP" && err == nil && nic.Subnet.Contains(ip) {
 			nodeAddr = a.Address
 			break
 		}
@@ -573,7 +574,7 @@ func talosAddress(vmAddr string, n kubeNode) (string, error) {
 	case nodeAddr != "":
 		return nodeAddr, nil
 	}
-	return "", fmt.Errorf("node %s: no address in %s in the VM's config, its snippet or the Kubernetes node", n.Metadata.Name, NodeSubnet)
+	return "", fmt.Errorf("node %s: no address in %s in the VM's config, its snippet or the Kubernetes node", n.Metadata.Name, nic.Subnet)
 }
 
 // snapshot reads, without changing anything, what the node's restart waits
@@ -771,20 +772,14 @@ func (x *restarter) steps(t *restartNode) []restartStep {
 			},
 		})
 	} else {
-		shutdown, start := powerCycleCalls(t.vm, x.o.ShutdownTimeout)
+		// Compute's error says what state a failed power cycle leaves the
+		// VM in, since a rerun refuses a stopped VM.
+		compute := x.r.Compute
 		steps = append(steps, restartStep{
-			what: fmt.Sprintf("power-cycle VM %s (vmid %d on %s) through Proxmox", name, t.vm.VMID, t.vm.Node),
-			cmds: []string{shutdown.String(), start.String()},
+			what: fmt.Sprintf("power-cycle VM %s (%s on %s) through %s", name, t.vm.ID, t.vm.Zone, compute),
+			cmds: compute.PowerCycleCalls(t.vm, x.o.ShutdownTimeout),
 			do: func(ctx context.Context) error {
-				// A rerun refuses a stopped VM, so either failure
-				// says to start it by hand.
-				if err := x.r.call(ctx, shutdown); err != nil {
-					return fmt.Errorf("%w; the VM may still be shutting down: once it is stopped, start it in Proxmox", err)
-				}
-				if err := x.r.call(ctx, start); err != nil {
-					return fmt.Errorf("%w; the VM is stopped: start it in Proxmox", err)
-				}
-				return nil
+				return compute.PowerCycle(ctx, x.r.Config.Cluster, t.vm, x.o.ShutdownTimeout)
 			},
 		})
 	}
@@ -839,31 +834,6 @@ func (x *restarter) steps(t *restartNode) []restartStep {
 	}
 	steps = append(steps, restartStep{what: what, do: func(ctx context.Context) error { return x.waitWorkloads(ctx, t.workloads) }})
 	return steps
-}
-
-// powerCycleCalls are the two Proxmox calls of a power cycle. It is a
-// shutdown rather than a hard stop: Talos, through the guest agent, stops
-// its kubelet and unmounts its volumes first, so pods end as they do on a
-// reboot and no Ceph volume is cut off mid-write. forceStop makes Proxmox
-// stop the VM hard if the guest has not shut down within the timeout, so the
-// VM always ends up stopped, and then started.
-func powerCycleCalls(vm pve.Resource, timeout time.Duration) (shutdown, start Call) {
-	base := "/nodes/" + url.PathEscape(vm.Node) + "/qemu/" + strconv.Itoa(vm.VMID)
-	shutdown = Call{
-		Method:  http.MethodPost,
-		Path:    base + "/status/shutdown",
-		Params:  url.Values{"timeout": {strconv.Itoa(int(timeout / time.Second))}, "forceStop": {"1"}},
-		What:    fmt.Sprintf("shut down %s vmid %d on %s", vm.Name, vm.VMID, vm.Node),
-		Timeout: timeout + time.Minute,
-	}
-	start = Call{
-		Method:  http.MethodPost,
-		Path:    base + "/status/start",
-		Params:  url.Values{},
-		What:    fmt.Sprintf("start %s vmid %d on %s", vm.Name, vm.VMID, vm.Node),
-		Timeout: taskTimeout,
-	}
-	return shutdown, start
 }
 
 func (x *restarter) waitBack(ctx context.Context, t *restartNode) error {
@@ -994,7 +964,7 @@ func (x *restarter) waitWorkloads(ctx context.Context, want []string) error {
 // through PodDisruptionBudgets, which the shutdown does not honor; whether to
 // add one is left for later.
 //
-// Before anything changes it checks the token's privileges, that every
+// Before anything changes it checks compute's credentials, that every
 // target is a running VM of the cluster with a Kubernetes node of the same
 // name and a Talos address, that every node is Ready except a control plane,
 // which may be NotReady by design, and that each worker has a Ready pod of
@@ -1007,20 +977,20 @@ func (x *restarter) waitWorkloads(ctx context.Context, want []string) error {
 // the error says so and what was not restarted.
 //
 // The command line checks the cluster name and o.Validate before reading the
-// Proxmox credentials; Restart takes both as checked.
+// compute provider's credentials; Restart takes both as checked.
 func (r *Runner) Restart(ctx context.Context, o RestartOptions) error {
 	if o.Tools == nil {
 		return errors.New("restart: no kubectl and talosctl to run")
 	}
 	x := &restarter{r: r, o: o}
-	if err := r.Check(ctx); err != nil {
+	if err := r.Compute.Check(ctx); err != nil {
 		return err
 	}
-	guests, err := r.PVE.VMs(ctx)
+	owned, err := r.Compute.List(ctx, r.Config.Cluster)
 	if err != nil {
 		return err
 	}
-	vms, err := x.targets(OwnedVMs(guests, r.Config.Cluster))
+	vms, err := x.targets(owned)
 	if err != nil {
 		return err
 	}
@@ -1031,7 +1001,7 @@ func (r *Runner) Restart(ctx context.Context, o RestartOptions) error {
 	var targets []*restartNode
 	var errs []error
 	for _, v := range vms {
-		t := &restartNode{vm: v, role: RoleOf(v)}
+		t := &restartNode{vm: v, role: v.Label(LabelRole)}
 		n, ok := kn[v.Name]
 		switch {
 		case v.Status != "running":
@@ -1041,12 +1011,8 @@ func (r *Runner) Restart(ctx context.Context, o RestartOptions) error {
 			errs = append(errs, fmt.Errorf("VM %s has no Kubernetes node of the same name; is KUBECONFIG this cluster's?", v.Name))
 			continue
 		}
-		addr, err := r.vmAddress(ctx, v)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if t.address, err = talosAddress(addr, n); err != nil {
+		var err error
+		if t.address, err = talosAddress(v.NIC, n); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -1077,7 +1043,7 @@ func (r *Runner) Restart(ctx context.Context, o RestartOptions) error {
 				return fmt.Errorf("%w; not restarted: %s", err, strings.Join(names[i:], ", "))
 			}
 		}
-		r.logf("== %s (%d/%d): %s, vmid %d on %s, Talos at %s", t.name(), i+1, len(targets), t.role, t.vm.VMID, t.vm.Node, t.address)
+		r.logf("== %s (%d/%d): %s, %s on %s, Talos at %s", t.name(), i+1, len(targets), t.role, t.vm.ID, t.vm.Zone, t.address)
 		steps := x.steps(t)
 		if r.DryRun {
 			for j, s := range steps {

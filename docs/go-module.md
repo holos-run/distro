@@ -4,7 +4,7 @@ The distro is the Go module `go.holos.run/distro`. Its programs run from a
 checkout of the repository root with `go run`, for example:
 
 ```sh
-go run ./providers/proxmox/cmd/<name>
+go run ./providers/talos/cmd/<name>
 ```
 
 The module path is under the project's own domain, so renaming or moving the
@@ -49,5 +49,5 @@ Check a deployment, or a preview deployment's URL in place of the host:
 
 ```sh
 curl -sL 'https://go.holos.run/distro?go-get=1' | grep go-import
-curl -s 'https://go.holos.run/distro/providers/proxmox?go-get=1' | grep go-import
+curl -s 'https://go.holos.run/distro/providers/talos?go-get=1' | grep go-import
 ```

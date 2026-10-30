@@ -6,7 +6,7 @@ import "strings"
 // told not to, but its KubeCoreDNSConfig sets only enabled and image, and
 // talosctl upgrade-k8s re-applies Talos's own Corefile. The Corefile is
 // platform policy, so the platform owns CoreDNS: the control plane patch
-// (providers/proxmox/talos/patches/controlplane.yaml) disables Talos's, and
+// (providers/talos/patches/controlplane.yaml) disables Talos's, and
 // this component deploys it from the CoreDNS project's chart, as the same
 // kube-dns Service at the address every kubelet was given.
 //

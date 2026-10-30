@@ -22,7 +22,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 **talosvm**
 : The program that makes, resizes and restarts the cluster's Proxmox VMs,
-  `go run ./providers/proxmox/cmd/talosvm`.
+  `go run ./providers/talos/cmd/talosvm`. It wires the Proxmox provider
+  (`providers/proxmox`) into the Talos layer (`providers/talos`).
 
 **private root**, **private CA**
 : The cluster's own certificate authority, `Holos treasury root CA`. The `private-ca` ClusterIssuer

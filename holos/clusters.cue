@@ -33,7 +33,7 @@ import "net"
 	site: #Site
 
 	// kubernetesVersion is the version Talos runs, pinned in
-	// providers/proxmox/talos/cluster.sh. Charts see it as
+	// providers/talos/cluster.sh. Charts see it as
 	// Capabilities.KubeVersion.
 	kubernetesVersion: string | *"1.37.1"
 
@@ -42,7 +42,7 @@ import "net"
 	// gives it. Talos sets it to the control plane endpoint, not the in-cluster
 	// https://kubernetes.default.svc, so a component that verifies those
 	// tokens itself, as Substrate's API server does, is told it here. Recorded,
-	// not chosen: it is the endpoint providers/proxmox/talos/cluster.sh
+	// not chosen: it is the endpoint providers/talos/cluster.sh
 	// generates the cluster with.
 	serviceAccountIssuer: =~"^https://"
 

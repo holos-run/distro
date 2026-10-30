@@ -1,4 +1,4 @@
-package talosvm
+package talos
 
 import (
 	"bytes"
@@ -13,12 +13,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"go.holos.run/distro/providers/infra"
 )
 
 // fakeNode is one node of fakeCluster.
 type fakeNode struct {
 	name, addr  string
-	vmid        int
 	cp          bool
 	broken      bool // NotReady with no restart involved
 	cordoned    bool
@@ -47,8 +48,8 @@ type fakeNode struct {
 // refused pod fails NodeShutdown, one container is lost, the boot ID changes
 // only once it is back, it reads NotReady and its DaemonSet pods unready for
 // a few polls, and its Deployments and StatefulSets are unavailable for a
-// few polls. It records every command, and the fake Proxmox's calls, in one
-// log.
+// few polls. It records every command, and the fake compute's power cycles,
+// in one log.
 type fakeCluster struct {
 	t     *testing.T
 	mu    sync.Mutex
@@ -116,9 +117,9 @@ var treasuryWorkers = []string{"treasury-general-1", "treasury-general-2", "trea
 
 func newFakeCluster(t *testing.T) *fakeCluster {
 	c := &fakeCluster{t: t, nodes: map[string]*fakeNode{}, unavailable: map[string]int{}}
-	c.nodes["treasury-cp-1"] = &fakeNode{name: "treasury-cp-1", addr: "10.20.0.50", vmid: 104, cp: true}
+	c.nodes["treasury-cp-1"] = &fakeNode{name: "treasury-cp-1", addr: "10.20.0.50", cp: true}
 	for i, n := range treasuryWorkers {
-		c.nodes[n] = &fakeNode{name: n, addr: fmt.Sprintf("10.20.0.%d", 51+i), vmid: 105 + i}
+		c.nodes[n] = &fakeNode{name: n, addr: fmt.Sprintf("10.20.0.%d", 51+i)}
 		c.pods = append(c.pods,
 			runningPod("kube-system", "cilium-"+n, n, owned("DaemonSet", "cilium")),
 			runningPod("istio-system", "ztunnel-"+n, n, owned("DaemonSet", "ztunnel")))
@@ -393,20 +394,21 @@ func (c *fakeCluster) Talosctl(ctx context.Context, args ...string) ([]byte, err
 	return nil, errors.New("not faked: " + cmd)
 }
 
-// pveHook makes the fake Proxmox's power calls act on the cluster.
-func (c *fakeCluster) pveHook(call string) {
+// computeHook makes the fake compute's power cycles act on the cluster.
+func (c *fakeCluster) computeHook(half string, vm infra.VM) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.record("proxmox " + call)
-	for _, n := range c.nodes {
-		base := "/qemu/" + strconv.Itoa(n.vmid) + "/status/"
-		switch {
-		case strings.HasSuffix(call, base+"shutdown"):
-			c.shutDown(n)
-			n.down = true
-		case strings.HasSuffix(call, base+"start"):
-			c.bootUp(n)
-		}
+	c.record("compute " + half + " " + vm.Name)
+	n := c.nodes[vm.Name]
+	if n == nil {
+		return
+	}
+	switch half {
+	case "shutdown":
+		c.shutDown(n)
+		n.down = true
+	case "start":
+		c.bootUp(n)
 	}
 }
 
@@ -418,22 +420,24 @@ func (c *fakeCluster) collapsed() []string {
 	return slices.Compact(slices.Clone(c.log))
 }
 
-// restartFixture is a treasury cluster in the fake Proxmox, whose VMs are
-// the fake cluster's nodes. general-3 has no address in its VM config, so
-// its Talos address comes from the Kubernetes node.
-func restartFixture(t *testing.T) (*Runner, *bytes.Buffer, *fakePVE, *fakeCluster) {
+// restartFixture is a treasury cluster in the fake compute, whose VMs are
+// the fake cluster's nodes. Compute reports no address for general-3, as
+// Proxmox does without the snippets mount, so its Talos address comes from
+// the Kubernetes node.
+func restartFixture(t *testing.T) (*Runner, *bytes.Buffer, *fakeCompute, *fakeCluster) {
 	t.Helper()
-	f := newFake()
+	f := newFakeCompute("treasury")
 	kc := newFakeCluster(t)
-	f.hook = kc.pveHook
-	cp := res(104, "treasury-cp-1", "r620a", "talosvm;talosvm-cluster-treasury;talosvm-role-controlplane")
-	f.vms = append(f.vms, cp)
-	f.configs[104] = map[string]string{"ipconfig0": "ip=10.20.0.50/32,gw=10.20.0.1"}
+	f.hook = kc.computeHook
+	f.add("treasury-cp-1", "r620a", "10.20.0.50", infra.Size{Cores: 2, MemoryMiB: 8192}, infra.Label{Key: LabelRole, Value: RoleControlPlane})
+	zones := []string{"r620b", "r620c", "r620a"}
 	for i, n := range treasuryWorkers {
-		f.vms = append(f.vms, res(105+i, n, garageNodes[(i+1)%3], "talosvm;talosvm-cluster-treasury;talosvm-role-worker;talosvm-pool-general"))
+		addr := ""
 		if i < 2 {
-			f.configs[105+i] = map[string]string{"ipconfig0": fmt.Sprintf("ip=10.20.0.%d/32,gw=10.20.0.1", 51+i)}
+			addr = fmt.Sprintf("10.20.0.%d", 51+i)
 		}
+		f.add(n, zones[i], addr, infra.Size{Cores: 4, MemoryMiB: 16384},
+			infra.Label{Key: LabelRole, Value: RoleWorker}, infra.Label{Key: LabelPool, Value: "general"})
 	}
 	r, out := newRunner(t, f, treasury())
 	return r, out, f, kc
@@ -507,29 +511,28 @@ func TestRestartOrder(t *testing.T) {
 				t.Fatalf("Restart: %v\n%s", err, out)
 			}
 			t.Log(out)
-			restart := func(addr string, vmid int, host string) []string {
+			restart := func(node, addr string) []string {
 				if mode == ModeReboot {
 					return []string{"talosctl -n " + addr + " reboot --wait=false"}
 				}
-				base := fmt.Sprintf("proxmox POST /nodes/%s/qemu/%d/status/", host, vmid)
-				return []string{base + "shutdown", base + "start"}
+				return []string{"compute shutdown " + node, "compute start " + node}
 			}
 			want := slices.Concat(
 				[]string{"kubectl get nodes -o json"},
 				snapshotLog(g1, true, true), snapshotLog(g2, true, true), snapshotLog(g3, false, false),
-				nodeLog(g1, restart("10.20.0.51", 105, "r620b"), []string{
+				nodeLog(g1, restart(g1, "10.20.0.51"), []string{
 					del("default", "evicted-1", "csu-"+g1),
 					del("keycloak", "keycloak-0"),
 					del("kube-system", "cilium-operator-abc-1", "cilium-operator-abc-"+g1),
 				}, true),
 				[]string{"kubectl get nodes -o json"}, snapshotLog(g2, true, true),
-				nodeLog(g2, restart("10.20.0.52", 106, "r620c"), []string{
+				nodeLog(g2, restart(g2, "10.20.0.52"), []string{
 					del("default", "csu-"+g2),
 					del("kube-system", "cilium-operator-abc-"+g2),
 					del("quay", "quay-abc-1"),
 				}, true),
 				[]string{"kubectl get nodes -o json"}, snapshotLog(g3, false, false),
-				nodeLog(g3, restart("10.20.0.53", 107, "r620a"), []string{
+				nodeLog(g3, restart(g3, "10.20.0.53"), []string{
 					del("default", "csu-"+g3),
 					del("kube-system", "cilium-operator-abc-"+g3),
 				}, false),
@@ -538,11 +541,10 @@ func TestRestartOrder(t *testing.T) {
 				t.Errorf("commands =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 			}
 			if mode == ModePowerCycle {
-				// A shutdown with a hard stop after the timeout, not a
-				// stop: the guest gets to shut down cleanly.
-				form := f.forms[slices.Index(f.calls, "POST /nodes/r620b/qemu/105/status/shutdown")]
-				if form.Get("forceStop") != "1" || form.Get("timeout") != "1" {
-					t.Errorf("shutdown form = %v", form)
+				// The guest gets the shutdown timeout to shut down
+				// cleanly.
+				if !slices.Contains(f.log, "power-cycle treasury-general-1 within 1s") {
+					t.Errorf("power cycles = %v", f.log)
 				}
 			}
 			// Nothing Failed is left but the Job's pod and the pod
@@ -611,7 +613,7 @@ func TestPodIdentitySince(t *testing.T) {
 }
 
 // A dry run reads and prints every node's steps, in order, and changes
-// nothing: no cordon, no talosctl, no Proxmox call.
+// nothing: no cordon, no talosctl, no power cycle.
 func TestRestartDryRun(t *testing.T) {
 	for _, mode := range []string{ModeReboot, ModePowerCycle} {
 		r, out, f, kc := restartFixture(t)
@@ -625,18 +627,18 @@ func TestRestartDryRun(t *testing.T) {
 				t.Errorf("%s: dry run ran %s", mode, c)
 			}
 		}
-		if len(f.calls) != 0 {
-			t.Errorf("%s: dry run sent %v", mode, f.calls)
+		if len(f.log) != 0 {
+			t.Errorf("%s: dry run changed %v", mode, f.log)
 		}
 		restart := "  2/6 reboot Talos on treasury-general-1\n      talosctl -n 10.20.0.51 reboot --wait=false\n"
 		if mode == ModePowerCycle {
-			restart = "  2/6 power-cycle VM treasury-general-1 (vmid 105 on r620b) through Proxmox\n" +
-				"      POST /api2/json/nodes/r620b/qemu/105/status/shutdown\n          forceStop=1\n          timeout=1\n" +
-				"      POST /api2/json/nodes/r620b/qemu/105/status/start\n"
+			restart = "  2/6 power-cycle VM treasury-general-1 (id 105 on r620b) through the fake\n" +
+				"      shut down id 105 on r620b within 1s\n" +
+				"      start id 105 on r620b\n"
 		}
 		want := []string{
 			"restart treasury in mode " + mode + ", one at a time: treasury-general-1, treasury-general-2, treasury-general-3",
-			"== treasury-general-1 (1/3): worker, vmid 105 on r620b, Talos at 10.20.0.51",
+			"== treasury-general-1 (1/3): worker, id 105 on r620b, Talos at 10.20.0.51",
 			"  1/6 cordon treasury-general-1\n      kubectl annotate node treasury-general-1 talosvm.holos.run/cordoned=true --overwrite\n      kubectl cordon treasury-general-1\n",
 			restart,
 			"  3/6 wait for treasury-general-1 to boot again",
@@ -645,7 +647,7 @@ func TestRestartDryRun(t *testing.T) {
 			"  6/6 wait for Deployment kube-system/cilium-operator, StatefulSet keycloak/keycloak to be available",
 			"== treasury-general-2 (2/3)",
 			"  6/6 wait for Deployment quay/quay to be available",
-			"== treasury-general-3 (3/3): worker, vmid 107 on r620a, Talos at 10.20.0.53",
+			"== treasury-general-3 (3/3): worker, id 107 on r620a, Talos at 10.20.0.53",
 			"  6/6 no Deployment or StatefulSet had a pod on treasury-general-3",
 			"dry run: restarted none of these 3 nodes",
 		}
@@ -717,29 +719,25 @@ func TestRestartFailedRebootIsRerun(t *testing.T) {
 	}
 }
 
-// A Proxmox shutdown or start that fails stops the run there, and the error
-// says to start the VM by hand, since a rerun refuses a stopped VM.
-func TestRestartProxmoxFailure(t *testing.T) {
-	for _, tc := range []struct{ call, want string }{
-		{"/status/shutdown", "the VM may still be shutting down: once it is stopped, start it in Proxmox"},
-		{"/status/start", "the VM is stopped: start it in Proxmox"},
-	} {
+// A power cycle that fails in either half stops the run there, with
+// compute's error, which says what state the VM is left in.
+func TestRestartPowerCycleFailure(t *testing.T) {
+	for _, half := range []string{"shutdown", "start"} {
 		r, _, f, kc := restartFixture(t)
-		f.failCall = tc.call
+		f.failHalf = half
 		err := r.Restart(context.Background(), restartOpts(kc, ModePowerCycle))
 		for _, w := range []string{
 			"treasury-general-1, step 2/6 (power-cycle VM treasury-general-1",
-			"500 Internal Server Error",
-			tc.want,
+			"the fake's " + half + " failed",
 			"treasury-general-1 is left cordoned",
 			"not restarted: treasury-general-1, treasury-general-2, treasury-general-3",
 		} {
 			if err == nil || !strings.Contains(err.Error(), w) {
-				t.Errorf("%s: Restart err = %v, want it to say %q", tc.call, err, w)
+				t.Errorf("%s: Restart err = %v, want it to say %q", half, err, w)
 			}
 		}
-		if c := kc.collapsed(); c[len(c)-1] != "proxmox POST /nodes/r620b/qemu/105"+tc.call {
-			t.Errorf("%s: ran %s after the failed call", tc.call, c[len(c)-1])
+		if c := kc.collapsed(); c[len(c)-1] != "compute "+half+" treasury-general-1" {
+			t.Errorf("%s: ran %s after the failed power cycle", half, c[len(c)-1])
 		}
 	}
 }
@@ -753,20 +751,20 @@ func TestRestartRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		nodes []string
-		edit  func(*fakePVE, *fakeCluster)
+		edit  func(*fakeCompute, *fakeCluster)
 		want  string
 	}{
-		{"worker NotReady", nil, func(_ *fakePVE, c *fakeCluster) { c.nodes["treasury-general-3"].broken = true },
+		{"worker NotReady", nil, func(_ *fakeCompute, c *fakeCluster) { c.nodes["treasury-general-3"].broken = true },
 			"refusing to restart while nodes are not Ready: treasury-general-3 (only a control plane may be NotReady)"},
 		{"unknown node", []string{"treasury-general-1", "treasury-general-9"}, nil, "not VMs of cluster treasury: treasury-general-9"},
 		{"tenant VM", []string{"jeffsbox"}, nil, "not VMs of cluster treasury: jeffsbox"},
-		{"no ztunnel", nil, func(_ *fakePVE, c *fakeCluster) {
+		{"no ztunnel", nil, func(_ *fakeCompute, c *fakeCluster) {
 			c.pods = slices.DeleteFunc(c.pods, func(p kubePod) bool { return p.Metadata.Name == "ztunnel-treasury-general-3" })
 		}, "worker treasury-general-3 has no Ready pod of DaemonSet istio-system/ztunnel"},
-		{"address mismatch", nil, func(_ *fakePVE, c *fakeCluster) { c.nodes["treasury-general-1"].addr = "10.20.0.61" },
+		{"address mismatch", nil, func(_ *fakeCompute, c *fakeCluster) { c.nodes["treasury-general-1"].addr = "10.20.0.61" },
 			"the VM's address is 10.20.0.51 but the Kubernetes node's InternalIP is 10.20.0.61; is KUBECONFIG this cluster's?"},
-		{"stopped VM", nil, func(f *fakePVE, _ *fakeCluster) { f.setStatus("106", "stopped") }, "VM treasury-general-2 is stopped, not running"},
-		{"no node", nil, func(_ *fakePVE, c *fakeCluster) { delete(c.nodes, "treasury-general-2") },
+		{"stopped VM", nil, func(f *fakeCompute, _ *fakeCluster) { f.find("treasury-general-2").Status = "stopped" }, "VM treasury-general-2 is stopped, not running"},
+		{"no node", nil, func(_ *fakeCompute, c *fakeCluster) { delete(c.nodes, "treasury-general-2") },
 			"VM treasury-general-2 has no Kubernetes node of the same name"},
 	} {
 		r, _, f, kc := restartFixture(t)
@@ -784,8 +782,8 @@ func TestRestartRefuses(t *testing.T) {
 				t.Errorf("%s: ran %s before refusing", tc.name, c)
 			}
 		}
-		if len(f.calls) != 0 {
-			t.Errorf("%s: sent %v before refusing", tc.name, f.calls)
+		if len(f.log) != 0 {
+			t.Errorf("%s: changed %v before refusing", tc.name, f.log)
 		}
 	}
 }

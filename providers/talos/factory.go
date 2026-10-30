@@ -1,4 +1,4 @@
-package talosvm
+package talos
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"go.holos.run/distro/providers/infra"
 )
 
 // FactoryURL is the public Talos Image Factory.
@@ -16,8 +18,8 @@ const FactoryURL = "https://factory.talos.dev"
 // Extensions are the system extensions baked into every node's image.
 //
 // They are fixed here rather than configured because the point is that they
-// are present from day one: qemu-guest-agent lets Proxmox see the VM's
-// addresses and shut it down cleanly, and gvisor and kata-containers are there
+// are present from day one: qemu-guest-agent lets the hypervisor see the
+// VM's addresses and shut it down cleanly, and gvisor and kata-containers are there
 // so the later sandbox items never have to rebuild the nodes. Substrate brings
 // its own runsc inside its worker pods and does not depend on the gvisor
 // extension. Kept sorted, so the schematic, and therefore its ID, is stable.
@@ -47,7 +49,7 @@ type Factory struct {
 
 // SchematicID posts the schematic and returns its ID. Posting is how the
 // factory computes the ID, and it is idempotent, so dry runs do it too to
-// print the real ISO name; it changes nothing on Proxmox.
+// print the real ISO name; it changes nothing on the compute provider.
 func (f Factory) SchematicID(ctx context.Context) (string, error) {
 	hc := f.HTTP
 	if hc == nil {
@@ -80,10 +82,10 @@ func (f Factory) SchematicID(ctx context.Context) (string, error) {
 }
 
 // Platform is the Talos platform of the image. nocloud, not the metal of the
-// Talos Proxmox guide, because the k8s vnet has no DHCP: the nocloud platform
-// reads the static address, gateway, resolver and hostname from the cloud-init
-// drive Proxmox attaches, so a VM is reachable in maintenance mode without
-// anyone typing kernel arguments at its console.
+// Talos Proxmox guide, because the node network has no DHCP: the nocloud
+// platform reads the static address, gateway, resolver and hostname from the
+// cloud-init drive compute attaches, so a VM is reachable in maintenance mode
+// without anyone typing kernel arguments at its console.
 const Platform = "nocloud"
 
 // Image names the boot ISO for one schematic and Talos version.
@@ -93,12 +95,12 @@ type Image struct {
 	TalosVersion string
 }
 
-// ISOURL is where Proxmox downloads the ISO from.
+// ISOURL is where compute downloads the ISO from.
 func (i Image) ISOURL() string {
 	return fmt.Sprintf("%s/image/%s/%s/%s-amd64.iso", i.FactoryURL, i.SchematicID, i.TalosVersion, Platform)
 }
 
-// Filename is the ISO's name in Proxmox storage. It carries the version and
+// Filename is the ISO's name in compute's storage. It carries the version and
 // a prefix of the schematic ID, so an upgrade or a changed extension list is a
 // new file next to the old one rather than a silent overwrite, and an existing
 // file with this name can be trusted to be the right image.
@@ -110,9 +112,9 @@ func (i Image) Filename() string {
 	return fmt.Sprintf("talos-%s-%s-%s-amd64.iso", i.TalosVersion, id, Platform)
 }
 
-// VolID is the ISO's volume ID in the given storage.
-func (i Image) VolID(storage string) string {
-	return storage + ":iso/" + i.Filename()
+// Boot is the ISO as the image a VM spec boots.
+func (i Image) Boot() infra.Image {
+	return infra.Image{Name: i.Filename(), URL: i.ISOURL()}
 }
 
 // Installer is the installer image talosctl's machine config must name, so

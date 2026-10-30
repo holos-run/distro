@@ -1,4 +1,4 @@
-package talosvm
+package proxmox
 
 import (
 	"errors"
@@ -33,6 +33,12 @@ func SnippetName(cluster, vm string) string { return "talosvm_" + cluster + "_" 
 // wrote for another VM, is refused rather than replaced.
 func SnippetHeader(cluster, vm string) string {
 	return fmt.Sprintf("# Written by talosvm for cluster %s, VM %s.", cluster, vm)
+}
+
+// snippetContent is a VM's snippet file: the header, then the VM's config as
+// the Kubernetes layer rendered it.
+func snippetContent(cluster, vm, config string) string {
+	return SnippetHeader(cluster, vm) + "\n" + config
 }
 
 // SnippetVolume is the Proxmox volume ID of a snippet in storage, the value

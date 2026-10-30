@@ -6,7 +6,8 @@ ingress Gateway's address, not an HAProxy load balancer)
 ## Context
 
 The distro's first site is a garage Proxmox VE cluster named `garage`. The
-`talosvm` provider (`providers/proxmox`) creates the VMs and stops at Talos
+`talosvm` program (then `providers/proxmox`, now `providers/talos/cmd/talosvm`
+with the Proxmox provider beneath it) creates the VMs and stops at Talos
 maintenance mode: each VM has booted the Image Factory `nocloud` ISO with its
 extensions, and has a static /32 address on the `k8s` vnet from its
 cloud-init network snippet. Something has to turn those VMs into a
@@ -23,8 +24,8 @@ default CNI and kube-proxy.
 ### Machine configuration is talosctl with committed patches
 
 Machine configuration is plain `talosctl gen config` with the Talos strategic
-merge patches committed in `providers/proxmox/talos/patches`, driven by a
-small script, `providers/proxmox/talos/cluster.sh`. There is no program and
+merge patches committed in `providers/talos/patches`, driven by a
+small script, `providers/talos/cluster.sh`. There is no program and
 no state store: the patches are the whole policy, and anyone can read them
 or run `talosctl` by hand with the same result.
 
@@ -143,7 +144,7 @@ For control plane nodes (`patches/controlplane.yaml`):
   `--enable-aggregator-routing`, as above.
 - **Webhook host entries**: a `StaticHostConfig` mapping every webhook
   hostname to the Gateway's address. It is rendered from the platform's CUE
-  (`holos/talos.cue`) into `providers/proxmox/talos/clusters/<cluster>/`,
+  (`holos/talos.cue`) into `providers/talos/clusters/<cluster>/`,
   committed, so it is the one per-cluster patch, and it applies without a
   reboot.
 - **No Talos CoreDNS**: `KubeCoreDNSConfig` is disabled. Talos can set only
