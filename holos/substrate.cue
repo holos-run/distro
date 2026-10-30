@@ -75,9 +75,10 @@ Substrate: {
 		port: 443
 		url:  "https://\(host):\(port)"
 	}
-	// client is the ServiceAccount kubectl ate mints its token for when it
-	// is given none: a bootstrap owner, so whoever can mint its token is a
-	// global owner of the install.
+	// client is the ate-client ksa (Kubernetes service account) kubectl ate
+	// mints an ate-client ksa token for, a standard service account token,
+	// when it is given none: a bootstrap owner, so whoever can mint that
+	// token is a global owner of the install.
 	client: {
 		serviceAccount: "ate-client"
 		principal:      "system:serviceaccount:\(namespace):\(serviceAccount)"

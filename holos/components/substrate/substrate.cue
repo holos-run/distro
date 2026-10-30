@@ -237,11 +237,12 @@ let ConfigHashes = {
 let Ingress = [AteGateway.spiffeID, Kagent.controller.spiffeID]
 AteGateway: spiffeID: "spiffe://\(S.trustDomain)/ns/\(AteGateway.namespace)/sa/\(AteGateway.serviceAccount)"
 
-// BootstrapOwners always hold owner on the global scope: ate-client, the
-// identity kubectl ate acts as without --token-file, as ate-setup's default,
-// so its token is the global admin credential and is minted only from the
-// laptop with cluster-admin; and kagent's controller, by the principal its
-// pod certificate authenticates as.
+// BootstrapOwners always hold owner on the global scope: the ate-client ksa
+// (Kubernetes service account), the identity kubectl ate acts as without
+// --token-file, as ate-setup's default, so an ate-client ksa token, a
+// standard service account token for it, is the global admin credential and
+// is minted only from the laptop with cluster-admin; and kagent's
+// controller, by the principal its pod certificate authenticates as.
 let BootstrapOwners = [S.client.principal, Kagent.controller.spiffeID]
 
 // CredentialProvider is the bundled Kubernetes Secrets provider, ate-setup's

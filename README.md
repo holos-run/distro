@@ -26,3 +26,11 @@ for how `go.holos.run/distro` resolves to this repository.
 
 The Holos platform, its components and the rendered manifests live under
 [`holos/`](holos/README.md), a CUE module of its own beside the Go code.
+
+## Documentation
+
+- [holos/README.md](holos/README.md), the platform and every component.
+- [docs/glossary.md](docs/glossary.md), the distro's own terms, such as
+  atespace, ksa and ate-client ksa token.
+- [docs/forks.md](docs/forks.md), the Substrate and kagent forks.
+- [docs/adr/](docs/adr/README.md), architecture decision records.

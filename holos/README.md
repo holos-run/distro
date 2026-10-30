@@ -1,5 +1,8 @@
 # The Holos platform
 
+Terms with a meaning of their own here, such as atespace or ate-client ksa
+token, are in the [glossary](../docs/glossary.md).
+
 This directory is the distro's Holos platform: CUE that renders every
 component's Kubernetes manifests into `deploy/`, using Holos v1alpha6 as
 released in holos v0.106.0. It is its own CUE module
@@ -2107,12 +2110,22 @@ What it runs, in `ate-system` unless named:
   not on the list. A client with no
   certificate, or one not on the list, fails the handshake. The router
   strips `ate-target-actor` before the actor sees the request.
-- **Owners.** The API server's bootstrap owners are `ate-client`
-  (`system:serviceaccount:ate-system:ate-client`), the identity `kubectl
-  ate` acts as without `--token-file`, and kagent's controller. Anyone who
-  can mint a token for `ate-client`, which takes `create` on
+- **Owners.** The API server's bootstrap owners are the `ate-client` ksa,
+  the Kubernetes service account `ate-system/ate-client`
+  (`system:serviceaccount:ate-system:ate-client`), and kagent's controller.
+  The ate-client ksa token is a standard Kubernetes service account token
+  for that ksa, with the audience `api.ate-system.svc`; it is what `kubectl
+  ate` authenticates with when it is given no `--token-file`. Anyone who can
+  mint an ate-client ksa token, which takes `create` on
   `serviceaccounts/token` in `ate-system`, is a global owner of Substrate:
-  only cluster admins, from the laptop.
+  only cluster admins, from the laptop. To mint one for `--token-file`:
+
+  ```sh
+  kubectl -n ate-system create token ate-client --duration=1h --audience=api.ate-system.svc > ate-client.token
+  ```
+
+  A token with any other audience is refused with `invalid bearer token`.
+  The [glossary](../docs/glossary.md) defines these terms.
 - **Egress.** The egress gateway's ext-proc names the bundled provider,
   `k8s.io` at `k8s-credential-provider.ate-system.svc:50051`, whose
   namespace policy, in git, lets atespace `kagent` resolve Secrets in
@@ -2164,8 +2177,8 @@ kubectl -n ate-system rollout status deploy/ate-api-server
 **The demo atespace** and **its actors**, through the API with `kubectl
 ate`, built from the same commit. Atespaces, actor templates and actors are
 API objects in Substrate's database, not Kubernetes resources. `kubectl
-ate` port-forwards to Service `api` and, without `--token-file`, mints a
-token for `ate-client`. The demo has two templates, `echo` and `other`,
+ate` port-forwards to Service `api` and, without `--token-file`, mints an
+ate-client ksa token itself (Owners, above). The demo has two templates, `echo` and `other`,
 which differ only in `WHOAMI_NAME`, and an actor of each: the router strips
 `ate-target-actor` and an actor has no variable naming it, so each answers
 with its template's name, as `Name:`, above the request headers it
