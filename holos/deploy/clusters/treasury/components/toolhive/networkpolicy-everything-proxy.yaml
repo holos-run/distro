@@ -1,0 +1,61 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: everything-proxy
+    namespace: toolhive
+spec:
+    egress:
+        - ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                    k8s-app: kube-dns
+        - ports:
+            - port: 3001
+              protocol: TCP
+          to:
+            - podSelector:
+                matchLabels:
+                    app: everything
+                    toolhive: "true"
+        - ports:
+            - port: 443
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                    kubernetes.io/metadata.name: istio-ingress
+              podSelector:
+                matchLabels:
+                    gateway.networking.k8s.io/gateway-name: ingress
+        - ports:
+            - port: 6443
+              protocol: TCP
+          to:
+            - ipBlock:
+                cidr: 10.20.0.50/32
+    ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                    kubernetes.io/metadata.name: istio-ingress
+              podSelector:
+                matchLabels:
+                    gateway.networking.k8s.io/gateway-name: ingress
+          ports:
+            - port: 8080
+              protocol: TCP
+    podSelector:
+        matchLabels:
+            app.kubernetes.io/instance: everything
+            app.kubernetes.io/name: mcpserver
+    policyTypes:
+        - Ingress
+        - Egress

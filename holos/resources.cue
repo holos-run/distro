@@ -113,6 +113,13 @@ import (
 	// (components/substrate). Namespaced too.
 	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}
 
+	// ToolHive's MCPServer, MCPOIDCConfig and MCPAuthzConfig,
+	// toolhive.stacklok.dev/v1beta1, the storage version of its 0.59.0 CRDs
+	// (components/toolhive). Namespaced too.
+	MCPServer?: [_]: {apiVersion: "toolhive.stacklok.dev/v1beta1", metadata: {...}, ...}
+	MCPOIDCConfig?: [_]: {apiVersion: "toolhive.stacklok.dev/v1beta1", metadata: {...}, ...}
+	MCPAuthzConfig?: [_]: {apiVersion: "toolhive.stacklok.dev/v1beta1", metadata: {...}, ...}
+
 	// ReferenceGrant is two kinds of one name: the Gateway API's, the
 	// default, and holos-controller's security.holos.run one, which
 	// authorizes a reference from another namespace to an Instance or a

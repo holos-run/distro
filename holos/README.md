@@ -115,6 +115,9 @@ old one and every webhook call is refused. Then change the router's
 | `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `holos-authenticator` | holos-authenticator 0.21.0 in the ambient namespace `holos-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
 | `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
+| `toolhive-crds` | ToolHive 0.59.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
+| `toolhive-operator` | The ToolHive operator 0.59.0 from its `toolhive-operator` OCI chart, images by digest, in `toolhive-system`, watching only the `toolhive` namespace, which it renders too (both restricted, not in the mesh) |
+| `toolhive` | The MCP server `everything` in `toolhive`, at `toolhive.bank.internal/mcp`: its `MCPServer`, the `MCPOIDCConfig` that checks the realm's `kubectl` ID tokens, the `MCPAuthzConfig` with its Cedar policies, the `HTTPRoute` to the proxy runner and the NetworkPolicies that make the proxy the only way to the server (ToolHive, below) |
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
@@ -2812,6 +2815,122 @@ kubectl auth can-i get secrets -n keycloak --as=system:serviceaccount:kagent:kag
 kubectl -n default run np-test --image=curlimages/curl:8.11.1 --restart=Never --command -- sleep 600
 kubectl -n default exec np-test -- curl -s -m 5 http://kagent-controller.kagent.svc:8083/health   # exit 28
 kubectl -n default delete pod np-test
+```
+
+### ToolHive
+
+ToolHive is Stacklok's MCP server operator (interview Q3, last and best
+effort), with one MCP server at `https://toolhive.bank.internal/mcp` behind a
+Keycloak ID token and Cedar. `ToolHive` (`components/toolhive.cue`) holds
+the pins and the names. Three components, in registry order:
+`toolhive-crds`, the CRD chart, which Argo CD neither prunes nor deletes;
+`toolhive-operator`, the operator chart in `toolhive-system`, with the
+`toolhive` namespace it manages; and `toolhive`, the MCP server and its
+policies.
+
+- **Pins.** Release 0.59.0: both charts from `oci://ghcr.io/stacklok/toolhive`,
+  and the operator, proxy runner, vMCP and registry API images by index
+  digest. The MCP server is the MCP reference server `everything`, as
+  Stacklok's dockyard packages it for the ToolHive catalog
+  (`ghcr.io/stacklok/dockyard/npx/server-everything:2026.8.31`, by digest).
+  It needs no network, and its `streamableHttp` argument serves MCP over
+  HTTP on port 3001.
+- **The operator** watches `toolhive` alone (`operator.rbac.scope:
+  namespace`): RoleBindings there to its ClusterRole, no ClusterRoleBinding.
+  So the storage version migrator, which needs the whole cluster, is off: a
+  CRD version bump that drops a stored version must re-store the objects by
+  hand. Update checks are off too.
+- **The MCP server** is two workloads. The operator runs a proxy runner,
+  Deployment `everything` and Service `mcp-everything-proxy:8080`, and the
+  proxy runner creates the MCP server, StatefulSet `everything` and Service
+  `mcp-everything:3001`. Over HTTP, not stdio, so the proxy never attaches to
+  a pod through the API server and its Role has no `pods/attach`.
+- **Tokens.** `MCPOIDCConfig keycloak` is the realm, by its discovery
+  document and keys, fetched through the ingress Gateway trusting the
+  `private-ca` bundle alone, with `jwksAllowPrivateIP`, since
+  `keycloak.bank.internal` is a private address. The MCPServer sets the
+  audience: `kubectl`, ID tokens of the client every Holos service behind a
+  person's token checks (ADR 0002, interview Q61). No Keycloak client is
+  made. The proxy answers a request without a valid token with 401 and a
+  `WWW-Authenticate` naming its protected resource metadata, at
+  `/.well-known/oauth-protected-resource`. That metadata sends an MCP
+  client to Keycloak's OAuth flow, whose access tokens carry no `kubectl`
+  audience and are refused, so today a client must be given an ID token.
+  The proxy forwards the `Authorization` header to the MCP server
+  unchanged, so the server holds the caller's `kubectl` ID token, which
+  holos-authenticator and the Substrate shim also accept, for the token's
+  life. That is safe only because the server may send nothing (Isolation,
+  below); a server that needs egress must not be given this audience.
+- **Cedar.** `MCPAuthzConfig everything`: `/platform/owners` may call every
+  tool, get every prompt and read every resource, but nobody may call
+  `get-env`, which returns the server's environment. Anyone else with a
+  valid token can open a session, but is denied every tool, prompt and
+  resource. The proxy filters `tools/list` to what the caller may call, so
+  `get-env` is not listed. The principal is `Client::"<sub>"` with a parent
+  `THVGroup::"<path>"` for each entry of the `groups` claim. The audit log,
+  every MCP request's outcome and caller, is in the proxy runner's log.
+- **Isolation.** The operator creates no route and no NetworkPolicy
+  (stacklok/toolhive issue 1129), so both are CUE. The HTTPRoute sends every
+  path to the proxy. The MCP server checks no token, so it admits only the
+  proxy, at 3001, and may send nothing. The proxy admits only the ingress
+  Gateway's pods, and may send only to the cluster's DNS, the MCP server,
+  the ingress Gateway's pods at 443 (Keycloak) and the API server, which it
+  reaches by address (`Cluster.apiServer`), because the control plane runs
+  no Cilium agent. Both namespaces are outside the mesh, so the policies
+  hold at the application ports, and Pod Security restricted.
+- **Health.** Argo CD's check for `MCPServer` (components/argocd) is Healthy
+  once the operator reports the current generation Ready, so the root
+  waits for the proxy runner, not for the object.
+
+#### Checking ToolHive
+
+From a machine that trusts the private root, `$TOKEN` a member of
+`/platform/owners`'s `kubectl` ID token, as under Reaching an actor, above.
+`mcp` makes one call in a fresh session: `initialize`, then
+`notifications/initialized`, then the method.
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+kubectl -n toolhive get mcpserver,mcpoidcconfig,mcpauthzconfig,pods
+    # everything Ready; keycloak and everything VALID True; two pods 1/1
+U=https://toolhive.bank.internal/mcp
+function mcp {
+  local t=$1 m=$2 p=$3 h s
+  h=$(mktemp)
+  curl -s -D "$h" -o /dev/null "$U" -H "Authorization: Bearer $t" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+  s=$(awk 'tolower($1)=="mcp-session-id:" {print $2}' "$h" | tr -d '\r')
+  curl -s -o /dev/null "$U" -H "Authorization: Bearer $t" -H "Mcp-Session-Id: $s" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+  curl -s -w '\nHTTP %{http_code}\n' "$U" -H "Authorization: Bearer $t" -H "Mcp-Session-Id: $s" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"$m\",\"params\":$p}"
+  rm -f "$h"
+}
+mcp "$TOKEN" tools/list '{}' | sed -n 's/^data: //p' | jq -r '.result.tools[].name'
+    # twelve tools, echo and get-sum among them, and no get-env
+mcp "$TOKEN" tools/call '{"name":"echo","arguments":{"message":"hello"}}'
+    # data: ... "Echo: hello" ... HTTP 200
+mcp "$TOKEN" tools/call '{"name":"get-env","arguments":{}}'
+    # {"jsonrpc":"2.0","id":2,"error":{"code":403,"message":"Unauthorized"}} HTTP 403
+curl -s -o /dev/null -w '%{http_code}\n' "$U" -d '{}'                                 # 401
+curl -s -o /dev/null -w '%{http_code}\n' "$U" -H 'Authorization: Bearer x.y.z' -d '{}' # 401
+# A token of another audience, such as kagent's oauth2-proxy client's, gets
+# 401 too. A user outside /platform/owners, such as alice, gets an empty
+# tools/list and 403 for every call. The proxy's log has an AUDIT line for
+# each request, its outcome denied for the refused calls:
+kubectl -n toolhive logs deploy/everything | grep '"outcome":"denied"' | tail -1
+# From a pod other than the proxy and the ingress Gateway, in toolhive or
+# out of it, both ports time out; from the MCP server, every address does.
+kubectl -n default run np-test --image=curlimages/curl:8.14.1 --restart=Never --command -- sleep 600
+kubectl -n default exec np-test -- curl -s -m 5 http://mcp-everything.toolhive.svc:3001/mcp         # exit 28
+kubectl -n default exec np-test -- curl -s -m 5 http://mcp-everything-proxy.toolhive.svc:8080/mcp   # exit 28
+kubectl -n default delete pod np-test
+kubectl -n toolhive exec everything-0 -c mcp -- node -e \
+  'fetch("https://registry.npmjs.org/",{signal:AbortSignal.timeout(5000)}).then(r=>console.log(r.status),e=>console.log(e.name))'
+    # TimeoutError
 ```
 
 ### Quay

@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: toolhive-operator
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: toolhive-operator
+    app.kubernetes.io/part-of: toolhive-operator
+    app.kubernetes.io/version: 0.59.0
+    helm.sh/chart: toolhive-operator-0.59.0
+  name: toolhive-operator
+  namespace: toolhive-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: toolhive-operator
+      app.kubernetes.io/name: toolhive-operator
+      app.kubernetes.io/part-of: toolhive-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: toolhive-operator
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: toolhive-operator
+        app.kubernetes.io/part-of: toolhive-operator
+        app.kubernetes.io/version: 0.59.0
+        helm.sh/chart: toolhive-operator-0.59.0
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        env:
+        - name: TOOLHIVE_SKIP_UPDATE_CHECK
+          value: "true"
+        - name: GOMEMLIMIT
+          value: 110MiB
+        - name: GOGC
+          value: "75"
+        - name: UNSTRUCTURED_LOGS
+          value: "false"
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: TOOLHIVE_USE_CONFIGMAP
+          value: "true"
+        - name: ENABLE_EXPERIMENTAL_FEATURES
+          value: "false"
+        - name: TOOLHIVE_ENABLE_STORAGE_VERSION_MIGRATOR
+          value: "false"
+        - name: WATCH_NAMESPACE
+          value: toolhive
+        - name: TOOLHIVE_RUNNER_IMAGE
+          value: ghcr.io/stacklok/toolhive/proxyrunner:v0.59.0@sha256:f0e970f749ef10004d150721311fa8512ba4c349768ca7b1915ff77452750250
+        - name: VMCP_IMAGE
+          value: ghcr.io/stacklok/toolhive/vmcp:v0.59.0@sha256:e9077bc25803740423a04333d8400a02b6f5f44d5ba7c6b5edf65437ce1fe0dd
+        - name: TOOLHIVE_PROXY_HOST
+          value: 0.0.0.0
+        - name: TOOLHIVE_REGISTRY_API_IMAGE
+          value: ghcr.io/stacklok/thv-registry-api:v1.5.3@sha256:323652f7bd195a0a6a84815e749f52a809633a07d911580abb2d58945abc78f3
+        image: ghcr.io/stacklok/toolhive/operator:v0.59.0@sha256:b094d9220a687ef975a62f9c073fa5faf433e88c3f355f8ad29f50cd082e430c
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: toolhive-operator
+      terminationGracePeriodSeconds: 10

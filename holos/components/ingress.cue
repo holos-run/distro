@@ -50,6 +50,7 @@ IngressGateway: {
 		keycloak: _
 		quay:     _
 		secrets:  _
+		toolhive: _
 	}
 
 	// listeners are the Gateway's listener names. https terminates TLS for

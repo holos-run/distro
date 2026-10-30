@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: everything-server
+    namespace: toolhive
+spec:
+    egress: []
+    ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                    app.kubernetes.io/instance: everything
+                    app.kubernetes.io/name: mcpserver
+          ports:
+            - port: 3001
+              protocol: TCP
+    podSelector:
+        matchLabels:
+            app: everything
+            toolhive: "true"
+    policyTypes:
+        - Ingress
+        - Egress
