@@ -57,8 +57,15 @@ registry: [
 	{name: "gateway-api"},
 	// cert-manager, its CRDs and its webhook.
 	{name: "cert-manager"},
-	// private-ca is the bootstrap Issuer, the root and the ClusterIssuer. It
-	// needs cert-manager's CRDs established and its controller running.
+	// approver-policy approves cert-manager's CertificateRequests by policy,
+	// in place of cert-manager's own approver once the cluster enforces its
+	// webhooks: its CertificateRequestPolicy CRD, its controller and its
+	// webhook. It needs only cert-manager's CRDs, whose requests it watches.
+	{name: "approver-policy"},
+	// private-ca is the bootstrap Issuer, the root, the ClusterIssuer and the
+	// CertificateRequestPolicies that let them sign. It needs cert-manager's
+	// CRDs established and its controller running, and approver-policy's
+	// CRD, so it comes after both.
 	{name: "private-ca"},
 	// trust-manager, its Bundle CRD and its webhook. Its webhook certificate
 	// is a cert-manager Certificate, so it comes after cert-manager.

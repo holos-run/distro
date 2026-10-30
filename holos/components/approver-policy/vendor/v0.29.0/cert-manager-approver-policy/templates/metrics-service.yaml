@@ -1,0 +1,27 @@
+{{- if .Values.app.metrics.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cert-manager-approver-policy.name" . }}-metrics
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- /*
+      "app" is merged in last so .Values.commonLabels cannot override it: the
+      ServiceMonitor selects this Service on it, and overriding it would
+      silently stop metrics being scraped.
+    */}}
+    {{- $labels := mergeOverwrite
+          (include "cert-manager-approver-policy.labels" . | fromYaml)
+          (dict "app" (include "cert-manager-approver-policy.name" .))
+    -}}
+    {{- toYaml $labels | nindent 4 }}
+spec:
+  type: {{ .Values.app.metrics.service.type }}
+  ports:
+    - port: {{ .Values.app.metrics.port }}
+      targetPort: {{ .Values.app.metrics.port }}
+      protocol: TCP
+      name: metrics
+  selector:
+    app: {{ include "cert-manager-approver-policy.name" . }}
+{{- end }}

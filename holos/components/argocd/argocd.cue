@@ -186,6 +186,33 @@ holos: spec: artifacts: [(#HelmArtifact & {
 					hs.message = "Waiting for ExternalSecret"
 					return hs
 					"""
+
+				// approver-policy's CertificateRequestPolicy, which Argo CD has
+				// no check for: Healthy once its Ready condition is True,
+				// Degraded while it is False, so a policy approver-policy
+				// cannot use, and skips, shows on private-ca's Application
+				// rather than as requests left unprocessed. Progressing until
+				// approver-policy first reports.
+				"resource.customizations.health.policy.cert-manager.io_CertificateRequestPolicy": """
+					local hs = {}
+					if obj.status ~= nil and obj.status.conditions ~= nil then
+					  for i, condition in ipairs(obj.status.conditions) do
+					    if condition.type == "Ready" and condition.status == "True" then
+					      hs.status = "Healthy"
+					      hs.message = condition.message
+					      return hs
+					    end
+					    if condition.type == "Ready" and condition.status == "False" then
+					      hs.status = "Degraded"
+					      hs.message = condition.message
+					      return hs
+					    end
+					  end
+					end
+					hs.status = "Progressing"
+					hs.message = "Waiting for approver-policy"
+					return hs
+					"""
 			}
 
 			// /platform/owners, the group the keycloak-realm component makes

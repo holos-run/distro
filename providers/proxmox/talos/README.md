@@ -139,7 +139,9 @@ them, then `gen` and `apply`.
 
 The API server reaches every admission webhook at
 `https://<service>.<namespace>.webhooks.<cluster>.<privateDomain>:9443`, on
-the ingress Gateway's address (`holos/webhooks.cue`). The control plane
+the ingress Gateway's address (`holos/webhooks.cue`), or at a hostname the
+webhook's entry sets instead, as approver-policy's
+`cert-manager-approver-policy.cert-manager.svc`. The control plane
 resolves those names from a `StaticHostConfig` document, the Talos 1.14 form
 of `extraHostEntries`, so it does not depend on the router's
 `*.bank.internal` record. Talos's host DNS, which the API server resolves

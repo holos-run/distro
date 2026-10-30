@@ -64,8 +64,12 @@ import (
 		(K)?: [_]: {apiVersion: "generators.external-secrets.io/v1alpha1", metadata: {...}, ...}
 	}
 
-	// trust-manager's Bundle has no generated CUE schema here either.
+	// trust-manager's Bundle has no generated CUE schema here either, nor
+	// approver-policy's CertificateRequestPolicy, v1alpha1, the one version
+	// its v0.29.0 CRD serves (components/approver-policy). Both are
+	// cluster-scoped.
 	Bundle?: [_]: {apiVersion: "trust.cert-manager.io/v1alpha1", ...}
+	CertificateRequestPolicy?: [_]: {apiVersion: "policy.cert-manager.io/v1alpha1", ...}
 
 	// Nor do NetworkPolicy, CloudNativePG's Cluster or the Keycloak
 	// Operator's Keycloak and KeycloakRealmImport. All are namespaced, so

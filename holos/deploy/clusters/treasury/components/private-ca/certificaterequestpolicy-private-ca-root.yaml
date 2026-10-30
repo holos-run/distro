@@ -1,0 +1,27 @@
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata:
+    name: private-ca-root
+spec:
+    allowed:
+        commonName:
+            required: true
+            value: Holos treasury root CA
+        isCA: true
+        subject:
+            organizationalUnits:
+                required: true
+                values:
+                    - treasury.bank.internal
+            organizations:
+                required: true
+                values:
+                    - Holos
+    selector:
+        issuerRef:
+            group: cert-manager.io
+            kind: Issuer
+            name: private-ca-bootstrap
+        namespace:
+            matchNames:
+                - cert-manager

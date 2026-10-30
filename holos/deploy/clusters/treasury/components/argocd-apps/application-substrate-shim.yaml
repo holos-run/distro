@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
     annotations:
-        argocd.argoproj.io/sync-wave: "28"
+        argocd.argoproj.io/sync-wave: "29"
     name: substrate-shim
     namespace: argocd
 spec:

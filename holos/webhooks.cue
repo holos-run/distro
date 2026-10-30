@@ -25,6 +25,10 @@ package holos
 // The webhook's serving certificate must also carry its hostname, and a new
 // entry's host entry reaches a running control plane only by talosctl
 // (providers/proxmox/talos/README.md), not through Argo CD.
+//
+// A webhook whose certificate cannot carry a name under the webhooks domain
+// sets hostname to the name it does carry; the path is the same, through a
+// listener of its own on the same port.
 
 // #WebhookService is a Service that serves admission webhooks.
 #WebhookService: {
@@ -35,11 +39,32 @@ package holos
 	port: int | *443
 	// component is the platform component that deploys the Service.
 	component: string
+	// hostname, if set, replaces the entry's hostname under
+	// Cluster.webhooks.domain (clusters.cue), for a webhook whose serving
+	// certificate carries only a name of its own choosing and that cannot be
+	// given another. The ingress Gateway gets a listener of its own for each
+	// such name (components/ingress.cue), since the webhooks listener's
+	// wildcard does not cover it, and the control plane's host entry points
+	// it at the Gateway like any other.
+	hostname?: string
 }
 
 webhookServices: [NAME=string]: #WebhookService & {name: NAME}
 
 webhookServices: {
+	// approver-policy's webhook validates CertificateRequestPolicies. Its
+	// serving certificate is its own, signed by a CA it keeps in Secret
+	// cert-manager/cert-manager-approver-policy-tls, and its only DNS name is
+	// the Service's cluster name, with no flag for another
+	// (pkg/internal/cmd/cmd.go at v0.29.0). So the API server dials that name
+	// itself through the Gateway, and the control plane resolves it to the
+	// Gateway's address like the names under the webhooks domain (interview
+	// Q68). cainjector fills the caBundle from the CA Secret.
+	"cert-manager-approver-policy": {
+		namespace: "cert-manager"
+		component: "approver-policy"
+		hostname:  "cert-manager-approver-policy.cert-manager.svc"
+	}
 	// cert-manager's webhook validates and mutates cert-manager resources. Its
 	// serving certificate is its own dynamic one, signed by the CA in Secret
 	// cert-manager/cert-manager-webhook-ca, and carries the hostname through

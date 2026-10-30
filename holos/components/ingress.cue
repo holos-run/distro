@@ -1,6 +1,9 @@
 package holos
 
-import "list"
+import (
+	"list"
+	"strings"
+)
 
 // IngressGateway is the cluster's one ingress Gateway, which the
 // ingress-gateway component renders: every platform service with a hostname
@@ -74,6 +77,34 @@ IngressGateway: {
 		// namespaces are those of the webhook Services, the only namespaces
 		// whose TLSRoutes the listener accepts.
 		namespaces: list.SortStrings([for NS, _ in {for S in webhookServices {(S.namespace): _}} {NS}])
+
+		// sections maps each entry of webhookServices to the listener its
+		// TLSRoute attaches to: webhooks for a hostname under the webhooks
+		// domain, which its wildcard matches, and a listener of the entry's
+		// own, webhooks-<entry>, for a hostname the entry sets outside it
+		// (#WebhookService.hostname), which the wildcard does not.
+		sections: {
+			for K, H in Cluster.webhooks.hosts {
+				if strings.HasSuffix(H, ".\(Cluster.webhooks.domain)") {
+					(K): Self.listeners.webhooks
+				}
+				if !strings.HasSuffix(H, ".\(Cluster.webhooks.domain)") {
+					(K): "\(Self.listeners.webhooks)-\(K)"
+				}
+			}
+		}
+
+		// own are those listeners of an entry's own, by listener name: the
+		// same port and passthrough as webhooks, for the one hostname, and
+		// TLSRoutes from the one Service's namespace.
+		own: {
+			for K, N in sections if N != Self.listeners.webhooks {
+				(N): {
+					hostname:  Cluster.webhooks.hosts[K]
+					namespace: webhookServices[K].namespace
+				}
+			}
+		}
 	}
 
 	// parentRef attaches an HTTPRoute to the HTTPS listener.

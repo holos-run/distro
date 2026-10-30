@@ -142,12 +142,18 @@ import "net"
 
 		// hosts maps each entry of webhookServices (webhooks.cue) to its
 		// hostname: the Service's name and namespace under domain, as a
-		// Service's cluster DNS name is under svc.cluster.local. The hostname
-		// is the SNI the Gateway routes on and a DNS name the webhook's
-		// serving certificate carries.
+		// Service's cluster DNS name is under svc.cluster.local, or the
+		// entry's own hostname if it sets one. The hostname is the SNI the
+		// Gateway routes on and a DNS name the webhook's serving certificate
+		// carries.
 		hosts: {
 			for K, S in webhookServices {
-				(K): "\(S.name).\(S.namespace).\(domain)"
+				if S.hostname != _|_ {
+					(K): S.hostname
+				}
+				if S.hostname == _|_ {
+					(K): "\(S.name).\(S.namespace).\(domain)"
+				}
 			}
 		}
 

@@ -124,13 +124,14 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// One wildcard per atespace, from the private CA, ECDSA P-256 as the
 		// ingress Gateway's, renewed by cert-manager, which istiod hands to
-		// the gateway as it changes.
+		// the gateway as it changes. Each takes its name from its entry in
+		// PrivateCA.requesters (components/private-ca.cue).
 		for A in AG.atespaces {
 			Certificate: "\(A.name)-wildcard": {
 				metadata: namespace: AG.namespace
 				spec: {
+					PrivateCA.requesters[AG.namespace]["\(A.name)-wildcard"]
 					secretName: "\(A.name)-wildcard-tls"
-					dnsNames: [A.hostname]
 					privateKey: {
 						algorithm: "ECDSA"
 						size:      256

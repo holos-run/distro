@@ -1,0 +1,22 @@
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata:
+    name: private-ca-istio-ingress
+spec:
+    allowed:
+        dnsNames:
+            required: true
+            validations:
+                - message: 'must be one of these exactly, * included: *.bank.internal'
+                  rule: self in ["*.bank.internal"]
+            values:
+                - '*.bank.internal'
+        isCA: false
+    selector:
+        issuerRef:
+            group: cert-manager.io
+            kind: ClusterIssuer
+            name: private-ca
+        namespace:
+            matchNames:
+                - istio-ingress

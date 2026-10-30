@@ -67,6 +67,24 @@ spec:
                         - key: kubernetes.io/metadata.name
                           operator: In
                           values:
+                            - cert-manager
+          hostname: cert-manager-approver-policy.cert-manager.svc
+          name: webhooks-cert-manager-approver-policy
+          port: 9443
+          protocol: TLS
+          tls:
+            mode: Passthrough
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: TLSRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
                             - substrate-shim
           hostname: '*.ate.bank.internal'
           name: ate

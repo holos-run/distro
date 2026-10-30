@@ -1,0 +1,20 @@
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata:
+    name: private-ca-cnpg-system
+spec:
+    allowed:
+        dnsNames:
+            required: true
+            values:
+                - cnpg-webhook-service.cnpg-system.svc
+                - cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal
+        isCA: false
+    selector:
+        issuerRef:
+            group: cert-manager.io
+            kind: ClusterIssuer
+            name: private-ca
+        namespace:
+            matchNames:
+                - cnpg-system

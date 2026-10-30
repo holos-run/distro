@@ -14,7 +14,7 @@ holos/
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── webhooks.cue    the Services that serve admission webhooks
 ├── talos.cue       the control plane's Talos patch made from the above; talos_tool.cue writes it
-├── private-ca.cue  the names of the private CA and its trust bundle
+├── private-ca.cue  the names of the private CA and its trust bundle, and the shape of its requesters
 ├── istio.cue       the mesh's release, namespace, images and trust domain
 ├── substrate.cue   the Substrate fork's commit and image digests, and the names Substrate is reached by
 ├── kagent.cue      kagent's namespace and controller identity, which Substrate trusts
@@ -89,8 +89,9 @@ old one and every webhook call is refused. Then change the router's
 | `coredns` | CoreDNS from the CoreDNS project's Helm chart, replacing the one Talos deploys, with the site's private zone forwarded to its resolvers |
 | `argocd` | Argo CD v3.5.6 from argo-helm's `argo-cd` chart 10.11.6, in `argocd`, syncing this repository's `main` |
 | `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
-| `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook reached through the gateway |
-| `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate` and the `private-ca` `ClusterIssuer` |
+| `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook reached through the gateway, and its own approver off once the cluster enforces its webhooks |
+| `approver-policy` | approver-policy v0.29.0 from Jetstack's OCI chart, in `cert-manager`, with its `CertificateRequestPolicy` CRD and its webhook reached through the gateway at its `.svc` name |
+| `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate`, the `private-ca` `ClusterIssuer`, and the `CertificateRequestPolicy`s and RBAC every certificate request is approved by |
 | `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook reached through the gateway |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
 | `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
@@ -100,7 +101,7 @@ old one and every webhook call is refused. Then change the router's
 | `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks reached through the gateway; no `Cluster` |
 | `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook reached through the gateway; no store, no `ExternalSecret` |
 | `management-namespaces` | The Secrets Manager's management organization `holos-org-platform` and project `holos-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
-| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the admission webhooks' TLS passthrough listener and `TLSRoute`s, the `ate` passthrough listener for `*.ate.bank.internal`, and the `k8s` passthrough listener for `k8s.bank.internal` |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the admission webhooks' TLS passthrough listeners and `TLSRoute`s, the `ate` passthrough listener for `*.ate.bank.internal`, and the `k8s` passthrough listener for `k8s.bank.internal` |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
@@ -185,7 +186,16 @@ Every component that registers a webhook renders its configurations with
   Talos host entry to the Gateway's address (`talos.cue`,
   `providers/proxmox/talos/README.md`), so the API server does not depend on
   the router; the router's `*.bank.internal` record gives the same answer
-  everywhere else.
+  everywhere else. One webhook is the exception: approver-policy signs its
+  own serving certificate for `cert-manager-approver-policy.cert-manager.svc`
+  and nothing else, so its entry in `webhooks.cue` sets that as its
+  `hostname`, and its URL is
+  `https://cert-manager-approver-policy.cert-manager.svc:9443/validate-policy-cert-manager-io-v1alpha1-certificaterequestpolicy`
+  (interview Q68). The control plane's host entry points the `.svc` name at
+  the Gateway like the others, the Gateway has a listener of its own for it
+  (The ingress gateway, below), and a pod still resolves it to the Service
+  through cluster DNS. The router's wildcard does not cover it, so it
+  answers only on the control plane.
 - `failurePolicy`: `Ignore` while `webhooks.enforcing` is false, the
   default; `Fail` once it is set. It is one flag per cluster, ADR 0001's two
   provisioning steps. `treasury` enforces.
@@ -268,6 +278,15 @@ spec:
   conditions: [{namespaceRegexes: ["("]}]
 YAML
 # admission webhook "validate.clustersecretstore.external-secrets.io" denied the request: failed to compile 0th namespace regex ...
+kubectl create --dry-run=server -f - <<'YAML'
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata: {name: bad}
+spec:
+  allowed: {dnsNames: {required: true}}
+  selector: {}
+YAML
+# admission webhook "policy.cert-manager.io" denied the request: [spec.selector: Required value: one of issuerRef or namespace must be defined, ...]
 kubectl -n kube-system logs kube-apiserver-treasury-cp-1 --since=10m | grep -c 'failing open'   # 0
 ```
 
@@ -285,6 +304,8 @@ for h in cert-manager-webhook.cert-manager cnpg-webhook-service.cnpg-system exte
   echo | openssl s_client -connect 10.20.0.30:9443 -servername $h.webhooks.treasury.bank.internal 2>/dev/null |
     openssl x509 -noout -ext subjectAltName
 done
+echo | openssl s_client -connect 10.20.0.30:9443 -servername cert-manager-approver-policy.cert-manager.svc 2>/dev/null |
+  openssl x509 -noout -issuer -ext subjectAltName   # issuer=CN=approver-policy-webhook-ca
 ```
 
 With `Fail`, every webhook depends on the Gateway and on istiod, which
@@ -315,7 +336,27 @@ So to rebuild `treasury`, or to build a new cluster:
 2. Once every `Application` is `Synced` and `Healthy`, check every webhook
    with the requests above. A webhook that answers refuses them under
    `Ignore` too.
-3. Merge `webhooks: enforcing: true`.
+3. Merge `webhooks: enforcing: true`. The same flag turns cert-manager's
+   own approver off (`disableAutoApproval`), so from then on approver-policy
+   alone approves certificate requests (Approval, under The private CA,
+   below).
+
+Until step 3, cert-manager approves every certificate request itself, as it
+did before approver-policy. approver-policy decides the same requests too,
+where it can bind a policy: it approves what a policy allows, and through
+`deny-all` it denies what none does, such as a project's request or a new
+component's with no `PrivateCA.requesters` entry. Whichever answers first
+sets the condition, so during a bootstrap such a request may go either way.
+It cannot be otherwise: while cert-manager's webhook fails open, a request
+made while the webhook is unreachable has no `spec.username`, which the
+webhook stamps, and approver-policy cannot bind a policy to a request with
+no user. It leaves such a request unprocessed, and on a rebuild those are
+the root and the Gateway's wildcard, made before the Gateway the webhook is
+reached through: approver-policy alone would deadlock the bootstrap. Once
+the cluster enforces, cert-manager's webhook refuses any request it cannot
+stamp, so every request has a user. `treasury`'s root request,
+`private-ca-root-1`, dates from that time, has no user, and was approved by
+cert-manager.
 
 Between the Gateway coming up and step 3, istiod switches its validators to
 `Fail` (see Istio below) and Argo CD sets them back to `Ignore`, so
@@ -370,6 +411,116 @@ sudo update-ca-certificates
 Before replacing a trusted root, remove the old one: macOS's Keychain Access
 lists it as `Holos treasury root CA`. curl takes it without installing it,
 `--cacert ~/treasury-root-ca.pem`.
+
+#### Approval
+
+cert-manager signs nothing until a `CertificateRequest` is approved. A
+`Certificate` makes a key and a `CertificateRequest` holding the CSR, in its
+own namespace; cert-manager's mutating webhook stamps the request with who
+created it, `spec.username` and `spec.groups`, which for a request made from
+a `Certificate` is cert-manager's controller,
+`system:serviceaccount:cert-manager:cert-manager`, whatever the namespace;
+an approver sets `Approved` or `Denied`, either final; and the issuer signs
+only an approved request. A denied request fails its `Certificate`, which
+tries again with a new request after a back-off.
+
+cert-manager's own approver approves every request for any issuer, so anyone
+who may create a `Certificate` anywhere, such as a project owner with `admin`
+in the project's namespace, could have `private-ca` sign
+`keycloak.bank.internal`, or a CA, which laptops, pods, holos-controller and
+the Talos nodes all trust. Once the cluster enforces its webhooks that
+approver is off (`disableAutoApproval` in `components/cert-manager`), and
+approver-policy (`components/approver-policy`) decides instead, by the
+`CertificateRequestPolicy`s the `private-ca` component renders beside the
+issuers they guard. A policy applies to a request when its `issuerRef`
+selector matches the request's issuer, its namespace selector the request's
+namespace, and the requester may `use` the policy, which approver-policy asks
+the API server with a SubjectAccessReview for the request's user and groups
+in its namespace. The request is approved if one policy that applies allows
+everything it asks for, naming that policy, and denied otherwise, naming
+every policy that applied and why each refused; with no policy that applies
+it would be left unprocessed, with no condition, for good. A policy allows
+only what its `allowed` lists: a request carrying a DNS name, usage, common
+name or subject field the policy does not list is denied. No policy sets a
+duration constraint, since one denies a request that names no duration, as
+most of the platform's do not.
+
+| Policy | Issuer | Namespace | Allows | Bound to |
+| --- | --- | --- | --- | --- |
+| `private-ca-root` | `Issuer` `private-ca-bootstrap` | `cert-manager` | the root's common name and subject, a CA | cert-manager's controller |
+| `trust-manager-webhook` | `Issuer` `trust-manager` | `cert-manager` | trust-manager's webhook's two DNS names and its common name | cert-manager's controller |
+| `private-ca-<namespace>` | `ClusterIssuer` `private-ca` | that namespace | exactly the DNS names, usages and common name its `Certificate`s list, no CA | cert-manager's controller |
+| `deny-all` | any | any | nothing: it requires a DNS name from an empty list | `system:authenticated` |
+
+The `private-ca-<namespace>` policies are `ate-system`, `cnpg-system`,
+`external-secrets`, `holos-authenticator`, `istio-ingress` and
+`substrate-shim`. A policy's `values` are patterns in which `*` matches any
+string, so a namespace with a wildcard name, `istio-ingress`'s
+`*.bank.internal` or `substrate-shim`'s atespace wildcards, also has a CEL
+rule that each name be one of the listed ones exactly; without it
+`*.bank.internal` would allow `keycloak.bank.internal`.
+
+So the namespace selector keeps out every namespace not listed, a project's
+included: only `deny-all` applies there, and the request is denied. RBAC is
+the second gate: the ClusterRole and ClusterRoleBinding
+`approver-policy:platform` bind the platform policies only to cert-manager's
+controller, so a `CertificateRequest` someone writes by hand, even in a
+platform namespace and for a listed name, is bound only to `deny-all` and is
+denied. A namespace's `admin` cannot grant itself `use` on a platform policy
+with a `RoleBinding`, since RBAC refuses a binding to a permission its author
+does not hold. `system:masters` is the exception: it passes every
+SubjectAccessReview, so a request made by hand with the Talos admin
+kubeconfig is approved wherever a policy's names and namespace allow it, as
+such a user could approve it anyway.
+
+`deny-all` applies to every issuer, not only `private-ca`, so an `Issuer` a
+project makes in its own namespace, even a self-signed one, issues nothing:
+its requests are denied like any other the platform's policies do not list.
+A project gets certificates only once a policy names it, which is the
+question in the tech-debt item on an issuer per project.
+
+A component that adds a `Certificate` from `private-ca` adds one entry to
+`PrivateCA.requesters` in `components/private-ca.cue`, under its namespace
+and the `Certificate`'s name, with the DNS names and any usages or common
+name. The `Certificate` takes those fields from the entry
+(`spec: {PrivateCA.requesters[NS][Name], secretName: ...}`), so the names are
+written once and the policy follows them. Without an entry its first request
+is denied, by `deny-all`, the first time it syncs, not at a renewal months
+later.
+
+Check that each request is approved by its own policy:
+
+```sh
+kubectl get certificaterequestpolicies   # every one READY True
+kubectl get certificaterequests -A -o 'custom-columns=NS:.metadata.namespace,NAME:.metadata.name,USER:.spec.username,APPROVED:.status.conditions[?(@.type=="Approved")].message,DENIED:.status.conditions[?(@.type=="Denied")].message'
+# ate-system  substrate-db-server-2  system:serviceaccount:cert-manager:cert-manager  Approved by CertificateRequestPolicy: "private-ca-ate-system"  <none>
+```
+
+A denied `Certificate` is `Ready=False`, and its `Issuing` condition and
+events give the request's message; here one for `keycloak.bank.internal` in
+a namespace outside the list:
+
+```text
+$ kubectl -n approver-test describe certificate keycloak
+...
+    Message:                 The certificate request has failed to complete and will be retried: No policy approved this request: [deny-all: spec.allowed.dnsNames.values: Invalid value: ["keycloak.bank.internal"]]
+    Reason:                  policy.cert-manager.io
+    Status:                  False
+    Type:                    Issuing
+```
+
+The request, `kubectl describe certificaterequest keycloak-1`, has
+`Denied=True` with the same message and reason `policy.cert-manager.io`, and
+a `Denied` event from `policy.cert-manager.io`. The message lists, in
+brackets, each policy that applied and the `allowed` fields it refused: here
+`deny-all` alone, so no namespace policy applied and the namespace needs an
+entry in `PrivateCA.requesters`. A platform namespace asking for a name
+outside its list gets its own policy too, with the names it does allow:
+`[private-ca-holos-authenticator: spec.allowed.dnsNames.values: Invalid
+value: ["keycloak.bank.internal"]: k8s.bank.internal]`. The issuers'
+`WaitingForApproval` events on a request are normal. A request pending with
+no condition and an `Unprocessed` event matched no policy, which `deny-all`
+rules out for any request with a user.
 
 istiod trusts the root when it fetches the JWKS for a RequestAuthentication
 through `/cacerts/extra.pem`, which Istio's chart mounts from ConfigMap
@@ -649,6 +800,12 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   Every route is rendered here,
   not by the webhook's component, so the listener and its routes change in
   one sync. istiod adds 9443 to the gateway's Service.
+  A webhook hostname outside `*.webhooks.<cluster>.<privateDomain>` gets a
+  listener of its own on 9443, `webhooks-<entry>`, for that one name,
+  otherwise the same, taking `TLSRoute`s only from its Service's namespace,
+  and its route attaches there: today `webhooks-cert-manager-approver-policy`
+  for `cert-manager-approver-policy.cert-manager.svc` (Admission webhooks,
+  above).
 - **Ate listener.** `ate` on 443 for `*.ate.<privateDomain>`, protocol `TLS`
   in `Passthrough` mode, beside `https` on the same port: Envoy matches the
   SNI to the most specific name, so `echo.demo.ate.bank.internal` comes here
