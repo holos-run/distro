@@ -17,7 +17,7 @@ webhooks:
   - v1beta1
   clientConfig:
     url: https://cert-manager-approver-policy.cert-manager.svc:9443/validate-policy-cert-manager-io-v1alpha1-certificaterequestpolicy
-  failurePolicy: Ignore
+  failurePolicy: Fail
   name: policy.cert-manager.io
   rules:
   - apiGroups:
