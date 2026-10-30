@@ -7,6 +7,7 @@ rules:
   - ""
   resourceNames:
   - oidc:jeff
+  - oidc:alice
   - oidc:bob
   resources:
   - users
@@ -16,6 +17,7 @@ rules:
   - ""
   resourceNames:
   - /platform/owners
+  - /projects/checkout/roles/owner
   - /projects/ledger/roles/owner
   resources:
   - groups

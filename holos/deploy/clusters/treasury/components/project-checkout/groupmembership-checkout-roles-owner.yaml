@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: GroupMembership
+metadata:
+    labels:
+        holos.run/project: checkout
+    name: checkout-roles-owner
+    namespace: checkout
+spec:
+    groupRef:
+        name: checkout-roles-owner
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    members:
+        - email: alice@bank.internal

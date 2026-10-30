@@ -1,0 +1,12 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Group
+metadata:
+    labels:
+        holos.run/project: checkout
+    name: checkout-roles-owner
+    namespace: checkout
+spec:
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    path: projects/checkout/roles/owner

@@ -1,0 +1,26 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    labels:
+        holos.run/project: checkout
+    name: checkout
+    namespace: checkout
+spec:
+    deletionPolicy: Orphan
+    email: quay+checkout@bank.internal
+    name: checkout
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin
+        - name: projectowners
+          oidcGroup: /projects/checkout/roles/owner
+          role: admin
+        - name: projecteditors
+          oidcGroup: /projects/checkout/roles/editor
+          repositoryPermission: write
+          role: creator
+        - name: projectviewers
+          oidcGroup: /projects/checkout/roles/viewer
+          repositoryPermission: read
+          role: member
