@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"go.holos.run/distro/providers/proxmox"
+	"go.holos.run/distro/providers/talos"
 )
 
 func env(m map[string]string) func(string) string {
@@ -98,5 +103,44 @@ func TestWorkersFlag(t *testing.T) {
 				t.Errorf("%v: err = %v, want it to mention %q", args, err, tc.want)
 			}
 		}
+	}
+}
+
+// The config file keeps the flat keys it had before the split, half of them
+// the Talos layer's and half the Proxmox provider's, and its defaults are
+// the garage's: the file README.md shows is the defaults with a cluster.
+func TestConfigFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "talosvm.json")
+	if err := os.WriteFile(file, []byte(`{
+  "cluster": "treasury",
+  "talosVersion": "v1.14.4",
+  "nodes": [],
+  "diskStorage": "local-zfs",
+  "isoStorage": "garage",
+  "snippetStorage": "garage",
+  "diskSSD": true,
+  "bridge": "k8s",
+  "nameserver": "192.168.2.1",
+  "searchDomain": "lan",
+  "firstAddress": "10.20.0.50",
+  "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 8192, "diskGiB": 32 },
+  "pools": [
+    { "name": "general", "count": 3, "cores": 4, "memoryMiB": 16384, "diskGiB": 64 }
+  ]
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := defaultConfig()
+	if err := talos.Decode(file, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := defaultConfig()
+	want.Cluster = "treasury"
+	want.Nodes = []string{}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("config =\n%+v\nwant\n%+v", got, want)
+	}
+	if err := errors.Join(got.TalosConfig.Validate(proxmox.CheckNodeAddress), got.ProxmoxConfig.Validate()); err != nil {
+		t.Errorf("the README's config is invalid: %v", err)
 	}
 }

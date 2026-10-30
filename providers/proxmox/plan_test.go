@@ -1,53 +1,52 @@
-package talosvm
+package proxmox
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/netip"
 	"slices"
 	"strings"
 	"testing"
 
+	"go.holos.run/distro/providers/infra"
 	"go.holos.run/distro/providers/proxmox/internal/pve"
 )
 
 var garageNodes = []string{"r620a", "r620b", "r620c"}
 
-func mustSpecs(t *testing.T, c Config, nodes []string) []Spec {
-	t.Helper()
-	specs, err := Specs(c, nodes)
+func TestPlace(t *testing.T) {
+	specs := treasury()
+	for i := range 2 {
+		s := specs[1]
+		s.Name, s.Labels, s.Zones = fmt.Sprintf("treasury-microvm-%d", i+1), []infra.Label{{Key: "role", Value: "worker"}, {Key: "pool", Value: "microvm"}}, []string{"r620c"}
+		specs = append(specs, s)
+	}
+	zones, err := place(specs, garageNodes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return specs
-}
-
-func TestSpecsPlacement(t *testing.T) {
-	c := treasury()
-	c.Pools = append(c.Pools, Pool{Name: "microvm", Count: 2, Size: c.Pools[0].Size, Nodes: []string{"r620c"}})
 	var got []string
-	for _, s := range mustSpecs(t, c, garageNodes) {
-		got = append(got, s.Name+"@"+s.Node+"="+s.Address.String())
+	for i, s := range specs {
+		got = append(got, s.Name+"@"+zones[i])
 	}
 	// One control plane, then the three general workers one per host.
 	want := []string{
-		"treasury-cp-1@r620a=10.20.0.50",
-		"treasury-general-1@r620b=10.20.0.51", "treasury-general-2@r620c=10.20.0.52", "treasury-general-3@r620a=10.20.0.53",
-		"treasury-microvm-1@r620c=10.20.0.54", "treasury-microvm-2@r620c=10.20.0.55",
+		"treasury-cp-1@r620a",
+		"treasury-general-1@r620b", "treasury-general-2@r620c", "treasury-general-3@r620a",
+		"treasury-microvm-1@r620c", "treasury-microvm-2@r620c",
 	}
 	if !slices.Equal(got, want) {
-		t.Errorf("Specs =\n%v\nwant\n%v", got, want)
+		t.Errorf("place =\n%v\nwant\n%v", got, want)
+	}
+	if _, err := place(specs, nil); err == nil {
+		t.Error("place accepted no nodes")
 	}
 }
 
 func TestCreateParams(t *testing.T) {
-	c := treasury()
-	s := mustSpecs(t, c, garageNodes)[1]
-	img := Image{FactoryURL: FactoryURL, SchematicID: "abcdef0123456789", TalosVersion: "v1.14.4"}
-	p := CreateParams(c, s, 105, img, "d")
+	s := treasury()[1]
+	s.Description = "d"
+	p := CreateParams(Default(), "treasury", s, MACFor("treasury", "treasury-general-1", 0), 105)
 	want := map[string]string{
 		"vmid":        "105",
 		"name":        "treasury-general-1",
@@ -63,7 +62,7 @@ func TestCreateParams(t *testing.T) {
 		"balloon":     "0",
 		"scsihw":      "virtio-scsi-pci",
 		"scsi0":       "local-zfs:64,discard=on,ssd=1",
-		"ide0":        "garage:iso/talos-v1.14.4-abcdef012345-nocloud-amd64.iso,media=cdrom",
+		"ide0":        "garage:iso/talos-v1.14.4-0123456789ab-nocloud-amd64.iso,media=cdrom",
 		"ide2":        "local-zfs:cloudinit",
 		"citype":      "nocloud",
 		"cicustom":    "network=garage:snippets/talosvm_treasury_treasury-general-1-net.yaml",
@@ -88,40 +87,19 @@ func TestCreateParams(t *testing.T) {
 	}
 }
 
-func TestSchematicAndImage(t *testing.T) {
-	want := "customization:\n  systemExtensions:\n    officialExtensions:\n" +
-		"      - siderolabs/gvisor\n      - siderolabs/kata-containers\n      - siderolabs/qemu-guest-agent\n"
-	if Schematic() != want {
-		t.Errorf("Schematic =\n%s", Schematic())
+// Labels go into tags in order, after the managed and cluster tags, and come
+// back from them, whatever separators Proxmox stored the tags with.
+func TestTagsAndLabels(t *testing.T) {
+	labels := []infra.Label{{Key: "role", Value: "worker"}, {Key: "pool", Value: "micro-vm"}}
+	tags := Tags("treasury", labels)
+	if want := []string{"talosvm", "talosvm-cluster-treasury", "talosvm-role-worker", "talosvm-pool-micro-vm"}; !slices.Equal(tags, want) {
+		t.Errorf("Tags = %v, want %v", tags, want)
 	}
-	img := Image{FactoryURL: FactoryURL, SchematicID: "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba", TalosVersion: "v1.14.4"}
-	if got := img.ISOURL(); got != "https://factory.talos.dev/image/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba/v1.14.4/nocloud-amd64.iso" {
-		t.Errorf("ISOURL = %s", got)
-	}
-	if got := img.Installer(); got != "factory.talos.dev/nocloud-installer/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba:v1.14.4" {
-		t.Errorf("Installer = %s", got)
-	}
-	if got := img.VolID("garage"); got != "garage:iso/talos-v1.14.4-376567988ad3-nocloud-amd64.iso" {
-		t.Errorf("VolID = %s", got)
-	}
-}
-
-func TestFactorySchematicID(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		if r.Method != http.MethodPost || r.URL.Path != "/schematics" || string(body) != Schematic() {
-			t.Errorf("got %s %s %q", r.Method, r.URL.Path, body)
+	for _, sep := range []string{";", ",", " "} {
+		r := res(1, "a", "n", strings.Join(tags, sep)+sep+"hand-made")
+		if got := Labels(r); !slices.Equal(got, labels) {
+			t.Errorf("Labels(%q) = %v, want %v", r.Tags, got, labels)
 		}
-		if ct := r.Header.Get("Content-Type"); ct != "application/yaml" {
-			t.Errorf("Content-Type = %q", ct)
-		}
-		w.WriteHeader(http.StatusCreated)
-		io.WriteString(w, `{"id":"feedface","schematic":"x"}`)
-	}))
-	defer srv.Close()
-	id, err := Factory{BaseURL: srv.URL, HTTP: srv.Client()}.SchematicID(context.Background())
-	if err != nil || id != "feedface" {
-		t.Fatalf("SchematicID = %q, %v", id, err)
 	}
 }
 
@@ -246,14 +224,14 @@ func TestSnippetNameIsUnambiguous(t *testing.T) {
 }
 
 func TestReconcile(t *testing.T) {
-	specs := mustSpecs(t, treasury(), garageNodes)
+	specs := treasury()
 	existing := append(tenants(), res(104, "treasury-cp-1", "r620b", "talosvm;talosvm-cluster-treasury;talosvm-role-controlplane"))
 	create, skip, err := Reconcile(specs, existing, "treasury")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(skip) != 1 || skip[0].Spec.Name != "treasury-cp-1" || len(create) != 3 {
-		t.Errorf("create %d skip %d, want 3 and 1", len(create), len(skip))
+	if len(skip) != 1 || skip[0].i != 0 || skip[0].vm.VMID != 104 || !slices.Equal(create, []int{1, 2, 3}) {
+		t.Errorf("create %v skip %+v, want [1 2 3] and treasury-cp-1", create, skip)
 	}
 	conflict := append(existing, res(300, "treasury-general-2", "r620a", "hand-made"))
 	if _, _, err := Reconcile(specs, conflict, "treasury"); err == nil || !strings.Contains(err.Error(), "treasury-general-2") {
@@ -265,19 +243,33 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
-func treasuryPlan(t *testing.T) VMPlan {
+// treasuryPlan is a plan to create the treasury specs among the tenants, as
+// Plan builds it before allocate.
+func treasuryPlan(t *testing.T) *createPlan {
 	t.Helper()
-	specs := mustSpecs(t, treasury(), garageNodes)
-	var create []Action
-	for _, s := range specs {
-		create = append(create, Action{Spec: s})
+	specs := treasury()
+	zones, err := place(specs, garageNodes)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return VMPlan{
-		Config: treasury(), Create: create, Guests: tenants(), Nets: map[int]GuestNet{},
-		Dir: "/mnt/s", VMIDs: []int{104, 105, 106, 107},
-		Image: Image{FactoryURL: FactoryURL, SchematicID: "abc", TalosVersion: "v1.14.4"},
-		Read:  ownedFile(map[string]string{}, nil),
+	p := &createPlan{
+		config: Default(), cluster: "treasury", specs: specs, vms: make([]infra.VM, len(specs)),
+		guests: tenants(), dir: "/mnt/s", read: ownedFile(map[string]string{}, nil),
 	}
+	for i, s := range specs {
+		p.create = append(p.create, i)
+		p.vms[i] = infra.VM{Name: s.Name, Zone: zones[i], NIC: infra.NIC{Address: netip.PrefixFrom(s.Address, 32)}}
+	}
+	return p
+}
+
+// configs renders every VM's config from the NIC allocate gave it.
+func configs(p *createPlan) map[string]string {
+	out := map[string]string{}
+	for _, vm := range p.vms {
+		out[vm.Name] = render(vm.NIC)
+	}
+	return out
 }
 
 func callStrings(calls []Call) []string {
@@ -289,7 +281,11 @@ func callStrings(calls []Call) []string {
 }
 
 func TestPlanCreatesThenStarts(t *testing.T) {
-	calls, err := treasuryPlan(t).Calls()
+	p := treasuryPlan(t)
+	if err := p.allocate(map[int]GuestNet{}); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := p.Calls(configs(p), []int{104, 105, 106, 107})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,17 +302,26 @@ func TestPlanCreatesThenStarts(t *testing.T) {
 	if calls[1].Params.Has("start") {
 		t.Error("create asks Proxmox to start the VM, which hides a failed start")
 	}
+	// The snippet is the header and the config, byte for byte.
+	if want := SnippetHeader("treasury", "treasury-cp-1") + "\n" + configs(p)["treasury-cp-1"]; calls[0].Content != want {
+		t.Errorf("snippet =\n%s\nwant\n%s", calls[0].Content, want)
+	}
+	// A VM without a config is refused.
+	cs := configs(p)
+	delete(cs, "treasury-general-2")
+	if _, err := p.Calls(cs, []int{104, 105, 106, 107}); err == nil || !strings.Contains(err.Error(), "no config for VM treasury-general-2") {
+		t.Errorf("Calls without a config = %v", err)
+	}
 }
 
 func TestPlanCollisions(t *testing.T) {
 	p := treasuryPlan(t)
-	p.Nets = map[int]GuestNet{
+	err := p.allocate(map[int]GuestNet{
 		100: {Addresses: []netip.Addr{netip.MustParseAddr("10.20.0.4")}},
 		103: {Addresses: []netip.Addr{netip.MustParseAddr("10.20.0.52")}},
-	}
-	_, err := p.Calls()
+	})
 	if err == nil || !strings.Contains(err.Error(), "treasury-general-2: address 10.20.0.52 is already used by vmid 103 jeffsbox") {
-		t.Errorf("Calls = %v", err)
+		t.Errorf("allocate = %v", err)
 	}
 }
 
@@ -324,11 +329,13 @@ func TestPlanCollisions(t *testing.T) {
 // VM of the same run just took.
 func TestPlanRehashesMACs(t *testing.T) {
 	p := treasuryPlan(t)
-	p.Nets = map[int]GuestNet{102: {MACs: []string{MACFor("treasury", "treasury-general-3", 0)}}}
 	// Make treasury-general-1's first candidate the same as treasury-cp-1's, as
 	// a 24-bit hash can.
-	p.Create[1].Spec.Name = "treasury-cp-1"
-	calls, err := p.Calls()
+	p.specs[1].Name, p.vms[1].Name = "treasury-cp-1", "treasury-cp-1"
+	if err := p.allocate(map[int]GuestNet{102: {MACs: []string{MACFor("treasury", "treasury-general-3", 0)}}}); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := p.Calls(configs(p), []int{104, 105, 106, 107})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,48 +353,65 @@ func TestPlanRehashesMACs(t *testing.T) {
 	if !slices.Equal(macs, want) {
 		t.Errorf("MACs = %v, want %v", macs, want)
 	}
+	for i, vm := range p.VMs() {
+		if vm.NIC.MAC != want[i] {
+			t.Errorf("VMs()[%d].NIC.MAC = %s, want %s", i, vm.NIC.MAC, want[i])
+		}
+	}
 }
 
 func TestPlanExistingVMs(t *testing.T) {
 	cp := res(104, "treasury-cp-1", "r620a", "talosvm;talosvm-cluster-treasury;talosvm-role-controlplane")
 	cp.Status = "stopped"
-	specs := mustSpecs(t, treasury(), garageNodes)
 	cpPath := "/mnt/s/talosvm_treasury_treasury-cp-1-net.yaml"
-	base := func() VMPlan {
-		return VMPlan{
-			Config: treasury(), Existing: []Action{{Spec: specs[0], Existing: &cp}},
-			Guests: append(tenants(), cp), Dir: "/mnt/s",
-			Nets: map[int]GuestNet{104: {Net0MAC: "BC:24:11:AA:BB:CC", MACs: []string{"BC:24:11:AA:BB:CC"}}},
+	const mac = "BC:24:11:AA:BB:CC"
+	base := func(files map[string]string) *createPlan {
+		specs := treasury()[:1]
+		return &createPlan{
+			config: Default(), cluster: "treasury", specs: specs,
+			vms:      []infra.VM{{Name: specs[0].Name, NIC: infra.NIC{Address: netip.PrefixFrom(specs[0].Address, 32)}}},
+			existing: []existingVM{{i: 0, vm: cp}},
+			guests:   append(tenants(), cp), dir: "/mnt/s", read: ownedFile(files, nil),
 		}
+	}
+	nets := map[int]GuestNet{104: {Net0MAC: mac, MACs: []string{mac}}}
+	snippet := func(addr string) string {
+		return SnippetHeader("treasury", "treasury-cp-1") + "\n" + render(infra.NIC{MAC: mac, Address: netip.MustParsePrefix(addr + "/32")})
 	}
 
 	// Snippet there with the same address: nothing to write; the stopped
 	// VM is started.
-	p := base()
-	p.Read = ownedFile(map[string]string{cpPath: NetworkConfig(treasury(), specs[0], "BC:24:11:AA:BB:CC")}, nil)
-	calls, err := p.Calls()
+	p := base(map[string]string{cpPath: snippet("10.20.0.50")})
+	if err := p.allocate(nets); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := p.Calls(configs(p), nil)
 	if err != nil || !slices.Equal(callStrings(calls), []string{"POST /nodes/r620a/qemu/104/status/start"}) {
 		t.Errorf("same address: %v, %v", callStrings(calls), err)
 	}
+	if p.vms[0].NIC.MAC != mac {
+		t.Errorf("existing VM's MAC = %q, want net0's", p.vms[0].NIC.MAC)
+	}
 
-	// The config now says another address: refused, never rewritten.
-	moved := specs[0]
-	moved.Address = netip.MustParseAddr("10.20.0.60")
-	p.Read = ownedFile(map[string]string{cpPath: NetworkConfig(treasury(), moved, "BC:24:11:AA:BB:CC")}, nil)
-	if _, err := p.Calls(); err == nil || !strings.Contains(err.Error(), "VM treasury-cp-1 has address 10.20.0.60, config says 10.20.0.50") {
+	// The spec now says another address: refused, never rewritten.
+	p = base(map[string]string{cpPath: snippet("10.20.0.60")})
+	if err := p.allocate(nets); err == nil || !strings.Contains(err.Error(), "VM treasury-cp-1 has address 10.20.0.60, config says 10.20.0.50") {
 		t.Errorf("moved address: %v", err)
 	}
 
 	// Snippet missing: written again with the MAC on net0.
-	p.Read = ownedFile(map[string]string{}, nil)
-	calls, err = p.Calls()
-	if err != nil || len(calls) != 2 || calls[0].Method != WriteFile || !strings.Contains(calls[0].Content, `macaddress: "BC:24:11:AA:BB:CC"`) {
+	p = base(map[string]string{})
+	if err := p.allocate(nets); err != nil {
+		t.Fatal(err)
+	}
+	calls, err = p.Calls(configs(p), nil)
+	if err != nil || len(calls) != 2 || calls[0].Method != WriteFile || calls[0].Content != snippet("10.20.0.50") {
 		t.Errorf("missing snippet: %v, %v", callStrings(calls), err)
 	}
 
 	// Snippet missing and the address taken meanwhile: refused.
-	p.Nets[103] = GuestNet{Addresses: []netip.Addr{netip.MustParseAddr("10.20.0.50")}}
-	if _, err := p.Calls(); err == nil || !strings.Contains(err.Error(), "its address 10.20.0.50 is now used by vmid 103 jeffsbox") {
+	nets[103] = GuestNet{Addresses: []netip.Addr{netip.MustParseAddr("10.20.0.50")}}
+	if err := base(map[string]string{}).allocate(nets); err == nil || !strings.Contains(err.Error(), "its address 10.20.0.50 is now used by vmid 103 jeffsbox") {
 		t.Errorf("missing snippet, address taken: %v", err)
 	}
 }
@@ -402,11 +426,11 @@ func TestCheckStorages(t *testing.T) {
 			pve.Storage{Node: n, Storage: "nosnip", Status: "available", Shared: 1, Content: "iso"},
 		)
 	}
-	shared, err := CheckStorages(treasury(), garageNodes, ss)
+	shared, err := CheckStorages(Default(), garageNodes, ss)
 	if err != nil || !shared {
 		t.Errorf("CheckStorages = %v, %v; want shared, nil", shared, err)
 	}
-	c := treasury()
+	c := Default()
 	c.ISOStorage = "local"
 	if shared, err := CheckStorages(c, garageNodes, ss); err != nil || shared {
 		t.Errorf("CheckStorages(local) = %v, %v; want not shared", shared, err)
@@ -415,12 +439,12 @@ func TestCheckStorages(t *testing.T) {
 	if _, err := CheckStorages(c, garageNodes, ss); err == nil || !strings.Contains(err.Error(), "storage ssd is not on node r620a") {
 		t.Errorf("CheckStorages(ssd) = %v", err)
 	}
-	c = treasury()
+	c = Default()
 	c.SnippetStorage = "nosnip"
 	if _, err := CheckStorages(c, garageNodes, ss); err == nil || !strings.Contains(err.Error(), "does not allow snippets") {
 		t.Errorf("CheckStorages(nosnip) = %v", err)
 	}
-	c = treasury()
+	c = Default()
 	c.DiskStorage = "local"
 	if _, err := CheckStorages(c, garageNodes, ss); err == nil || !strings.Contains(err.Error(), "does not allow images") {
 		t.Errorf("CheckStorages(local disks) = %v", err)

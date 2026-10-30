@@ -16,7 +16,10 @@ As with Debian, effective governance is a primary concern of the project.
 ## Code
 
 The repository is the Go module `go.holos.run/distro`. Providers live under
-`providers/`, starting with `providers/proxmox/`; each provider's programs live
+`providers/`, in two layers with the contracts between them in
+`providers/infra/`: infrastructure providers, starting with
+`providers/proxmox/`, make VMs, and Kubernetes providers, starting with
+`providers/talos/`, turn them into a cluster. Each provider's programs live
 under `providers/<provider>/cmd/<name>` and run from a checkout with
 `go run ./providers/<provider>/cmd/<name>`. Programs that work on the platform
 rather than a provider live under `cmd/<name>`, such as `cmd/quay-bootstrap`,

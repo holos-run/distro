@@ -1,4 +1,4 @@
-package talosvm
+package proxmox
 
 import (
 	"crypto/sha256"
@@ -17,7 +17,8 @@ import (
 // The k8s vnet is an SDN EVPN vnet with an anycast gateway on every Proxmox
 // node and no DHCP. Every node address is a /32 and every packet goes to the
 // gateway on the node's own hypervisor, so each VM needs a static address and
-// an on-link default route, which come from a cloud-init network snippet.
+// an on-link default route, which come from a cloud-init network snippet the
+// Kubernetes layer renders from what the VM's NIC reports.
 var (
 	// NodeSubnet is the k8s vnet's subnet.
 	NodeSubnet = netip.MustParsePrefix("10.20.0.0/24")
@@ -25,8 +26,18 @@ var (
 	Gateway = netip.MustParseAddr("10.20.0.1")
 )
 
-// VnetMTU is the k8s vnet's MTU, written into each node's network snippet.
+// VnetMTU is the k8s vnet's MTU, which each VM's NIC reports for its guest
+// to set.
 const VnetMTU = 8950
+
+// NodeNetwork is the network the Kubernetes layer's nodes attach to by
+// default: the k8s vnet, whose name is also its bridge's.
+const NodeNetwork = "k8s"
+
+// FirstNodeAddress is where a cluster's node addresses start by default: the
+// first address after the reservations, cluster slot 1 in the README's
+// allocation table.
+var FirstNodeAddress = netip.MustParseAddr("10.20.0.50")
 
 // Reservation is a range of the node subnet no node may take.
 type Reservation struct {
@@ -96,33 +107,6 @@ func MACFor(cluster, vm string, attempt int) string {
 	}
 	h := sha256.Sum256([]byte(seed))
 	return fmt.Sprintf("BC:24:11:%02X:%02X:%02X", h[0], h[1], h[2])
-}
-
-// NetworkConfig is a node's cloud-init network-config, version 2. Proxmox's
-// own generated config is version 1, which cannot say that the gateway of a
-// /32 is on-link; Talos's nocloud platform honors on-link on a version 2
-// route by adding a link-scope route to the gateway first. This is the shape
-// the garage's maintenance-mode Talos VMs already boot with. Talos reads the
-// nameservers; it parses but does not apply search. The first line is
-// SnippetHeader, which is how talosvm recognizes the file as its own.
-func NetworkConfig(c Config, s Spec, mac string) string {
-	return SnippetHeader(c.Cluster, s.Name) + fmt.Sprintf(`
-version: 2
-ethernets:
-  net0:
-    match:
-      macaddress: "%s"
-    addresses:
-      - %s/32
-    mtu: %d
-    routes:
-      - to: 0.0.0.0/0
-        via: %s
-        on-link: true
-    nameservers:
-      addresses: [%s]
-      search: [%s]
-`, mac, s.Address, VnetMTU, Gateway, c.Nameserver, c.SearchDomain)
 }
 
 // guestNetKey matches the config keys that can carry a guest's address:
@@ -221,6 +205,16 @@ func SnippetNodeAddress(text string) (netip.Addr, bool) {
 		return netip.Addr{}, false
 	}
 	return found[0], true
+}
+
+// netProp returns the value of one property of a guest's netN, or "".
+func netProp(v, key string) string {
+	for _, prop := range strings.Split(v, ",") {
+		if val, ok := strings.CutPrefix(strings.TrimSpace(prop), key+"="); ok {
+			return val
+		}
+	}
+	return ""
 }
 
 // Net0MAC returns the MAC address on a guest's net0, upper case, or "".

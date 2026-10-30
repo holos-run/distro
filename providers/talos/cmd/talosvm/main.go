@@ -1,12 +1,18 @@
 // Command talosvm creates, lists, resizes, restarts and destroys the Talos
 // VMs of one cluster on Proxmox VE.
 //
-//	go run ./providers/proxmox/cmd/talosvm create  -cluster <name> [-config file] [-workers n] [-first-address a] [-snippets-dir dir] [-dry-run]
-//	go run ./providers/proxmox/cmd/talosvm list    -cluster <name> [-json]
-//	go run ./providers/proxmox/cmd/talosvm resize  -cluster <name> [-config file] [-workers n] [-nodes a,b] [-shrink] [-dry-run]
-//	go run ./providers/proxmox/cmd/talosvm restart -cluster <name> [-mode reboot|power-cycle] [-nodes a,b] [-timeout 15m] [-dry-run]
-//	go run ./providers/proxmox/cmd/talosvm destroy -cluster <name> [-yes]
-//	go run ./providers/proxmox/cmd/talosvm check
+//	go run ./providers/talos/cmd/talosvm create  -cluster <name> [-config file] [-workers n] [-first-address a] [-snippets-dir dir] [-dry-run]
+//	go run ./providers/talos/cmd/talosvm list    -cluster <name> [-json]
+//	go run ./providers/talos/cmd/talosvm resize  -cluster <name> [-config file] [-workers n] [-nodes a,b] [-shrink] [-dry-run]
+//	go run ./providers/talos/cmd/talosvm restart -cluster <name> [-mode reboot|power-cycle] [-nodes a,b] [-timeout 15m] [-dry-run]
+//	go run ./providers/talos/cmd/talosvm destroy -cluster <name> [-yes]
+//	go run ./providers/talos/cmd/talosvm check
+//
+// It is the one place that wires the two layers together: the Talos layer,
+// providers/talos, decides what the VMs are, and the Proxmox provider,
+// providers/proxmox, makes them through the infra.Compute contract. The
+// subcommands, flags, environment and output are the program's from before
+// the two were split.
 //
 // The VMs boot an Image Factory nocloud ISO carrying the qemu-guest-agent,
 // gvisor and kata-containers extensions, take a static /32 address from a
@@ -14,7 +20,7 @@
 // applies machine configuration afterwards. The snippets are files written
 // into the garage NFS export, mounted at -snippets-dir on the machine that
 // runs talosvm, because the Proxmox API cannot upload them. See
-// providers/proxmox/README.md.
+// providers/talos/README.md and providers/proxmox/README.md.
 //
 // resize sets the cores and memory of the cluster's existing VMs to the sizes
 // the config gives them, with PUT /nodes/{node}/qemu/{vmid}/config. Proxmox
@@ -58,8 +64,8 @@ import (
 	"syscall"
 	"time"
 
-	"go.holos.run/distro/providers/proxmox/internal/pve"
-	"go.holos.run/distro/providers/proxmox/internal/talosvm"
+	"go.holos.run/distro/providers/proxmox"
+	"go.holos.run/distro/providers/talos"
 )
 
 const usage = `usage: talosvm <command> [flags]
@@ -92,6 +98,31 @@ func main() {
 	}
 }
 
+// TalosConfig and ProxmoxConfig are the two halves of the config file: the
+// cluster's shape, which the Talos layer reads, and the provider's settings.
+// They are aliases so that config can embed both, which keeps the file's keys
+// flat, as they were before the split.
+type (
+	TalosConfig   = talos.Config
+	ProxmoxConfig = proxmox.Config
+)
+
+// config is the config file.
+type config struct {
+	TalosConfig
+	ProxmoxConfig
+}
+
+// defaultConfig is the garage: the Talos layer's defaults, the provider's,
+// and the node network and first address, which the Talos layer's config
+// holds but which are the provider's facts.
+func defaultConfig() config {
+	cfg := config{TalosConfig: talos.Default(), ProxmoxConfig: proxmox.Default()}
+	cfg.Network = proxmox.NodeNetwork
+	cfg.FirstAddress = proxmox.FirstNodeAddress.String()
+	return cfg
+}
+
 // defaultCAFile is where the README puts a copy of the cluster's
 // /etc/pve/pve-root-ca.pem. It is used when it exists and -ca-file is not
 // given, so the usual run verifies TLS without a flag.
@@ -119,7 +150,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if cmd != "check" {
 		configPath = fs.String("config", "", "JSON config file over the built-in garage defaults")
 		cluster = fs.String("cluster", "", "cluster name; overrides the config's cluster")
-		snippetsDir = fs.String("snippets-dir", talosvm.DefaultSnippetsDir, "local mount of the snippet storage's snippets directory, where network snippets are written")
+		snippetsDir = fs.String("snippets-dir", proxmox.DefaultSnippetsDir, "local mount of the snippet storage's snippets directory, where network snippets are written")
 	}
 	caFile := fs.String("ca-file", "", "PEM CA bundle to verify the Proxmox certificate (default ~/.config/holos/pve-root-ca.pem when it exists)")
 	insecure := fs.Bool("insecure", false, "skip TLS verification of the Proxmox certificate; never the default")
@@ -142,11 +173,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		workers = fs.Int("workers", -1, workersUsage+"; pass the one create was given")
 	case "restart":
 		dryRun = fs.Bool("dry-run", false, "print each node's steps and change nothing")
-		mode = fs.String("mode", talosvm.ModeReboot, "reboot (talosctl reboot, for changes inside the guest) or power-cycle (Proxmox shutdown and start, for a changed VM config)")
+		mode = fs.String("mode", talos.ModeReboot, "reboot (talosctl reboot, for changes inside the guest) or power-cycle (Proxmox shutdown and start, for a changed VM config)")
 		nodes = fs.String("nodes", "", "comma-separated VMs to restart, in order (default every worker, by name); may name the control plane")
-		timeout = fs.Duration("timeout", talosvm.DefaultRestartTimeout, "time one node may take, from cordon to its workloads being available")
-		shutdownTimeout = fs.Duration("shutdown-timeout", talosvm.DefaultShutdownTimeout, "power-cycle: time the guest has to shut down before Proxmox stops it hard")
-		requireDS = fs.String("require-daemonsets", strings.Join(talosvm.DefaultRequiredDaemonSets, ","), "comma-separated namespace/name DaemonSets a worker must have a Ready pod of, before and after")
+		timeout = fs.Duration("timeout", talos.DefaultRestartTimeout, "time one node may take, from cordon to its workloads being available")
+		shutdownTimeout = fs.Duration("shutdown-timeout", talos.DefaultShutdownTimeout, "power-cycle: time the guest has to shut down before Proxmox stops it hard")
+		requireDS = fs.String("require-daemonsets", strings.Join(talos.DefaultRequiredDaemonSets, ","), "comma-separated namespace/name DaemonSets a worker must have a Ready pod of, before and after")
 		kubectlPath = fs.String("kubectl", "kubectl", "kubectl to run; it uses KUBECONFIG")
 		talosctlPath = fs.String("talosctl", "talosctl", "talosctl to run; it uses TALOSCONFIG")
 	case "destroy":
@@ -166,10 +197,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		return fmt.Errorf("%s takes no arguments, got %q", cmd, fs.Args())
 	}
 
-	cfg := talosvm.Default()
+	cfg := defaultConfig()
 	if configPath != nil {
-		var err error
-		if cfg, err = talosvm.Load(*configPath); err != nil {
+		if err := talos.Decode(*configPath, &cfg); err != nil {
 			return err
 		}
 		if *cluster != "" {
@@ -188,20 +218,20 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if cmd == "create" || cmd == "resize" {
 		// Validate before reading the token, so a config mistake shows
 		// up even without credentials in the environment.
-		if err := cfg.Validate(); err != nil {
+		if err := errors.Join(cfg.TalosConfig.Validate(proxmox.CheckNodeAddress), cfg.ProxmoxConfig.Validate()); err != nil {
 			return err
 		}
 	}
-	var zo talosvm.ResizeOptions
+	var zo talos.ResizeOptions
 	if cmd == "resize" {
-		zo = talosvm.ResizeOptions{Nodes: splitList(*nodes), Shrink: *shrink}
+		zo = talos.ResizeOptions{Nodes: splitList(*nodes), Shrink: *shrink}
 		if err := zo.Validate(); err != nil {
 			return err
 		}
 	}
-	var ro talosvm.RestartOptions
+	var ro talos.RestartOptions
 	if cmd == "restart" {
-		ro = talosvm.RestartOptions{
+		ro = talos.RestartOptions{
 			Mode:              *mode,
 			Nodes:             splitList(*nodes),
 			Timeout:           *timeout,
@@ -216,12 +246,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		}
 		// Find the programs before anything changes, rather than after
 		// the first node is cordoned. A dry run never runs talosctl.
-		tools := talosvm.ExecTools{}
+		tools := talos.ExecTools{}
 		var err error
 		if tools.KubectlPath, err = exec.LookPath(*kubectlPath); err != nil {
 			return fmt.Errorf("-kubectl: %w", err)
 		}
-		if *mode == talosvm.ModeReboot && !*dryRun {
+		if *mode == talos.ModeReboot && !*dryRun {
 			if tools.TalosctlPath, err = exec.LookPath(*talosctlPath); err != nil {
 				return fmt.Errorf("-talosctl: %w", err)
 			}
@@ -238,41 +268,46 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if ca == "" && !*insecure {
 		ca = defaultCAFile(getenv)
 	}
-	hc, err := pve.NewHTTPClient(ca, *insecure)
+	hc, err := proxmox.NewHTTPClient(ca, *insecure)
 	if err != nil {
 		return err
 	}
-	client, err := pve.New(endpoint, getenv("PROXMOX_TOKEN_ID"), getenv("PROXMOX_TOKEN_SECRET"), hc)
+	compute, err := proxmox.New(endpoint, getenv("PROXMOX_TOKEN_ID"), getenv("PROXMOX_TOKEN_SECRET"), hc)
 	if err != nil {
 		return fmt.Errorf("%w (set PROXMOX_TOKEN_ID and PROXMOX_TOKEN_SECRET)", err)
 	}
-	r := &talosvm.Runner{
-		PVE:     client,
-		Factory: talosvm.Factory{BaseURL: talosvm.FactoryURL, HTTP: &http.Client{Timeout: time.Minute}},
-		Config:  cfg,
+	compute.Config, compute.Out, compute.Err = cfg.ProxmoxConfig, stdout, stderr
+	if snippetsDir != nil {
+		compute.SnippetsDir = *snippetsDir
+	}
+	r := &talos.Runner{
+		Compute: compute,
+		Factory: talos.Factory{BaseURL: talos.FactoryURL, HTTP: &http.Client{Timeout: time.Minute}},
+		Config:  cfg.TalosConfig,
 		Out:     stdout,
 		Err:     stderr,
 	}
-	if snippetsDir != nil {
-		r.SnippetsDir = *snippetsDir
+	if dryRun != nil {
+		r.DryRun, compute.DryRun = *dryRun, *dryRun
 	}
 	switch cmd {
 	case "create":
-		r.DryRun = *dryRun
 		return r.Create(ctx)
 	case "list":
-		return r.List(ctx, *asJSON)
+		vms, err := compute.List(ctx, cfg.Cluster)
+		if err != nil {
+			return err
+		}
+		return list(vms, *asJSON, stdout, stderr)
 	case "resize":
-		r.DryRun = *dryRun
 		return r.Resize(ctx, zo)
 	case "restart":
-		r.DryRun = *dryRun
 		return r.Restart(ctx, ro)
 	case "destroy":
-		r.DryRun = !*yes
-		return r.Destroy(ctx)
+		compute.DryRun = !*yes
+		return compute.Destroy(ctx, cfg.Cluster)
 	default:
-		if err := r.Check(ctx); err != nil {
+		if err := compute.Check(ctx); err != nil {
 			return err
 		}
 		fmt.Fprintln(stdout, "the token holds every privilege in providers/proxmox/preflight/privileges.txt")

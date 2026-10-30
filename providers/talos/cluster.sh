@@ -23,7 +23,7 @@ KUBERNETES_VERSION=1.37.1
 POOL_LABEL=holos.run/nodepool
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-repo=$(cd "$here/../../.." && pwd)
+repo=$(cd "$here/../.." && pwd)
 patches=$here/patches
 
 die() { echo "cluster.sh: $*" >&2; exit 1; }
@@ -50,7 +50,7 @@ export TALOSCONFIG=$state/talosconfig
 # left blank (it does when it cannot read the snippets mount), an unknown
 # role, or anything but one control plane and at least one worker.
 list() {
-  (cd "$repo" && go run ./providers/proxmox/cmd/talosvm list -cluster "$cluster" -json) >"$1"
+  (cd "$repo" && go run ./providers/talos/cmd/talosvm list -cluster "$cluster" -json) >"$1"
   jq -e 'all(.[]; (.address | type == "string" and length > 0)
                   and (.role == "controlplane" or .role == "worker"))' "$1" >/dev/null ||
     die "talosvm list gave a VM with no address or an unknown role; is the snippets directory mounted?"

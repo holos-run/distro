@@ -78,7 +78,7 @@ exits 0, which is why the render procedure runs `cue vet` first.
 To change the gateway's address, set `loadBalancer.gateway` (or the block)
 and render; the Gateway's `spec.addresses` and both pools follow, and so does
 the control plane's Talos patch of webhook host entries (`cue cmd talos`).
-Apply that with `talosctl` (`providers/proxmox/talos/README.md`) as soon as
+Apply that with `talosctl` (`providers/talos/README.md`) as soon as
 the Gateway reports its new address: in between, the API server dials the
 old one and every webhook call is refused. Then change the router's
 `*.bank.internal` record to match.
@@ -159,7 +159,7 @@ would put a new private key in `deploy/` on every render.
 Talos deploys CoreDNS itself, but its `KubeCoreDNSConfig` has only `enabled`
 and `image`, and `talosctl upgrade-k8s` re-applies Talos's own Corefile and
 prunes objects it no longer renders. The Corefile is platform policy, so the
-platform owns CoreDNS: `providers/proxmox/talos/patches/controlplane.yaml`
+platform owns CoreDNS: `providers/talos/patches/controlplane.yaml`
 sets `KubeCoreDNSConfig` `enabled: false`, and this component deploys CoreDNS
 as the same `kube-dns` Service at `10.96.0.10`, the address every kubelet was
 given. The chart's CoreDNS is 1.14.7, the version Talos 1.14.4 deploys.
@@ -189,7 +189,7 @@ Every component that registers a webhook renders its configurations with
   The hostname is the SNI the Gateway routes on and a DNS name on the
   webhook's serving certificate. The control plane resolves it through a
   Talos host entry to the Gateway's address (`talos.cue`,
-  `providers/proxmox/talos/README.md`), so the API server does not depend on
+  `providers/talos/README.md`), so the API server does not depend on
   the router; the router's `*.bank.internal` record gives the same answer
   everywhere else. One webhook is the exception: approver-policy signs its
   own serving certificate for `cert-manager-approver-policy.cert-manager.svc`
@@ -403,8 +403,8 @@ images=$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeAttribute
 echo "$images"   # csi-vol-..., one per volume
 
 set -a; . ~/.config/holos/proxmox.env; set +a
-go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury        # prints the calls only
-go run ./providers/proxmox/cmd/talosvm destroy -cluster treasury -yes
+go run ./providers/talos/cmd/talosvm destroy -cluster treasury        # prints the calls only
+go run ./providers/talos/cmd/talosvm destroy -cluster treasury -yes
 mv ~/.config/holos/talos/treasury ~/.config/holos/talos/treasury.old-$(date +%FT%H%M)
 
 # printf, so zsh splits the list too.
@@ -416,7 +416,7 @@ ssh root@r620a rbd ls k8s-rbd   # empty: the pool is treasury's alone
 expires within about 30 seconds, so retry once if it refuses. Keep the old
 state directory until the new cluster is up, then delete it, since it holds
 the old cluster's secrets. The new cluster comes up by the usage in
-`../providers/proxmox/talos/README.md`, from `talosvm create` to `cluster.sh
+`../providers/talos/README.md`, from `talosvm create` to `cluster.sh
 up`. Its private root is new (The private CA, below).
 
 ### The private CA
@@ -2988,7 +2988,7 @@ kubelet's node shutdown `Terminated` and those it refused with
 `NodeShutdown`. A
 reboot inside the guest is enough for the trust store, so the default
 `-mode reboot`
-([Restarting nodes](../providers/proxmox/README.md#restarting-nodes) has the
+([Restarting nodes](../providers/talos/README.md#restarting-nodes) has the
 rest):
 
 ```sh
@@ -2996,8 +2996,8 @@ rest):
 set -a; . ~/.config/holos/proxmox.env; set +a
 export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
 export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
-go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -dry-run   # the steps of each worker
-go run ./providers/proxmox/cmd/talosvm restart -cluster treasury
+go run ./providers/talos/cmd/talosvm restart -cluster treasury -dry-run     # the steps of each worker
+go run ./providers/talos/cmd/talosvm restart -cluster treasury
 kubectl -n argocd get applications                                          # every one Synced and Healthy
 ```
 
@@ -3263,13 +3263,13 @@ cue vet ./...
 rm -rf deploy/clusters
 holos render platform
 cue cmd talos
-git status deploy/ ../providers/proxmox/talos/clusters/
+git status deploy/ ../providers/talos/clusters/
 ```
 
 `cue cmd talos` writes the control plane's Talos patch, the webhook host
 entries, from the same data (`talos.cue`); it is not part of the platform, so
 `holos render platform` does not write it. A change to it reaches a running
-cluster only through `talosctl` (`providers/proxmox/talos/README.md`).
+cluster only through `talosctl` (`providers/talos/README.md`).
 
 `holos render platform` writes files but never removes one a component no
 longer renders, such as the Hubble certgen Job whose name changes with the
@@ -3500,8 +3500,8 @@ repository root:
 ```sh
 # 1. Disable Talos's CoreDNS (the patch is already in controlplane.yaml).
 set -a; . ~/.config/holos/proxmox.env; set +a
-providers/proxmox/talos/cluster.sh gen treasury
-providers/proxmox/talos/cluster.sh apply treasury
+providers/talos/cluster.sh gen treasury
+providers/talos/cluster.sh apply treasury
 
 # 2. Remove Talos's objects and their inventory entries. This is what
 #    `talosctl upgrade-k8s` would do, without touching the control plane.

@@ -194,8 +194,8 @@ guest (`talosctl reboot`) keeps the running QEMU process and its old memory.
 [Restarting nodes](../README.md#restarting-nodes)):
 
 ```sh
-go run ./providers/proxmox/cmd/talosvm resize  -cluster treasury -nodes treasury-cp-1
-go run ./providers/proxmox/cmd/talosvm restart -cluster treasury -mode power-cycle -nodes treasury-cp-1
+go run ./providers/talos/cmd/talosvm resize  -cluster treasury -nodes treasury-cp-1
+go run ./providers/talos/cmd/talosvm restart -cluster treasury -mode power-cycle -nodes treasury-cp-1
 ```
 
 `-nodes` keeps `resize` to the control plane; without it, `resize` sets
@@ -241,7 +241,7 @@ largest `memory.current`;
 the `kube-apiserver` container's cgroup has no `memory.stat` of its own on
 Talos, the pod's has.
 
-And Proxmox, with the token and CA from [Credentials and the CA](../README.md#credentials-and-the-ca):
+And Proxmox, with the token and CA from [Credentials and the CA](../../proxmox/README.md#credentials-and-the-ca):
 
 ```sh
 set -a; . ~/.config/holos/proxmox.env; set +a
@@ -261,7 +261,7 @@ The API server runs with `--profiling=false`, Talos's generated default, so
 there is no `/debug/pprof` and the heap cannot be attributed to allocations.
 To turn it on, add `profiling: "true"` to the `extraArgs` of the
 `KubeAPIServerConfig` document in
-[`talos/patches/controlplane.yaml`](../talos/patches/controlplane.yaml) and
+[`patches/controlplane.yaml`](../patches/controlplane.yaml) and
 apply it with `talosctl patch machineconfig`; the API server's static pod
 restarts, so the API is down for a few seconds and its heap starts again.
 Then, as a cluster admin, `kubectl get --raw /debug/pprof/heap > heap.pb.gz`

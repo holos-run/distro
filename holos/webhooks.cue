@@ -24,7 +24,7 @@ package holos
 // control plane's host entries (talos.cue) are rendered from this one list.
 // The webhook's serving certificate must also carry its hostname, and a new
 // entry's host entry reaches a running control plane only by talosctl
-// (providers/proxmox/talos/README.md), not through Argo CD.
+// (providers/talos/README.md), not through Argo CD.
 //
 // A webhook whose certificate cannot carry a name under the webhooks domain
 // sets hostname to the name it does carry; the path is the same, through a
