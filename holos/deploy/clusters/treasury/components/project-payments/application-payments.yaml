@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+    labels:
+        holos.run/project: payments
+    name: payments
+    namespace: argocd
+spec:
+    destination:
+        namespace: payments
+        server: https://kubernetes.default.svc
+    project: payments
+    source:
+        path: holos/deploy/clusters/treasury/projects/payments
+        repoURL: https://github.com/holos-run/distro.git
+        targetRevision: main
+    syncPolicy:
+        automated:
+            prune: true
+            selfHeal: true
+        retry:
+            backoff:
+                duration: 5s
+                factor: 2
+                maxDuration: 3m
+            limit: 10
+        syncOptions:
+            - ServerSideApply=true

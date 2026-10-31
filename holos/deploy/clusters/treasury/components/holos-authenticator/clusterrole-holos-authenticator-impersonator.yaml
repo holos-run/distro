@@ -9,6 +9,7 @@ rules:
   - oidc:jeff
   - oidc:alice
   - oidc:bob
+  - oidc:carol
   resources:
   - users
   verbs:
@@ -19,6 +20,7 @@ rules:
   - /platform/owners
   - /projects/checkout/roles/owner
   - /projects/ledger/roles/owner
+  - /projects/payments/roles/owner
   resources:
   - groups
   verbs:

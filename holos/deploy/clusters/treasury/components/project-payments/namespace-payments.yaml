@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+    labels:
+        holos.run/project: payments
+        istio.io/dataplane-mode: ambient
+        kubernetes.io/metadata.name: payments
+    name: payments

@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    labels:
+        holos.run/project: payments
+    name: carol
+    namespace: payments
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: carol@bank.internal
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    username: carol

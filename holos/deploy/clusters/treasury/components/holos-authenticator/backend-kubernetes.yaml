@@ -9,6 +9,7 @@ spec:
     - /platform/owners
     - /projects/checkout/roles/owner
     - /projects/ledger/roles/owner
+    - /projects/payments/roles/owner
   groupsHeaderSeparator: '|'
   host: k8s.bank.internal
   oidc:

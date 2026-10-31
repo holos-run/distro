@@ -1,0 +1,26 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    labels:
+        holos.run/project: payments
+    name: payments
+    namespace: payments
+spec:
+    deletionPolicy: Orphan
+    email: quay+payments@bank.internal
+    name: payments
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin
+        - name: projectowners
+          oidcGroup: /projects/payments/roles/owner
+          role: admin
+        - name: projecteditors
+          oidcGroup: /projects/payments/roles/editor
+          repositoryPermission: write
+          role: creator
+        - name: projectviewers
+          oidcGroup: /projects/payments/roles/viewer
+          repositoryPermission: read
+          role: member
