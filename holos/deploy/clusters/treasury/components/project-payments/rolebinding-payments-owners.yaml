@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    labels:
+        holos.run/project: payments
+    name: payments-owners
+    namespace: payments
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: admin
+subjects:
+    - apiGroup: rbac.authorization.k8s.io
+      kind: Group
+      name: /projects/payments/roles/owner

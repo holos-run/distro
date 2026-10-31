@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: GroupMembership
+metadata:
+    labels:
+        holos.run/project: payments
+    name: payments-roles-owner
+    namespace: payments
+spec:
+    groupRef:
+        name: payments-roles-owner
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    members:
+        - email: carol@bank.internal

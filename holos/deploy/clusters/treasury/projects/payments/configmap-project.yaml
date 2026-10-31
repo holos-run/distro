@@ -1,0 +1,12 @@
+apiVersion: v1
+data:
+    name: payments
+    ownerAccess: admin
+    ownerGroup: /projects/payments/roles/owner
+    owners: carol@bank.internal
+kind: ConfigMap
+metadata:
+    labels:
+        holos.run/project: payments
+    name: project
+    namespace: payments
