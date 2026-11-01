@@ -3417,6 +3417,21 @@ what is committed on `main`, so a change reaches a cluster only with its
 render. Render one
 component with `holos render platform --selector component=cilium`.
 
+Then check the render against ADR 0003's Service contract, as CI's Render
+job does next:
+
+```sh
+go run ../cmd/contract-check deploy
+```
+
+It reads each cluster's tree under `deploy/clusters` and fails a webhook
+configuration, conversion webhook or APIService that reaches its webhook by
+`url:`, names a Service the tree does not hold, or one without a selector or
+headless, or one whose selector matches no pod template or a pod template on
+`hostNetwork`. The webhook configurations treasury still routes through the Gateway are listed
+as exceptions instead, from the `holos.run/contract-exception` annotation
+`#WebhookPatch` gives each (`components/webhooks.cue`).
+
 ## Bootstrap Argo CD
 
 A cluster is built with its webhooks failing open, `webhooks.enforcing`

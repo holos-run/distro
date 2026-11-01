@@ -1,0 +1,17 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: istiod-default-validator
+webhooks:
+- name: validate.istiod-default-validator.example.com
+  clientConfig:
+    service:
+      namespace: istio-system
+      name: istiod
+      path: /validate
+- name: validate-more.istiod-default-validator.example.com
+  clientConfig:
+    service:
+      namespace: istio-system
+      name: istiod
+      path: /validate-more
