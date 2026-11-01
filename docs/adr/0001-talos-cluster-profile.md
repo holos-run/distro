@@ -1,7 +1,8 @@
 # 0001. Talos cluster profile
 
 Status: accepted, 2026-10-23; amended 2026-10-26 (webhooks reach the
-ingress Gateway's address, not an HAProxy load balancer)
+ingress Gateway's address, not an HAProxy load balancer); amended
+2026-10-31 (the control plane joins the pod network)
 
 ## Context
 
@@ -222,3 +223,62 @@ Proxmox node leaves its zone label stale until the configs are regenerated
 and applied. Choosing high availability later means a shared endpoint, three
 control plane VMs, and changes to the script; the patches themselves do not
 change.
+
+## Amendment, 2026-10-31: the control plane joins the pod network
+
+ADR 0003 replaces the premise that the control plane is not on the pod
+network (Control_Plane_Service_Contract Q3 and Q18). The premise lives in
+these passages, each of which 0003 now governs:
+
+- Context: that the first clusters "leave networking to the platform layer
+  above them". The control plane now joins Cilium, the base's CNI, so the
+  platform layer reaches down to the control plane node.
+- Under "Machine configuration is talosctl with committed patches", the
+  "one patch rendered from the platform's CUE for the cluster (the webhook
+  host entries, below)". That patch goes with the host entries, so the
+  per-cluster inputs are the cluster name, the control plane address and
+  the node inventory alone.
+- The section "The control plane is not on the pod network", whole. The
+  control plane is a member of the pod network: the Cilium agent runs on
+  it, and the API server reaches Services the way a stock cluster's does.
+- Its webhook paragraph, the URL on a Gateway hostname with a passthrough
+  listener, a TLSRoute and a host entry. A webhook names its Service by
+  `service:` (0003, rule 1).
+- Its aggregated API paragraph, which prescribes a selectorless Service
+  with an EndpointSlice naming the Gateway's address. 0003 forbids exactly
+  that form: the Service has a selector and the base may not depend on
+  which address the resolver dials (rule 2).
+- The section "Provisioning is two steps: permissive, then enforcing",
+  whole. `failurePolicy` is the chart's, ordering is Argo CD's sync waves,
+  and the per-cluster `enforcing` flag goes.
+- Under "What the patches set", the bullets "Off the pod network", for the
+  `holos.run/pod-network: none` label and `--enable-aggregator-routing`,
+  and "Webhook host entries", for the `StaticHostConfig` rendered from
+  `holos/talos.cue`. The label stays on the node and is read by each
+  consumer on its own terms, with Cilium no longer among those that keep
+  off it; the host entries go.
+- Consequences: that the control plane node never becomes `Ready`, and that
+  every component registering a webhook or an APIService must be reached
+  through the Gateway's address and render its `failurePolicy` from the
+  enforcement flag, and that "the CNI must honor the pod network label".
+  The node becomes Ready, every webhook and APIService names its Service,
+  and Cilium is the one consumer of the label that no longer keeps off the
+  node.
+
+What stands: the `NoSchedule` taint and no workload pods on the control
+plane, no CNI and no kube-proxy from Talos, and `--enable-aggregator-routing`,
+kept for a new reason, so that a Service that only works by ClusterIP fails
+in the garage before it fails on GKE or EKS, which both dial endpoints
+(Control_Plane_Service_Contract Q10).
+
+The reason given for the old form, that a lab control plane on the pod
+network "hides these constraints until a component meets a managed control
+plane in production", is now answered by 0003's render check: the
+constraint is that the base names a Service and nothing else, and
+`contract-check` states it in CI rather than leaving the network to fail.
+
+Treasury keeps the prior form until
+Talos_Control_Plane_Ready/rebuild-treasury-on-the-new-layer rebuilds it on
+the new layer. Until then, from the day 0003's render check lands, its
+render carries the `holos.run/contract-exception` annotation on each of its
+eleven webhook configurations, naming this record and that item.
