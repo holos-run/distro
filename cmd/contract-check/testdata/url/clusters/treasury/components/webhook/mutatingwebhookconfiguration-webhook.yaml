@@ -1,0 +1,13 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: webhook
+webhooks:
+- name: mutate.webhook.example.com
+  clientConfig:
+    url: https://webhook.example.com:9443/mutate
+- name: default.webhook.example.com
+  clientConfig:
+    url: https://webhook.example.com:9443/default
+- name: none.webhook.example.com
+  clientConfig: {}

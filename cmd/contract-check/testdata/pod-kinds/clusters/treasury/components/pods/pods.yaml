@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+  namespace: pods
+spec:
+  selector:
+    matchLabels:
+      app: deployment
+  template:
+    metadata:
+      labels:
+        app: deployment
+        version: v1
+    spec:
+      containers:
+      - name: webhook
+        image: example.com/webhook
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: daemonset
+  namespace: pods
+spec:
+  selector:
+    matchLabels:
+      app: daemonset
+  template:
+    metadata:
+      labels:
+        app: daemonset
+        version: v1
+    spec:
+      hostNetwork: true
+      containers:
+      - name: webhook
+        image: example.com/webhook
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: statefulset
+  namespace: pods
+spec:
+  selector:
+    matchLabels:
+      app: statefulset
+  template:
+    metadata:
+      labels:
+        app: statefulset
+        version: v1
+    spec:
+      containers:
+      - name: webhook
+        image: example.com/webhook
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job
+  namespace: pods
+spec:
+  template:
+    metadata:
+      labels:
+        app: job
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: job
+        image: example.com/job
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob
+  namespace: pods
+spec:
+  schedule: "@daily"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: cronjob
+        spec:
+          hostNetwork: true
+          restartPolicy: Never
+          containers:
+          - name: cronjob
+            image: example.com/cronjob
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod
+  namespace: pods
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: pod
+    image: example.com/pod
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: not-a-pod
+  namespace: pods

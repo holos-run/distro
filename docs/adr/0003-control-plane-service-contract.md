@@ -167,7 +167,7 @@ tree once per `clusters/<cluster>` subtree, pairs each webhook configuration,
 conversion stanza and APIService with its Service and that Service's pod
 templates in the same namespace, and fails on a `url:`, a Service missing,
 without a selector or headless, a selector matching no pod template, or a
-serving pod on `hostNetwork`. It will run in CI's render job beside the
+serving pod on `hostNetwork`. It runs in CI's render job beside the
 check that `holos/deploy` matches the CUE, and by hand with `go run`. It
 reads a whole cluster's tree rather than one component at a time because
 istio-base's webhook names istiod's Service, which another component
@@ -191,9 +191,9 @@ A chart that cannot comply carries the exception annotation
   an exception cannot outlive its reason.
 
 The first exceptions are the eleven webhook configurations treasury still
-routes through the Gateway. Nothing carries the annotation yet;
-`#WebhookPatch` will add it in the change that lands the checker, so CI is
-green that day. On treasury's trust-manager configuration it will read:
+routes through the Gateway. `#WebhookPatch` adds the annotation, in the
+same change that landed the checker, so CI was green that day. On
+treasury's trust-manager configuration it reads:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1

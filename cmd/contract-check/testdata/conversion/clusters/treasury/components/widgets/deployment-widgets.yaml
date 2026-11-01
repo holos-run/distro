@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: widgets
+  namespace: widgets
+spec:
+  selector:
+    matchLabels:
+      app: widgets
+  template:
+    metadata:
+      labels:
+        app: widgets
+        version: v1
+    spec:
+      containers:
+      - name: webhook
+        image: example.com/webhook

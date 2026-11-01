@@ -58,8 +58,10 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       # go-version-file reads the directive from go.mod, so the toolchain
-      # follows the module rather than a version written here. The module has
-      # no dependencies and so no go.sum for the module cache to key on.
+      # follows the module rather than a version written here. The module's
+      # one dependency, go.yaml.in/yaml/v3 for contract-check, has none of its
+      # own and downloads in a second, less than saving and restoring a cache
+      # keyed on go.sum would take, so there is no module cache.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -110,6 +112,13 @@ jobs:
 
       - name: vet
         run: go vet ./...
+
+      # The tests need nothing but the checkout and Go: the HTTP servers,
+      # kubectl and talosctl they talk to are fakes in the tests, and
+      # contract-check's test reads holos/deploy as committed, which the
+      # Render job checks is the render.
+      - name: test
+        run: go test ./...
 
   render:
     name: Render
@@ -184,12 +193,20 @@ jobs:
           tar -xzf "${dl}/cue.tar.gz" -C "${bin}" cue
           echo "${bin}" >> "${GITHUB_PATH}"
 
+      # contract-check is a Go program in this module, so the job needs the
+      # Go job's toolchain too, set up the same way.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
       - name: versions
         run: |
           holos --version
           helm version --short
           kubectl version --client
           cue version | head -1
+          go version
 
       # README.md, Render. holos render platform writes files but never
       # removes one, so deploy/clusters goes first, and a file the CUE no
@@ -214,3 +231,14 @@ jobs:
             git diff --stat
             exit 1
           fi
+
+      # ADR 0003's Service contract, checked over the render just shown to be
+      # the committed one: every webhook configuration, conversion webhook
+      # and APIService names a Service by service:, the Service has a selector
+      # and a cluster IP, and the pods behind it are off hostNetwork. A
+      # configuration that cannot comply carries the
+      # holos.run/contract-exception annotation and is listed in the log; one
+      # whose reason names no ADR or Planboard item, or that complies anyway,
+      # fails. README.md, Render, runs the same check by hand.
+      - name: contract-check
+        run: go run ./cmd/contract-check holos/deploy
