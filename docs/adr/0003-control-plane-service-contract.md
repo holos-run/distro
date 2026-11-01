@@ -139,14 +139,14 @@ Service, which only works when the resolver dials endpoints.
 The Kubernetes layer also publishes where calls from the API server arrive
 from, as `Cluster.apiServer.from`, a list in the NetworkPolicyPeer shape
 that a base NetworkPolicy copies into its `ingress[].from` to admit the
-control plane to a webhook port without naming a provider:
-`konnectivity-agent` pods in `kube-system` on GKE, as far as the research
-shows, and node addresses on EKS (Control_Plane_Service_Contract Q9).
-This record names the field; its first consumer adds it and establishes
-the garage's value (Control_Plane_Service_Contract Q19). The garage's
-value is not simply the control plane node's address: once the node runs
-a Cilium agent its address carries the `remote-node` identity, which Cilium
-matches against `ipBlock` rules only under `policyCIDRMatchMode: nodes`. The existing comment on
+control plane to a webhook port without naming a provider: `konnectivity-
+agent` pods in `kube-system` on GKE, as far as the research shows, and node
+addresses on EKS (Control_Plane_Service_Contract Q9). This record names the
+field; its first consumer adds it and establishes the garage's value
+(Control_Plane_Service_Contract Q19). The garage's value is not simply the
+control plane node's address: once the node runs a Cilium agent its address
+carries the `remote-node` identity, which Cilium matches against `ipBlock`
+rules only under `policyCIDRMatchMode: nodes`. The existing comment on
 `Cluster.apiServer` (`holos/clusters.cue`), that the control plane runs no
 Cilium agent so no selector reaches it, goes stale the day the garage
 follows this record; `apiServer.address` and `apiServer.port` stay the
