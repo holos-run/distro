@@ -7,7 +7,7 @@ data:
   exec.enabled: "false"
   oidc.config: |
     name: Keycloak
-    issuer: https://keycloak.treasury.bank.internal/realms/holos
+    issuer: https://keycloak.treasury.bank.internal/realms/default
     clientID: argocd
     enablePKCEAuthentication: true
     requestedScopes:

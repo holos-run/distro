@@ -13,7 +13,7 @@ import "encoding/yaml"
 // And two TLS passthrough listeners: the one the Substrate shim's hosts pass
 // through to its own Gateway (AteGateway), whose TLSRoute substrate-shim
 // renders, and the one the Kubernetes API's host passes through to
-// holos-authenticator's Gateway (HolosAuthenticator), whose TLSRoute
+// holos-authenticator's Gateway (PlatformAuthenticator), whose TLSRoute
 // holos-authenticator renders.
 //
 // Applied once istiod is running (it owns the istio GatewayClass) and the
@@ -133,7 +133,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					},
 					{
 						name:     IG.listeners.k8s
-						hostname: HolosAuthenticator.host
+						hostname: PlatformAuthenticator.host
 						port:     443
 						protocol: "TLS"
 						// The Kubernetes API, k8s.<domain>, passes through to
@@ -155,7 +155,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 								selector: matchExpressions: [{
 									key:      "kubernetes.io/metadata.name"
 									operator: "In"
-									values: [HolosAuthenticator.namespace]
+									values: [PlatformAuthenticator.namespace]
 								}]
 							}
 						}

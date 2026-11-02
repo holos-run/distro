@@ -55,7 +55,7 @@ IngressGateway: {
 	// every host; http answers every request with a redirect to https; ate
 	// passes TLS through to the Substrate shim's Gateway (AteGateway); k8s
 	// passes TLS through to holos-authenticator's Gateway
-	// (HolosAuthenticator).
+	// (PlatformAuthenticator).
 	listeners: {
 		https: "https"
 		http:  "http"

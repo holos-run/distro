@@ -19,8 +19,8 @@ import (
 // Quay (components/quay.cue) holds the release, the names and the URL. Quay
 // serves plain HTTP on 8080 behind the ingress gateway, which terminates TLS
 // as it does for Keycloak, in the mesh namespace quay. Login is OIDC against
-// the realm holos, through the confidential client quay, which a
-// holos-controller Client here creates; Keycloak is Quay's only identity
+// the realm default, through the confidential client quay, which a
+// platform controller Client here creates; Keycloak is Quay's only identity
 // store, and SUPER_USERS names the controller's realm user and jeff.
 //
 // Quay reads /conf/stack/config.yaml and substitutes no environment, so the
@@ -29,7 +29,7 @@ import (
 // (#GeneratedSecret), copied from rustfs (#ScopedSecretStore) or delivered
 // by the controller. Nothing secret is in git.
 //
-// holos-controller reconciles the demo Organization and its Repository here
+// The platform controller reconciles the demo Organization and its Repository here
 // against Quay's API with an OAuth token minted by cmd/quay-bootstrap, which
 // writes it as the platform secret quay-controller-token; this component
 // copies that into the controller's namespace. Until bootstrap has run, the
@@ -126,7 +126,7 @@ let CAMount = "/conf/stack/extra_ca_certs"
 //     TEAM_RESYNC_STALE_TIME has no effect: a user taken out of the group
 //     stays in the team until they next log in.
 //   - FEATURE_SUPERUSERS_FULL_ACCESS: SUPER_USERS may administer
-//     organizations they neither own nor belong to, so holos-controller,
+//     organizations they neither own nor belong to, so the platform controller,
 //     acting as svc-quay-controller, can reconcile one somebody else made.
 //     It widens jeff's session the same way.
 //   - FEATURE_ANONYMOUS_ACCESS, Quay's default, stated: an anonymous pull
@@ -137,8 +137,8 @@ let Config = {
 	EXTERNAL_TLS_TERMINATION: true
 	SETUP_COMPLETE:           true
 	TESTING:                  false
-	REGISTRY_TITLE:           "Holos"
-	REGISTRY_TITLE_SHORT:     "Holos"
+	REGISTRY_TITLE:           Brand.name
+	REGISTRY_TITLE_SHORT:     Brand.name
 
 	DB_URI:              "__DB_URI__"
 	SECRET_KEY:          "__SECRET_KEY__"
@@ -511,17 +511,17 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				clientId:    Q.clientId
 				type:        "confidential"
 				description: "Quay"
-				instanceRef: HolosController.instance
+				instanceRef: PlatformController.instance
 				redirectUris: [for P in ["", "/attach", "/cli"] {"\(Q.url)/oauth2/keycloak/callback\(P)"}]
 				secretRef: Q.oidcSecret
 			}
 		}
 
 		// The Client names the Instance in keycloak, another namespace,
-		// which holos-controller allows only with a ReferenceGrant there.
+		// which the platform controller allows only with a ReferenceGrant there.
 		ReferenceGrant: "\(Name)-clients": {
 			apiVersion: "security.holos.run/v1alpha1"
-			metadata: namespace: HolosController.instance.namespace
+			metadata: namespace: PlatformController.instance.namespace
 			spec: {
 				from: [{
 					group:     "keycloak.holos.run"
@@ -531,7 +531,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				to: [{
 					group: "keycloak.holos.run"
 					kind:  "Instance"
-					name:  HolosController.instance.name
+					name:  PlatformController.instance.name
 				}]
 			}
 		}
@@ -540,8 +540,10 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// from the platform owners' group as admin. They name no caBundle: the
 		// controller trusts the private root through SSL_CERT_DIR
 		// (components/holos-controller), and reads its token from
-		// holos-controller-quay-creds, the default credentialsSecretRef,
-		// below. Orphan, so deleting one, or Argo CD pruning it, leaves the
+		// Q.credentials.controller, bank-of-pinky-controller-quay-creds,
+		// below, which each names in credentialsSecretRef: the CRD's
+		// default is the upstream name, holos-controller-quay-creds.
+		// Orphan, so deleting one, or Argo CD pruning it, leaves the
 		// organization and its images in Quay: they are not in git.
 		for O in Q.organizations {
 			Organization: (O.name): {
@@ -550,6 +552,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					name:           O.name
 					email:          "quay+\(O.name)@\(Site.privateDomain)"
 					deletionPolicy: "Orphan"
+					credentialsSecretRef: name: Q.credentials.controller
 					syncedTeams: [{
 						name:      Q.ownersTeam
 						oidcGroup: SecretsManager.owners
@@ -569,6 +572,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				visibility:      "public"
 				description:     "The demo actor's image, public so atelet can pull it anonymously."
 				deletionPolicy:  "Orphan"
+				credentialsSecretRef: name: Q.credentials.controller
 			}
 		}
 
@@ -585,15 +589,15 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// holos-controller's Quay credential, url, token and username, the
+		// The platform controller's Quay credential, url, token and username, the
 		// Secret its Quay reconcilers read from its own namespace, copied
 		// from the platform secret cmd/quay-bootstrap writes (Q57). It is
-		// here rather than in holos-controller, which syncs before Quay
+		// here rather than in the controller's component, which syncs before Quay
 		// exists: an ExternalSecret there would keep that Application
 		// Degraded, and the root would never reach this one. Until bootstrap
 		// has run, it reports SecretSyncedError.
 		ExternalSecret: (Q.credentials.controller): {
-			metadata: namespace: HolosController.namespace
+			metadata: namespace: PlatformController.namespace
 			spec: {
 				refreshInterval: "1h"
 				secretStoreRef: {kind: "SecretStore", name: "platform"}
@@ -629,11 +633,12 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 	}).resources
 
 	// The store for the controller's credential, in the controller's
-	// namespace: it may get quay-controller-token in holos-prj-platform and
-	// nothing else. Its reader is holos-controller-platform-reader.
+	// namespace: it may get quay-controller-token in
+	// bank-of-pinky-prj-platform and nothing else. Its reader is
+	// bank-of-pinky-controller-platform-reader.
 	resources: (#ScopedSecretStore & {
 		name:      "platform"
-		namespace: HolosController.namespace
+		namespace: PlatformController.namespace
 		secrets: [Q.credentials.platform]
 	}).resources
 }).artifact]

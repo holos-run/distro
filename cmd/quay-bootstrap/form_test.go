@@ -22,7 +22,7 @@ const keycloakLogin = `<!DOCTYPE html><html><head>
 </body></html>`
 
 const keycloakProfile = `<html><body>
-<form id="kc-update-profile-form" action="https://keycloak.example/realms/holos/login-actions/required-action?execution=VERIFY_PROFILE&amp;tab_id=t1" method="post">
+<form id="kc-update-profile-form" action="https://keycloak.example/realms/default/login-actions/required-action?execution=VERIFY_PROFILE&amp;tab_id=t1" method="post">
   <input type="text" id="email" name="email" value="svc@example"/>
   <input type="text" id="firstName" name="firstName" value=""/>
   <input type="text" id="lastName" name="lastName" value=""/>
@@ -30,7 +30,7 @@ const keycloakProfile = `<html><body>
 </form></body></html>`
 
 func TestParseForms(t *testing.T) {
-	base, _ := url.Parse("https://keycloak.example/realms/holos/protocol/openid-connect/auth?client_id=quay")
+	base, _ := url.Parse("https://keycloak.example/realms/default/protocol/openid-connect/auth?client_id=quay")
 	forms, err := parseForms(keycloakLogin, base)
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestParseForms(t *testing.T) {
 		t.Fatalf("got %d forms, want 1 (script and comment ignored)", len(forms))
 	}
 	f := forms[0]
-	if want := "https://keycloak.example/realms/holos/protocol/openid-connect/login-actions/authenticate?session_code=abc&execution=xyz&tab_id=t1"; f.action != want {
+	if want := "https://keycloak.example/realms/default/protocol/openid-connect/login-actions/authenticate?session_code=abc&execution=xyz&tab_id=t1"; f.action != want {
 		t.Errorf("action %q, want %q", f.action, want)
 	}
 	if f.method != "POST" {

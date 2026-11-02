@@ -7,7 +7,7 @@ rules:
     - apiGroups:
         - keycloak.holos.run
       resourceNames:
-        - holos
+        - default
       resources:
         - instances
       verbs:

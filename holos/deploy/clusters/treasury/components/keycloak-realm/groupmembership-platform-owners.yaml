@@ -7,6 +7,6 @@ spec:
     groupRef:
         name: platform-owners
     instanceRef:
-        name: holos
+        name: default
     members:
         - email: jeff@bank.internal

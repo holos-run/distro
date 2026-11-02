@@ -1,4 +1,4 @@
-// Package talos is the Kubernetes layer of the Holos Distro: Talos Linux on
+// Package talos is the Kubernetes layer of the distro: Talos Linux on
 // VMs an infrastructure provider makes. It takes compute, through the
 // infra.Compute contract and nothing else, and hands over a Kubernetes API
 // with its nodes registered.

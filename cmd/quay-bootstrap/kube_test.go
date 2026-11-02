@@ -75,7 +75,7 @@ func (f *fakeKube) configMapValue(context.Context, string, string, string) (stri
 func TestApplySecret(t *testing.T) {
 	ctx := context.Background()
 	k := newFakeKube()
-	want := platformSecret("holos-prj-platform", "s", "Opaque", map[string][]byte{"token": []byte("a")})
+	want := platformSecret("bank-of-pinky-prj-platform", "s", "Opaque", map[string][]byte{"token": []byte("a")})
 
 	if changed, err := applySecret(ctx, k, want); err != nil || !changed || k.writes != 1 {
 		t.Fatalf("create: changed %v, err %v, writes %d", changed, err, k.writes)
@@ -86,7 +86,7 @@ func TestApplySecret(t *testing.T) {
 
 	// A person shared it further: the grant is theirs to keep. A key someone
 	// added stays too.
-	s := k.secrets["holos-prj-platform/s"]
+	s := k.secrets["bank-of-pinky-prj-platform/s"]
 	s.annotations = map[string]string{shareRoles: `[{"principal":"jeff","role":"viewer"}]`}
 	s.data = map[string][]byte{"token": []byte("a"), "extra": []byte("x")}
 	if changed, err := applySecret(ctx, k, want); err != nil || changed {
@@ -97,14 +97,14 @@ func TestApplySecret(t *testing.T) {
 	if changed, err := applySecret(ctx, k, want); err != nil || !changed {
 		t.Fatalf("update: changed %v, err %v", changed, err)
 	}
-	s = k.secrets["holos-prj-platform/s"]
+	s = k.secrets["bank-of-pinky-prj-platform/s"]
 	if string(s.data["token"]) != "b" || string(s.data["extra"]) != "x" || s.annotations[shareRoles] == ownersGrant {
 		t.Errorf("after update: %+v", s)
 	}
 
 	// The label goes back if someone removed it.
 	s.labels = nil
-	if changed, err := applySecret(ctx, k, want); err != nil || !changed || k.secrets["holos-prj-platform/s"].labels[managedByLabel] != managedBy {
+	if changed, err := applySecret(ctx, k, want); err != nil || !changed || k.secrets["bank-of-pinky-prj-platform/s"].labels[managedByLabel] != managedBy {
 		t.Errorf("label not restored: changed %v, err %v", changed, err)
 	}
 }

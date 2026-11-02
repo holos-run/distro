@@ -36,7 +36,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				annotations: "argocd.argoproj.io/sync-wave": "-1"
 			}
 			spec: {
-				description: "The Holos platform's components, synced from \(ArgoCD.repoURL)"
+				description: "The \(Brand.name) platform's components, synced from \(ArgoCD.repoURL)"
 				sourceRepos: [ArgoCD.repoURL]
 				destinations: [{
 					server:    "https://kubernetes.default.svc"

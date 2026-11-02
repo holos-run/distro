@@ -51,9 +51,9 @@ let CertManager = {
 // RootSubject is the root's common name and subject, which the root's
 // Certificate asks for and its policy allows.
 let RootSubject = {
-	commonName: "Holos \(Cluster.name) root CA"
+	commonName: "\(Brand.name) \(Cluster.name) root CA"
 	subject: {
-		organizations: ["Holos"]
+		organizations: [Brand.name]
 		organizationalUnits: ["\(Cluster.name).\(Site.privateDomain)"]
 	}
 }

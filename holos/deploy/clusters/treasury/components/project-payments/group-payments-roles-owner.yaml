@@ -7,6 +7,6 @@ metadata:
     namespace: payments
 spec:
     instanceRef:
-        name: holos
+        name: default
         namespace: keycloak
     path: projects/payments/roles/owner

@@ -23,15 +23,15 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			trustDomain: Istio.trustDomain
 			// The external authorization servers a CUSTOM
 			// AuthorizationPolicy may name. holos-authenticator, over gRPC
-			// (HolosAuthenticator.provider): it answers with the headers
+			// (PlatformAuthenticator.provider): it answers with the headers
 			// that make a request to the API server an impersonation. Two
 			// seconds, as in aavis-ops. failOpen stays false, so a request
 			// the server cannot answer gets 403.
 			extensionProviders: [{
-				name: HolosAuthenticator.provider.name
+				name: PlatformAuthenticator.provider.name
 				envoyExtAuthzGrpc: {
-					service: HolosAuthenticator.provider.service
-					port:    HolosAuthenticator.provider.port
+					service: PlatformAuthenticator.provider.service
+					port:    PlatformAuthenticator.provider.port
 					timeout: "2s"
 				}
 			}]

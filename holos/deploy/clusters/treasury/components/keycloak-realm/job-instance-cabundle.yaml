@@ -18,7 +18,7 @@ spec:
                     - |-
                       set -eu
                       ca=$(base64 < /private-ca/ca.crt | tr -d '\n')
-                      kubectl -n keycloak patch instances.keycloak.holos.run holos --type=merge --field-manager=instance-cabundle -p "{\"spec\":{\"caBundle\":\"$ca\"}}"
+                      kubectl -n keycloak patch instances.keycloak.holos.run default --type=merge --field-manager=instance-cabundle -p "{\"spec\":{\"caBundle\":\"$ca\"}}"
                   env:
                     - name: HOME
                       value: /tmp

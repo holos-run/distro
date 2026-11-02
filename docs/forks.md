@@ -1,8 +1,8 @@
 # The Substrate and kagent forks
 
-Holos builds Agent Substrate and kagent from forks in the holos-run
-organization, not from the upstream repositories directly. A fork gives Holos
-a place to carry a change upstream has not taken yet, and a commit it controls
+The distro builds Agent Substrate and kagent from forks in the holos-run
+organization, not from the upstream repositories directly. A fork gives the
+distro a place to carry a change upstream has not taken yet, and a commit it controls
 for every pin.
 
 | Fork | Upstream |
@@ -64,19 +64,19 @@ The replace commit leaves one thing stale. kagent's `Makefile` and
 in `go/go.mod`, which is gone, so a `make` build sets it empty. Only the CLI
 reads it, as the default Substrate chart and worker image version for
 `kagent install`, so a CLI built that way installs broken defaults. The
-controller and UI images do not use it, and Holos deploys Substrate itself
+controller and UI images do not use it, and the distro deploys Substrate itself
 rather than through `kagent install`.
 
 ## Branches
 
 Each fork has dated branches named `holos-<date>`, such as
 `holos-2026-10-30`. A dated branch is cut from the upstream head on that date
-and carries the Holos commits on top. Once pushed, it is never rewritten,
+and carries the distro's commits on top. Once pushed, it is never rewritten,
 force pushed or deleted, and no tag is moved to it. A rebase makes a new
 dated branch instead.
 
 The newest dated branch is the fork's default branch, so a clone of the fork
-checks out what Holos builds. There is no separate moving `holos` branch,
+checks out what the distro builds. There is no separate moving `holos` branch,
 because it would have to be rewritten at each rebase.
 
 ## Protection
@@ -93,7 +93,7 @@ Pull requests are not required. Creating a new `holos-*` branch is allowed,
 which is how a rebase lands.
 
 The signed commit rule applies to commits new to the fork, which for a
-rebase are the upstream commits since the last one as well as the Holos
+rebase are the upstream commits since the last one as well as the distro's
 commits. Older upstream history has unsigned commits: about 330 in Substrate,
 the latest on 2026-09-15, and 232 in kagent, the latest on 2026-09-02. Those
 were copied in when the forks were made, so they do not count. Every upstream
@@ -141,7 +141,7 @@ DCO sign-off (`git commit -s`).
    git switch -c holos-<date> upstream/main
    ```
 
-3. Bring the Holos commits over from the previous dated branch, and drop any
+3. Bring the distro's commits over from the previous dated branch, and drop any
    upstream has since taken:
 
    ```sh

@@ -1,7 +1,7 @@
 # Glossary
 
-Terms the distro's documents use with a meaning of their own: the garage's names, Holos's, and
-Agent Substrate's. A term used the ordinary Kubernetes, Istio or Talos way is not listed. The
+Terms the distro's documents use with a meaning of their own: the garage's names, the platform's,
+and Agent Substrate's. A term used the ordinary Kubernetes, Istio or Talos way is not listed. The
 details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 ## Sites and clusters
@@ -27,12 +27,18 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   (`providers/proxmox`) into the Talos layer (`providers/talos`).
 
 **private root**, **private CA**
-: The cluster's own certificate authority, `Holos treasury root CA`. The `private-ca` ClusterIssuer
+: The cluster's own certificate authority, `Bank of Pinky treasury root CA`. The `private-ca` ClusterIssuer
   issues from it, and every namespace has it as ConfigMap `private-ca`, key `ca.crt`. A laptop
   trusts it to reach `*.treasury.bank.internal`
   ([The private CA](../holos/README.md#the-private-ca)).
 
-## Holos
+## The platform
+
+**Bank of Pinky**
+: The distribution's brand, `Brand` in `holos/brand.cue`, which every name it chooses for itself is
+  built from: `bank-of-pinky-controller`, `bank-of-pinky-prj-platform`, the Secrets Manager's title. A
+  vendor's distribution sets its own. The software it is built with keeps its own names: the
+  `holos` CLI, the `*.holos.run` API groups and `holos.run/*` keys, holos-controller.
 
 **component**
 : A directory under `holos/components/` that renders one set of manifests, synced by Argo CD as one
@@ -44,7 +50,7 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   tree is committed and never edited by hand ([Render](../holos/README.md#render)).
 
 **platform secret**
-: A Kubernetes Secret made through the Secrets Manager in project namespace `holos-prj-platform`,
+: A Kubernetes Secret made through the Secrets Manager in project namespace `bank-of-pinky-prj-platform`,
   such as the Ceph key. A consumer copies it into its own namespace through a `#ScopedSecretStore`
   ([Secrets Manager](../holos/README.md#secrets-manager)).
 
@@ -57,16 +63,19 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   it in an immutable Secret ([External Secrets](../holos/README.md#external-secrets)).
 
 **Secrets Manager**
-: The Holos Secrets Manager, holos-run/secrets-manager, at
+: The Bank of Pinky Secrets Manager, holos-run/secrets-manager, at
   `https://secrets.treasury.bank.internal`: the web UI where platform secrets are made.
 
-**holos-controller**
-: The controller that manages Keycloak for Holos, such as each service's confidential client, from
-  its own custom resources ([The realm](../holos/README.md#the-realm)).
+**platform controller**, **holos-controller**
+: The controller that manages Keycloak and Quay for the platform, such as each service's
+  confidential client, from its own custom resources. The software is holos-controller; it runs as
+  `bank-of-pinky-controller` ([The realm](../holos/README.md#the-realm)).
 
-**holos-authenticator**
-: Planned. A proxy in front of the Kubernetes API that turns a verified Keycloak ID token into
-  impersonation headers, so `kubectl` works with a Keycloak identity.
+**platform authenticator**, **holos-authenticator**
+: The ext_authz server in front of the Kubernetes API at `k8s.treasury.bank.internal` that turns a
+  verified Keycloak ID token into impersonation headers, so `kubectl` works with a Keycloak
+  identity. The software is holos-authenticator; it runs as `bank-of-pinky-authenticator`
+  ([holos-authenticator](../holos/README.md#holos-authenticator)).
 
 **ProjectClaim**
 : Planned. A CUE collection in which a team claims a project, and from which its namespaces,
@@ -102,8 +111,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   `--token-file`, `kubectl ate` mints the same token itself, for one hour.
 
 **ID token**
-: The OIDC ID token Keycloak issues, which is the only token Holos services check, never the access
-  token ([ADR 0002](adr/0002-oidc-id-tokens.md)). For the realm `holos` and the client `kubectl`
+: The OIDC ID token Keycloak issues, which is the only token the platform's services check, never the access
+  token ([ADR 0002](adr/0002-oidc-id-tokens.md)). For the realm `default` and the client `kubectl`
   it has `aud` `kubectl`, carries the user's full-path `groups`, and lasts five minutes.
 
 **kubelogin**
@@ -136,7 +145,7 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 **Agent Substrate**, **Substrate**
 : The upstream project agent-substrate/substrate, Go module `go.ate.dev/substrate`, which runs
-  agents as actors in gVisor sandboxes. Holos builds it from the fork holos-run/substrate, a
+  agents as actors in gVisor sandboxes. The distro builds it from the fork holos-run/substrate, a
   submodule at `holos/vendor/substrate` ([the forks](forks.md),
   [Substrate](../holos/README.md#substrate)). Its names start with `ate`.
 
@@ -177,7 +186,7 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   unless `--token-file` gives it another.
 
 **ate-setup**
-: Substrate's installer. Holos renders Substrate in CUE instead, and runs ate-setup only to create
+: Substrate's installer. The distro renders Substrate in CUE instead, and runs ate-setup only to create
   the key pools.
 
 **key pools**

@@ -3,8 +3,8 @@ package holos
 // Keycloak names the platform's one identity provider (interview Q11): the
 // release the keycloak-operator component installs, the namespace it and the
 // keycloak component share, and the issuer every token carries. Anything that
-// trusts or calls Keycloak, such as holos-controller or an OIDC client, reads
-// it here.
+// trusts or calls Keycloak, such as the platform controller or an OIDC
+// client, reads it here.
 Keycloak: {
 	// version is the Keycloak Operator's release and the server's: the
 	// operator runs quay.io/keycloak/keycloak at its own version, so the two
@@ -29,11 +29,14 @@ Keycloak: {
 	// issuer is <url>/realms/<realm>.
 	url: "https://\(IngressGateway.hosts.keycloak)"
 
-	// realm is the platform's realm, holos, which the keycloak-realm
-	// component imports and holos-controller reconciles, and issuer is the
-	// iss every token from it carries. The master realm holds the bootstrap
-	// admin alone.
-	realm:  "holos"
+	// realm is the platform's realm, default, which the keycloak-realm
+	// component imports and the platform controller reconciles, and issuer
+	// is the iss every token from it carries. It is not part of Brand:
+	// every distribution names its realm default, and the issuer's host
+	// tells them apart, so a token's iss differs only by domain from one
+	// vendor's distribution to another's (ADR 0002). The master realm holds
+	// the bootstrap admin alone.
+	realm:  "default"
 	issuer: "\(url)/realms/\(realm)"
 
 	// groupsClaim is the claim the realm's groups client scope writes each
@@ -57,7 +60,7 @@ Keycloak: {
 	}
 
 	// users are the realm's people whom other components name, by username,
-	// and HolosAuthenticator.users lists those who may use kubectl.
+	// and PlatformAuthenticator.users lists those who may use kubectl.
 	// keycloak-realm's import reads only users.jeff, with his generated
 	// password; anyone else is created in the realm by hand.
 	users: [USERNAME=string]: {
@@ -85,17 +88,20 @@ Keycloak: {
 		kubectl: "kubectl"
 		// argocd is Argo CD's public PKCE client (Q51).
 		argocd: "argocd"
-		// controller is holos-controller's confidential service-account
-		// client, which it calls the admin API as.
-		controller: "svc-holos-controller"
+		// controller is the platform controller's confidential
+		// service-account client, which it calls the admin API as.
+		controller: "svc-\(Brand.slug)-controller"
 	}
 }
 
-// HolosController names holos-controller, which reconciles the realm's groups,
-// memberships, users and clients from keycloak.holos.run resources: the
-// holos-controller component installs it and keycloak-realm writes its
-// Instance and credential.
-HolosController: {
+// PlatformController names the platform controller, the software
+// holos-controller, which reconciles the realm's groups, memberships, users
+// and clients from keycloak.holos.run resources: the holos-controller
+// component installs it, as the Argo CD Application <slug>-controller, and
+// keycloak-realm writes its Instance and credential. The identifier is
+// brand-neutral, as a CUE identifier cannot follow Brand; the names it holds
+// are built from Brand.slug.
+PlatformController: {
 	// version is the aavis-ops release tag holos-controller-v<version>,
 	// whose CRDs and manifests the holos-controller component vendors.
 	version: "0.22.0"
@@ -103,15 +109,22 @@ HolosController: {
 	// index digest the tag pointed to when vendored.
 	image: "ghcr.io/holos-run/holos-controller:holos-controller-v\(version)@sha256:117ecfdd80391b77a31a92be16051cda586a2e3d4dcb353ce0bdeff5229ff175"
 
+	// name is the distribution's name for it, <slug>-controller: its
+	// namespace, its Argo CD Application (registry.cue, which builds the
+	// same name, since the platform does not load this file), and the base
+	// of its Deployment's, ServiceAccount's and RBAC's names
+	// (components/holos-controller).
+	name: "\(Brand.slug)-controller"
+
 	// namespace holds the manager. It reads every credential Secret from
 	// here, by the downward API's POD_NAMESPACE, whatever namespace the
 	// resource naming the Secret is in.
-	namespace: "holos-controller"
+	namespace: name
 
 	// credentials is the Secret the manager calls Keycloak's admin API
-	// with, the Instance's credentialsSecretRef default, with keys clientId
-	// and clientSecret.
-	credentials: "holos-controller-keycloak-creds"
+	// with, the Instance's credentialsSecretRef, with keys clientId and
+	// clientSecret.
+	credentials: "\(name)-keycloak-creds"
 
 	// instance is the Instance every keycloak.holos.run resource names,
 	// in Keycloak's namespace, for the realm.

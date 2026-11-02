@@ -9,7 +9,7 @@ spec:
     groupRef:
         name: checkout-roles-owner
     instanceRef:
-        name: holos
+        name: default
         namespace: keycloak
     members:
         - email: alice@bank.internal

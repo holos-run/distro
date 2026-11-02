@@ -286,9 +286,9 @@ Run the script as root on any one node. It needs `privileges.txt` next to it,
 so copy the directory:
 
 ```sh
-scp -r providers/proxmox/preflight root@r620a.lan:/root/holos-preflight
-ssh root@r620a.lan sh /root/holos-preflight/preflight.sh --check   # report only; exit 1 on drift
-ssh root@r620a.lan sh /root/holos-preflight/preflight.sh           # converge
+scp -r providers/proxmox/preflight root@r620a.lan:/root/talosvm-preflight
+ssh root@r620a.lan sh /root/talosvm-preflight/preflight.sh --check   # report only; exit 1 on drift
+ssh root@r620a.lan sh /root/talosvm-preflight/preflight.sh           # converge
 ```
 
 It is idempotent, prints every change it makes, and converges on:

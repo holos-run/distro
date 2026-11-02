@@ -7,7 +7,7 @@ spec:
   clientId: kagent
   description: kagent
   instanceRef:
-    name: holos
+    name: default
     namespace: keycloak
   redirectUris:
   - https://kagent.treasury.bank.internal/oauth2/callback

@@ -40,7 +40,7 @@ PrivateCA: requesters: {
 	(ESO.namespace): "external-secrets-webhook": dnsNames: ["\(ESO.name).\(ESO.namespace).svc"]
 	// The Kubernetes API's host on holos-authenticator's Gateway
 	// (components/holos-authenticator).
-	(HolosAuthenticator.namespace): (HolosAuthenticator.gateway.name): dnsNames: [HolosAuthenticator.host]
+	(PlatformAuthenticator.namespace): (PlatformAuthenticator.gateway.name): dnsNames: [PlatformAuthenticator.host]
 	// The ingress Gateway's wildcard (components/ingress-gateway).
 	(IngressGateway.namespace): wildcard: dnsNames: [IngressGateway.wildcard]
 	// One wildcard per atespace on the Substrate shim's Gateway

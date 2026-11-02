@@ -10,6 +10,6 @@ spec:
     deletionPolicy: Orphan
     email: carol@bank.internal
     instanceRef:
-        name: holos
+        name: default
         namespace: keycloak
     username: carol

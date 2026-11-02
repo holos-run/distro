@@ -10,7 +10,7 @@ import (
 // kubeconfig carries the ID token kubelogin prints for the kubectl client,
 // and the API server sees the request as an impersonation of them,
 // oidc:<username> with their groups by full path, so Kubernetes RBAC does the
-// rest. HolosAuthenticator (components/holos-authenticator.cue) holds the
+// rest. PlatformAuthenticator (components/holos-authenticator.cue) holds the
 // release, the names, and the users and groups that may be impersonated.
 //
 // holos-authenticator 0.21.0 is an Envoy external authorization server, gRPC
@@ -49,7 +49,7 @@ import (
 // listener, both earlier, and the Gateway API CRDs and the private-ca
 // ClusterIssuer and ConfigMap. The manager registers no admission webhook.
 
-let HA = HolosAuthenticator
+let HA = PlatformAuthenticator
 let GW = HA.gateway
 let IG = IngressGateway
 let NS = HA.namespace
@@ -213,7 +213,7 @@ holos: spec: artifacts: [(#FileArtifact & {
 		// The impersonator: the identity the API server authenticates every
 		// forwarded request as, with a token the manager mints for an hour
 		// and renews. It may impersonate the users and the groups
-		// HolosAuthenticator lists, by name, and do nothing else, so a
+		// PlatformAuthenticator lists, by name, and do nothing else, so a
 		// stolen token can become only those. The API server adds
 		// system:authenticated to an impersonated user itself, which needs
 		// no grant. resourceNames are never empty: an empty list would allow
