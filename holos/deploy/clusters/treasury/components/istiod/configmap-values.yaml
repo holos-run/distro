@@ -1,5 +1,75 @@
+# Source: istiod/templates/configmap-values.yaml
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: values
+  namespace: "istio-system"
+  annotations:
+    kubernetes.io/description: This ConfigMap contains the Helm values used during chart rendering. This ConfigMap is rendered for debugging purposes and external tooling; modifying these values has no effect.
+  labels:
+    istio.io/rev: "default"
+    install.operator.istio.io/owning-resource: unknown
+    operator.istio.io/component: "Pilot"
+    release: istiod
+    app.kubernetes.io/name: "istiod"
+    app.kubernetes.io/managed-by: "Helm"
+    app.kubernetes.io/instance: "istiod"
+    app.kubernetes.io/part-of: "istio"
+    app.kubernetes.io/version: "1.31.3"
+    helm.sh/chart: istiod-1.31.3
 data:
+  original-values: |-
+    {
+      "autoscaleEnabled": false,
+      "base": {
+        "validationFailurePolicy": "Fail"
+      },
+      "env": {
+        "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
+        "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.treasury.bank.internal"
+      },
+      "global": {
+        "proxy": {
+          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e"
+        }
+      },
+      "image": "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a",
+      "meshConfig": {
+        "extensionProviders": [
+          {
+            "envoyExtAuthzGrpc": {
+              "port": 9000,
+              "service": "holos-authenticator.holos-authenticator.svc.cluster.local",
+              "timeout": "2s"
+            },
+            "name": "holos-authenticator"
+          }
+        ],
+        "trustDomain": "cluster.local"
+      },
+      "profile": "ambient",
+      "volumeMounts": [
+        {
+          "mountPath": "/cacerts",
+          "name": "jwks-extra-cacerts",
+          "readOnly": true
+        }
+      ],
+      "volumes": [
+        {
+          "configMap": {
+            "items": [
+              {
+                "key": "ca.crt",
+                "path": "extra.pem"
+              }
+            ],
+            "name": "private-ca"
+          },
+          "name": "jwks-extra-cacerts"
+        }
+      ]
+    }
   merged-values: |-
     {
       "affinity": {},
@@ -8,7 +78,8 @@ data:
       "autoscaleMax": 5,
       "autoscaleMin": 1,
       "base": {
-        "enableIstioConfigCRDs": true
+        "enableIstioConfigCRDs": true,
+        "validationFailurePolicy": "Fail"
       },
       "cni": {
         "ambient": {
@@ -282,71 +353,3 @@ data:
         }
       ]
     }
-  original-values: |-
-    {
-      "autoscaleEnabled": false,
-      "env": {
-        "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
-        "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.treasury.bank.internal"
-      },
-      "global": {
-        "proxy": {
-          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e"
-        }
-      },
-      "image": "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a",
-      "meshConfig": {
-        "extensionProviders": [
-          {
-            "envoyExtAuthzGrpc": {
-              "port": 9000,
-              "service": "holos-authenticator.holos-authenticator.svc.cluster.local",
-              "timeout": "2s"
-            },
-            "name": "holos-authenticator"
-          }
-        ],
-        "trustDomain": "cluster.local"
-      },
-      "profile": "ambient",
-      "volumeMounts": [
-        {
-          "mountPath": "/cacerts",
-          "name": "jwks-extra-cacerts",
-          "readOnly": true
-        }
-      ],
-      "volumes": [
-        {
-          "configMap": {
-            "items": [
-              {
-                "key": "ca.crt",
-                "path": "extra.pem"
-              }
-            ],
-            "name": "private-ca"
-          },
-          "name": "jwks-extra-cacerts"
-        }
-      ]
-    }
-kind: ConfigMap
-metadata:
-  annotations:
-    kubernetes.io/description: This ConfigMap contains the Helm values used during
-      chart rendering. This ConfigMap is rendered for debugging purposes and external
-      tooling; modifying these values has no effect.
-  labels:
-    app.kubernetes.io/instance: istiod
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: istiod
-    app.kubernetes.io/part-of: istio
-    app.kubernetes.io/version: 1.31.3
-    helm.sh/chart: istiod-1.31.3
-    install.operator.istio.io/owning-resource: unknown
-    istio.io/rev: default
-    operator.istio.io/component: Pilot
-    release: istiod
-  name: values
-  namespace: istio-system

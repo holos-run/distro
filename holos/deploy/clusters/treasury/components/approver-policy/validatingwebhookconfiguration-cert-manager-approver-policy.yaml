@@ -3,8 +3,6 @@ kind: ValidatingWebhookConfiguration
 metadata:
   annotations:
     cert-manager.io/inject-ca-from-secret: cert-manager/cert-manager-approver-policy-tls
-    holos.run/contract-exception: ADR 0001's Gateway webhook path, kept on treasury
-      until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer
   labels:
     app: cert-manager-approver-policy
     app.kubernetes.io/instance: cert-manager-approver-policy
@@ -18,7 +16,10 @@ webhooks:
   - v1
   - v1beta1
   clientConfig:
-    url: https://cert-manager-approver-policy.cert-manager.svc:9443/validate-policy-cert-manager-io-v1alpha1-certificaterequestpolicy
+    service:
+      name: cert-manager-approver-policy
+      namespace: cert-manager
+      path: /validate-policy-cert-manager-io-v1alpha1-certificaterequestpolicy
   failurePolicy: Fail
   name: policy.cert-manager.io
   rules:
@@ -32,4 +33,4 @@ webhooks:
     resources:
     - certificaterequestpolicies
   sideEffects: None
-  timeoutSeconds: 3
+  timeoutSeconds: 5

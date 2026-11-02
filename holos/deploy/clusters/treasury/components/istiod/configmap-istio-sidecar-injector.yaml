@@ -1,5 +1,169 @@
+# Source: istiod/templates/istiod-injector-configmap.yaml
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-sidecar-injector
+  namespace: "istio-system"
+  labels:
+    istio.io/rev: "default"
+    install.operator.istio.io/owning-resource: unknown
+    operator.istio.io/component: "Pilot"
+    release: istiod
+    app.kubernetes.io/name: "istiod"
+    app.kubernetes.io/managed-by: "Helm"
+    app.kubernetes.io/instance: "istiod"
+    app.kubernetes.io/part-of: "istio"
+    app.kubernetes.io/version: "1.31.3"
+    helm.sh/chart: istiod-1.31.3
 data:
+
+  values: |-
+    {
+      "gateways": {
+        "seccompProfile": {},
+        "securityContext": {}
+      },
+      "global": {
+        "caAddress": "",
+        "caName": "",
+        "certSigners": [],
+        "configCluster": false,
+        "configValidation": true,
+        "defaultPodDisruptionBudget": {
+          "enabled": true
+        },
+        "defaultResources": {
+          "requests": {
+            "cpu": "10m"
+          }
+        },
+        "externalIstiod": false,
+        "hub": "docker.io/istio",
+        "imagePullPolicy": "",
+        "imagePullSecrets": [],
+        "istioNamespace": "istio-system",
+        "istiod": {
+          "enableAnalysis": false
+        },
+        "logAsJson": false,
+        "logging": {
+          "level": "default:info"
+        },
+        "meshID": "",
+        "meshNetworks": {},
+        "mountMtlsCerts": false,
+        "multiCluster": {
+          "clusterName": ""
+        },
+        "nativeNftables": false,
+        "network": "",
+        "networkPolicy": {
+          "enabled": false
+        },
+        "omitSidecarInjectorConfigMap": false,
+        "operatorManageWebhooks": false,
+        "pilotCertProvider": "istiod",
+        "priorityClassName": "",
+        "proxy": {
+          "autoInject": "enabled",
+          "clusterDomain": "cluster.local",
+          "componentLogLevel": "misc:error",
+          "excludeIPRanges": "",
+          "excludeInboundPorts": "",
+          "excludeOutboundPorts": "",
+          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e",
+          "includeIPRanges": "*",
+          "includeInboundPorts": "*",
+          "includeOutboundPorts": "",
+          "logLevel": "warning",
+          "outlierLogPath": "",
+          "privileged": false,
+          "readinessFailureThreshold": 4,
+          "readinessInitialDelaySeconds": 0,
+          "readinessPeriodSeconds": 15,
+          "resources": {
+            "limits": {
+              "cpu": "2000m",
+              "memory": "1024Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          },
+          "seccompProfile": {},
+          "startupProbe": {
+            "enabled": true,
+            "failureThreshold": 600
+          },
+          "statusPort": 15020,
+          "tracer": "none"
+        },
+        "proxy_init": {
+          "forceApplyIptables": false,
+          "image": "proxyv2"
+        },
+        "remotePilotAddress": "",
+        "resourceScope": "all",
+        "sds": {
+          "token": {
+            "aud": "istio-ca"
+          }
+        },
+        "sts": {
+          "servicePort": 0
+        },
+        "tag": "1.31.3",
+        "variant": "distroless",
+        "waypoint": {
+          "affinity": {},
+          "nodeSelector": {},
+          "resources": {
+            "limits": {
+              "cpu": "2",
+              "memory": "1Gi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          },
+          "tolerations": [],
+          "topologySpreadConstraints": []
+        }
+      },
+      "pilot": {
+        "cni": {
+          "ambient": {
+            "enabled": true
+          },
+          "enabled": false,
+          "provider": "default"
+        },
+        "env": {
+          "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
+          "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.treasury.bank.internal",
+          "PILOT_ENABLE_AMBIENT": "true"
+        }
+      },
+      "revision": "",
+      "sidecarInjectorWebhook": {
+        "alwaysInjectSelector": [],
+        "defaultTemplates": [],
+        "enableNamespacesByDefault": false,
+        "injectedAnnotations": {},
+        "neverInjectSelector": [],
+        "reinvocationPolicy": "Never",
+        "rewriteAppHTTPProbe": true,
+        "templates": {}
+      }
+    }
+
+  # To disable injection: use omitSidecarInjectorConfigMap, which disables the webhook patching
+  # and istiod webhook functionality.
+  #
+  # New fields should not use Values - it is a 'primary' config object, users should be able
+  # to fine tune it or use it with kube-inject.
   config: |-
     # defaultTemplates defines the default template to use for pods that do not explicitly specify a template
     defaultTemplates: [sidecar]
@@ -2693,159 +2857,3 @@ data:
           selector:
             matchLabels:
               gateway.networking.k8s.io/gateway-name: {{.Name|quote}}
-  values: |-
-    {
-      "gateways": {
-        "seccompProfile": {},
-        "securityContext": {}
-      },
-      "global": {
-        "caAddress": "",
-        "caName": "",
-        "certSigners": [],
-        "configCluster": false,
-        "configValidation": true,
-        "defaultPodDisruptionBudget": {
-          "enabled": true
-        },
-        "defaultResources": {
-          "requests": {
-            "cpu": "10m"
-          }
-        },
-        "externalIstiod": false,
-        "hub": "docker.io/istio",
-        "imagePullPolicy": "",
-        "imagePullSecrets": [],
-        "istioNamespace": "istio-system",
-        "istiod": {
-          "enableAnalysis": false
-        },
-        "logAsJson": false,
-        "logging": {
-          "level": "default:info"
-        },
-        "meshID": "",
-        "meshNetworks": {},
-        "mountMtlsCerts": false,
-        "multiCluster": {
-          "clusterName": ""
-        },
-        "nativeNftables": false,
-        "network": "",
-        "networkPolicy": {
-          "enabled": false
-        },
-        "omitSidecarInjectorConfigMap": false,
-        "operatorManageWebhooks": false,
-        "pilotCertProvider": "istiod",
-        "priorityClassName": "",
-        "proxy": {
-          "autoInject": "enabled",
-          "clusterDomain": "cluster.local",
-          "componentLogLevel": "misc:error",
-          "excludeIPRanges": "",
-          "excludeInboundPorts": "",
-          "excludeOutboundPorts": "",
-          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e",
-          "includeIPRanges": "*",
-          "includeInboundPorts": "*",
-          "includeOutboundPorts": "",
-          "logLevel": "warning",
-          "outlierLogPath": "",
-          "privileged": false,
-          "readinessFailureThreshold": 4,
-          "readinessInitialDelaySeconds": 0,
-          "readinessPeriodSeconds": 15,
-          "resources": {
-            "limits": {
-              "cpu": "2000m",
-              "memory": "1024Mi"
-            },
-            "requests": {
-              "cpu": "100m",
-              "memory": "128Mi"
-            }
-          },
-          "seccompProfile": {},
-          "startupProbe": {
-            "enabled": true,
-            "failureThreshold": 600
-          },
-          "statusPort": 15020,
-          "tracer": "none"
-        },
-        "proxy_init": {
-          "forceApplyIptables": false,
-          "image": "proxyv2"
-        },
-        "remotePilotAddress": "",
-        "resourceScope": "all",
-        "sds": {
-          "token": {
-            "aud": "istio-ca"
-          }
-        },
-        "sts": {
-          "servicePort": 0
-        },
-        "tag": "1.31.3",
-        "variant": "distroless",
-        "waypoint": {
-          "affinity": {},
-          "nodeSelector": {},
-          "resources": {
-            "limits": {
-              "cpu": "2",
-              "memory": "1Gi"
-            },
-            "requests": {
-              "cpu": "100m",
-              "memory": "128Mi"
-            }
-          },
-          "tolerations": [],
-          "topologySpreadConstraints": []
-        }
-      },
-      "pilot": {
-        "cni": {
-          "ambient": {
-            "enabled": true
-          },
-          "enabled": false,
-          "provider": "default"
-        },
-        "env": {
-          "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
-          "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.treasury.bank.internal",
-          "PILOT_ENABLE_AMBIENT": "true"
-        }
-      },
-      "revision": "",
-      "sidecarInjectorWebhook": {
-        "alwaysInjectSelector": [],
-        "defaultTemplates": [],
-        "enableNamespacesByDefault": false,
-        "injectedAnnotations": {},
-        "neverInjectSelector": [],
-        "reinvocationPolicy": "Never",
-        "rewriteAppHTTPProbe": true,
-        "templates": {}
-      }
-    }
-kind: ConfigMap
-metadata:
-  labels:
-    app.kubernetes.io/instance: istiod
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: istiod
-    app.kubernetes.io/part-of: istio
-    app.kubernetes.io/version: 1.31.3
-    helm.sh/chart: istiod-1.31.3
-    install.operator.istio.io/owning-resource: unknown
-    istio.io/rev: default
-    operator.istio.io/component: Pilot
-    release: istiod
-  name: istio-sidecar-injector
-  namespace: istio-system

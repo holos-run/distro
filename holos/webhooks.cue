@@ -1,7 +1,7 @@
 package holos
 
-// The admission webhook registry. ADR 0001 takes the control plane off the
-// pod network, so the API server reaches a webhook the way a client outside
+// The admission webhook registry. ADR 0001 took the control plane off the
+// pod network, so the API server reached a webhook the way a client outside
 // the cluster does: through a URL on the ingress Gateway's address, where a
 // listener passes TLS through to the webhook's Service, routed on SNI:
 //
@@ -17,9 +17,7 @@ package holos
 //
 // #Cluster.webhooks (clusters.cue) holds the per-cluster half: the
 // enforcement flag, the timeout, the port and the hostnames. This file holds
-// the platform half: every Service that serves an admission webhook. A
-// component that registers a webhook adds its Service here and renders its
-// webhook configurations with #WebhookPatch (components/webhooks.cue); the
+// the platform half: every Service that serves an admission webhook. The
 // listener and one TLSRoute per entry (components/ingress-gateway) and the
 // control plane's host entries (talos.cue) are rendered from this one list.
 // The webhook's serving certificate must also carry its hostname, and a new
@@ -29,6 +27,12 @@ package holos
 // A webhook whose certificate cannot carry a name under the webhooks domain
 // sets hostname to the name it does carry; the path is the same, through a
 // listener of its own on the same port.
+//
+// No webhook configuration takes this path any more: the control plane runs
+// Cilium, so each keeps its chart's service: reference, as ADR 0003
+// requires. The listener, the routes, the host entries and the hostnames on
+// the serving certificates stay until the follow-up change retires them
+// with this registry.
 
 // #WebhookService is a Service that serves admission webhooks.
 #WebhookService: {

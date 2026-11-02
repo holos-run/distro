@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// reason is the exception #WebhookPatch gives treasury's webhook
-// configurations (holos/components/webhooks.cue).
+// reason is the exception treasury's webhook configurations carried while
+// they took ADR 0001's Gateway path; the fixtures keep it.
 const reason = "ADR 0001's Gateway webhook path, kept on treasury until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer"
 
 // TestRun checks each fixture tree under testdata. In want, $C/ stands for the

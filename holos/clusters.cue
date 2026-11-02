@@ -116,21 +116,21 @@ import "net"
 		secret: string | *"ceph-client-\(user)"
 	}
 
-	// webhooks is how the API server reaches this cluster's admission
-	// webhooks, by ADR 0001's path, built while the control plane was off
-	// the pod network: every webhook's clientConfig is a URL on the ingress
-	// Gateway's address (loadBalancer.gateway), whose webhooks listener
-	// passes TLS through to the webhook's Pods, routed on SNI. webhooks.cue
-	// has the hostname scheme and the registry of webhook Services.
+	// webhooks is ADR 0001's path to this cluster's admission webhooks,
+	// built while the control plane was off the pod network: a URL on the
+	// ingress Gateway's address (loadBalancer.gateway), whose webhooks
+	// listener passes TLS through to the webhook's Pods, routed on SNI.
+	// webhooks.cue has the hostname scheme and the registry of webhook
+	// Services. No webhook configuration uses it any more: each keeps its
+	// chart's service:, failurePolicy and timeoutSeconds (ADR 0003), and the
+	// follow-up change retires what is left.
 	webhooks: {
-		// enforcing is ADR 0001's provisioning flag, one value for every
-		// webhook in the cluster. false while the cluster bootstraps: every
-		// webhook fails open (Ignore), so the API server admits a request it
-		// cannot get a webhook's answer for. Set true once every webhook
-		// answers through the Gateway; every webhook then renders Fail. A
-		// cluster built from scratch starts false: with Fail, cert-manager's
-		// webhook would refuse the private CA's resources, which the Gateway
-		// it is reached through depends on (README.md, "Admission webhooks").
+		// enforcing is ADR 0001's provisioning flag. It no longer sets the
+		// webhooks' failurePolicy, which each keeps from its chart, so
+		// failurePolicy and timeoutSeconds below are unused, as is urls,
+		// which no clientConfig names any more; it still turns off
+		// cert-manager's own approver (components/cert-manager). The
+		// follow-up change retires them.
 		enforcing:     bool | *false
 		failurePolicy: "Ignore" | "Fail"
 		if enforcing {failurePolicy: "Fail"}

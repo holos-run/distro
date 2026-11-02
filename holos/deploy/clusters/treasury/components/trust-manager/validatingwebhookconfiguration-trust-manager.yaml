@@ -3,8 +3,6 @@ kind: ValidatingWebhookConfiguration
 metadata:
   annotations:
     cert-manager.io/inject-ca-from-secret: cert-manager/trust-manager-tls
-    holos.run/contract-exception: ADR 0001's Gateway webhook path, kept on treasury
-      until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer
   labels:
     app: trust-manager
     app.kubernetes.io/instance: trust-manager
@@ -17,7 +15,10 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    url: https://trust-manager.cert-manager.webhooks.treasury.bank.internal:9443/validate-trust-cert-manager-io-v1alpha1-bundle
+    service:
+      name: trust-manager
+      namespace: cert-manager
+      path: /validate-trust-cert-manager-io-v1alpha1-bundle
   failurePolicy: Fail
   name: trust.cert-manager.io
   rules:
@@ -31,4 +32,4 @@ webhooks:
     resources:
     - bundles
   sideEffects: None
-  timeoutSeconds: 3
+  timeoutSeconds: 5

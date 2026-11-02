@@ -39,12 +39,6 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	}
 
 	patches: [
-		(#WebhookPatch & {
-			kind:    "ValidatingWebhookConfiguration"
-			name:    "trust-manager"
-			service: Webhook.name
-			webhooks: "trust.cert-manager.io": path: "/validate-trust-cert-manager-io-v1alpha1-bundle"
-		}).patch,
 		// The serving certificate also carries the hostname the API server
 		// dials through the Gateway (webhooks.cue).
 		{
