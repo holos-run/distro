@@ -1,10 +1,5 @@
 package holos
 
-import (
-	"list"
-	"strings"
-)
-
 // IngressGateway is the cluster's one ingress Gateway, which the
 // ingress-gateway component renders: every platform service with a hostname
 // is an HTTPRoute on its HTTPS listener. A component that adds a route names
@@ -36,8 +31,8 @@ IngressGateway: {
 
 	// domain is the private zone. Every gateway hostname is
 	// <service>.<domain> (interview Q40), one label under the zone, so the
-	// listener's one wildcard certificate covers them all. Unlike webhook
-	// hostnames, gateway hostnames carry no cluster name.
+	// listener's one wildcard certificate covers them all. Gateway
+	// hostnames carry no cluster name.
 	domain:   Cluster.site.privateDomain
 	wildcard: "*.\(domain)"
 
@@ -54,59 +49,15 @@ IngressGateway: {
 	}
 
 	// listeners are the Gateway's listener names. https terminates TLS for
-	// every host; http answers every request with a redirect to https;
-	// webhooks passes TLS through to the admission webhooks (webhooks.cue);
-	// ate passes TLS through to the Substrate shim's Gateway (AteGateway);
-	// k8s passes TLS through to holos-authenticator's Gateway
+	// every host; http answers every request with a redirect to https; ate
+	// passes TLS through to the Substrate shim's Gateway (AteGateway); k8s
+	// passes TLS through to holos-authenticator's Gateway
 	// (HolosAuthenticator).
 	listeners: {
-		https:    "https"
-		http:     "http"
-		webhooks: "webhooks"
-		ate:      "ate"
-		k8s:      "k8s"
-	}
-
-	// webhooks is the listener the API server reaches every admission
-	// webhook through: Cluster.webhooks.port on the gateway's address, for
-	// every webhook hostname, routed on SNI by one TLSRoute per entry in
-	// webhookServices (webhooks.cue) and passed through to the webhook's
-	// Service. Talos host entries on the control plane point the
-	// hostnames at address (talos.cue).
-	webhooks: {
-		port:     Cluster.webhooks.port
-		hostname: "*.\(Cluster.webhooks.domain)"
-		// namespaces are those of the webhook Services, the only namespaces
-		// whose TLSRoutes the listener accepts.
-		namespaces: list.SortStrings([for NS, _ in {for S in webhookServices {(S.namespace): _}} {NS}])
-
-		// sections maps each entry of webhookServices to the listener its
-		// TLSRoute attaches to: webhooks for a hostname under the webhooks
-		// domain, which its wildcard matches, and a listener of the entry's
-		// own, webhooks-<entry>, for a hostname the entry sets outside it
-		// (#WebhookService.hostname), which the wildcard does not.
-		sections: {
-			for K, H in Cluster.webhooks.hosts {
-				if strings.HasSuffix(H, ".\(Cluster.webhooks.domain)") {
-					(K): Self.listeners.webhooks
-				}
-				if !strings.HasSuffix(H, ".\(Cluster.webhooks.domain)") {
-					(K): "\(Self.listeners.webhooks)-\(K)"
-				}
-			}
-		}
-
-		// own are those listeners of an entry's own, by listener name: the
-		// same port and passthrough as webhooks, for the one hostname, and
-		// TLSRoutes from the one Service's namespace.
-		own: {
-			for K, N in sections if N != Self.listeners.webhooks {
-				(N): {
-					hostname:  Cluster.webhooks.hosts[K]
-					namespace: webhookServices[K].namespace
-				}
-			}
-		}
+		https: "https"
+		http:  "http"
+		ate:   "ate"
+		k8s:   "k8s"
 	}
 
 	// parentRef attaches an HTTPRoute to the HTTPS listener.

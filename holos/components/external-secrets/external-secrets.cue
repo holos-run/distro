@@ -16,7 +16,8 @@ package holos
 // by default: the cluster has no Prometheus Operator and no Bitwarden.
 ESOVersion: "2.14.0"
 
-let Webhook = webhookServices["external-secrets-webhook"]
+// Webhook is the Service that serves both webhook configurations.
+let Webhook = {name: "external-secrets-webhook", namespace: "external-secrets"}
 
 // WebhookCertificate is the name the chart gives the webhook's Secret, which
 // its Deployment mounts, and the Certificate its inject-ca-from annotation
@@ -52,15 +53,15 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		crds: conversion: enabled: false
 
 		// By default the chart's cert-controller makes the webhook's CA and
-		// certificate, for the Service's cluster names only, into Secret
-		// external-secrets-webhook, and writes the CA into the
-		// configurations' caBundle and the CRDs'. certManager.enabled drops
-		// the cert-controller and that Secret from the output and adds
-		// cert-manager.io/inject-ca-from: external-secrets/
-		// external-secrets-webhook to both configurations, so cainjector
-		// fills the caBundle and nothing else writes it. cert.create is off:
-		// the chart's Certificate has no setting for another DNS name, so
-		// the component renders its own, below, under the same name.
+		// certificate into Secret external-secrets-webhook, and writes the CA
+		// into the configurations' caBundle and the CRDs'.
+		// certManager.enabled drops the cert-controller and that Secret from
+		// the output and adds cert-manager.io/inject-ca-from:
+		// external-secrets/external-secrets-webhook to both configurations,
+		// so cainjector fills the caBundle and nothing else writes it.
+		// cert.create is off: the component renders its own Certificate,
+		// below, under the same name, from the private CA with its entry in
+		// PrivateCA.requesters.
 		certController: create: false
 		webhook: certManager: {
 			enabled:                true
@@ -84,14 +85,12 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	resources: {
 		Namespace: (Webhook.namespace): _
 
-		// The webhook's serving certificate, from the private CA, with the
-		// Service's cluster name and the hostname the API server dials
-		// through the Gateway (webhooks.cue), from its entry in
-		// PrivateCA.requesters (components/private-ca.cue). The webhook
-		// validates the .svc name and the chain to ca.crt, which a
-		// private-ca Secret carries. The CA's root, which cainjector writes
-		// into the caBundle, does not change when the certificate is
-		// renewed.
+		// The webhook's serving certificate, from the private CA, for the
+		// Service's cluster name, from its entry in PrivateCA.requesters
+		// (components/private-ca.cue). The webhook validates the .svc name
+		// and the chain to ca.crt, which a private-ca Secret carries. The
+		// CA's root, which cainjector writes into the caBundle, does not
+		// change when the certificate is renewed.
 		Certificate: (WebhookCertificate): {
 			metadata: namespace: Webhook.namespace
 			spec: {

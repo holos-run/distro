@@ -149,10 +149,7 @@ holos: spec: artifacts: [(#FileArtifact & {
 	resources: {
 		// In the mesh, so ztunnel enforces the gRPC policy below. The
 		// gateway's pods are not captured: istiod labels every gateway it
-		// deploys istio.io/dataplane-mode: none. Not exempt from
-		// cert-manager's webhook, as substrate-shim is not: the webhook's
-		// path is the ingress Gateway's webhooks listener, which this
-		// component does not render.
+		// deploys istio.io/dataplane-mode: none.
 		Namespace: (NS): metadata: labels: Istio.ambient
 
 		// The manager's own identity. It reads Backends, writes their

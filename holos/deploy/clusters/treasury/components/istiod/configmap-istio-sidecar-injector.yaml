@@ -142,7 +142,6 @@ data:
         },
         "env": {
           "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
-          "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.treasury.bank.internal",
           "PILOT_ENABLE_AMBIENT": "true"
         }
       },

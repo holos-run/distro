@@ -16,7 +16,8 @@ import "encoding/yaml"
 // has no Prometheus Operator.
 CNPGVersion: "0.29.1"
 
-let Webhook = webhookServices["cnpg-webhook-service"]
+// Webhook is the Service that serves both webhook configurations.
+let Webhook = {name: "cnpg-webhook-service", namespace: "cnpg-system"}
 
 // webhookCertDir is the chart's mount of the webhook-certificates volume.
 let webhookCertDir = "/run/secrets/cnpg.io/webhook"
@@ -40,26 +41,24 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		crds: create: true
 
 		// By default the operator makes its own CA and webhook certificate,
-		// for the Service's cluster names only, and writes the CA into both
-		// configurations' caBundle every hour. With WEBHOOK_CERT_DIR set it
-		// does neither: it serves the certificate it finds in the directory,
-		// as apiserver.crt and apiserver.key, and leaves the configurations
-		// alone. The certificate is the cnpg-webhook Certificate below, and
-		// cainjector fills the caBundle. The operator reads the variable
-		// before its ConfigMap, so it is an environment variable, not
-		// config.data.
+		// and writes the CA into both configurations' caBundle every hour.
+		// With WEBHOOK_CERT_DIR set it does neither: it serves the
+		// certificate it finds in the directory, as apiserver.crt and
+		// apiserver.key, and leaves the configurations alone. The certificate
+		// is the cnpg-webhook Certificate below, and cainjector fills the
+		// caBundle. The operator reads the variable before its ConfigMap, so
+		// it is an environment variable, not config.data.
 		additionalEnv: [{name: "WEBHOOK_CERT_DIR", value: webhookCertDir}]
 	}
 
 	resources: {
 		Namespace: (Webhook.namespace): _
 
-		// The webhook's serving certificate, from the private CA, with the
-		// Service's cluster name and the hostname the API server dials
-		// through the Gateway (webhooks.cue), from its entry in
-		// PrivateCA.requesters (components/private-ca.cue). The CA's root,
-		// which cainjector writes into the caBundle, does not change when
-		// the certificate is renewed.
+		// The webhook's serving certificate, from the private CA, for the
+		// Service's cluster name, from its entry in PrivateCA.requesters
+		// (components/private-ca.cue). The CA's root, which cainjector
+		// writes into the caBundle, does not change when the certificate is
+		// renewed.
 		Certificate: "cnpg-webhook": {
 			metadata: namespace: Webhook.namespace
 			spec: {

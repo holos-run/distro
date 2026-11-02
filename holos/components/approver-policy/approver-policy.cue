@@ -4,9 +4,9 @@ import "encoding/yaml"
 
 // approver-policy approves or denies every CertificateRequest in the cluster
 // in place of cert-manager's own approver, which the cert-manager component
-// turns off once the cluster enforces its webhooks. It decides by the
-// CertificateRequestPolicies the private-ca component renders, beside the
-// issuers they guard (README.md, "The private CA").
+// turns off. It decides by the CertificateRequestPolicies the private-ca
+// component renders, beside the issuers they guard (README.md, "The private
+// CA").
 //
 // v0.29.0, the latest stable, from Jetstack's OCI chart, with the image the
 // chart names on quay.io, pinned by digest. It runs in cert-manager's
@@ -14,10 +14,8 @@ import "encoding/yaml"
 // there.
 ApproverPolicyVersion: "v0.29.0"
 
-let Webhook = webhookServices["cert-manager-approver-policy"]
-
 holos: spec: artifacts: [(#HelmArtifact & {
-	namespace: Webhook.namespace
+	namespace: PrivateCA.namespace
 	chart: {
 		name:    "oci://quay.io/jetstack/charts/cert-manager-approver-policy"
 		version: ApproverPolicyVersion

@@ -60,9 +60,9 @@ registry: [
 	// cert-manager, its CRDs and its webhook.
 	{name: "cert-manager"},
 	// approver-policy approves cert-manager's CertificateRequests by policy,
-	// in place of cert-manager's own approver once the cluster enforces its
-	// webhooks: its CertificateRequestPolicy CRD, its controller and its
-	// webhook. It needs only cert-manager's CRDs, whose requests it watches.
+	// in place of cert-manager's own approver: its CertificateRequestPolicy
+	// CRD, its controller and its webhook. It needs only cert-manager's
+	// CRDs, whose requests it watches.
 	{name: "approver-policy"},
 	// private-ca is the bootstrap Issuer, the root, the ClusterIssuer and the
 	// CertificateRequestPolicies that let them sign. It needs cert-manager's
@@ -88,15 +88,13 @@ registry: [
 	// cloudnative-pg is the CloudNativePG operator, its CRDs and its
 	// webhooks; each consumer writes its own Cluster. Its webhook
 	// certificate is a cert-manager Certificate from the private-ca
-	// ClusterIssuer, and its webhook's TLSRoute is in its namespace, so it
-	// comes after private-ca and before ingress-gateway.
+	// ClusterIssuer, so it comes after private-ca.
 	{name: "cloudnative-pg"},
 	// external-secrets is the External Secrets operator, its CRDs and its
 	// webhook; components generate their own secrets with it
 	// (#GeneratedSecret). Its webhook certificate is a cert-manager
-	// Certificate from the private-ca ClusterIssuer, and its webhook's
-	// TLSRoute is in its namespace, so it comes after private-ca and before
-	// ingress-gateway.
+	// Certificate from the private-ca ClusterIssuer, so it comes after
+	// private-ca.
 	{name: "external-secrets"},
 	// management-namespaces is the Secrets Manager's management organization
 	// and project, holos-org-platform and holos-prj-platform, and the

@@ -86,8 +86,7 @@ import "net"
 		// the block's first unless set. It is reserved, not left to LB IPAM:
 		// cilium-resources gives it a pool of its own that only the gateway's
 		// Service draws from, so the private zone's *.<privateDomain> record
-		// and the control plane's webhook host entries (talos.cue) stay right
-		// across a recreate of the Gateway or the cluster.
+		// stays right across a recreate of the Gateway or the cluster.
 		gateway: net.IPv4 & string | *start
 
 		// The block runs from start to stop and gateway lies in it, so a bad
@@ -114,68 +113,6 @@ import "net"
 		pool:   string
 		user:   string
 		secret: string | *"ceph-client-\(user)"
-	}
-
-	// webhooks is ADR 0001's path to this cluster's admission webhooks,
-	// built while the control plane was off the pod network: a URL on the
-	// ingress Gateway's address (loadBalancer.gateway), whose webhooks
-	// listener passes TLS through to the webhook's Pods, routed on SNI.
-	// webhooks.cue has the hostname scheme and the registry of webhook
-	// Services. No webhook configuration uses it any more: each keeps its
-	// chart's service:, failurePolicy and timeoutSeconds (ADR 0003), and the
-	// follow-up change retires what is left.
-	webhooks: {
-		// enforcing is ADR 0001's provisioning flag. It no longer sets the
-		// webhooks' failurePolicy, which each keeps from its chart, so
-		// failurePolicy and timeoutSeconds below are unused, as is urls,
-		// which no clientConfig names any more; it still turns off
-		// cert-manager's own approver (components/cert-manager). The
-		// follow-up change retires them.
-		enforcing:     bool | *false
-		failurePolicy: "Ignore" | "Fail"
-		if enforcing {failurePolicy: "Fail"}
-		if !enforcing {failurePolicy: "Ignore"}
-
-		// timeoutSeconds bounds how long the API server waits for a webhook,
-		// in place of the default ten seconds, so a request waits briefly
-		// rather than stalling when the webhook is unreachable.
-		timeoutSeconds: int & >=1 & <=30 | *3
-
-		// port is the Gateway's webhooks listener, on the Gateway's address
-		// beside its 443 and 80. Not 443, which the HTTPS listener terminates.
-		port: 9443
-
-		// domain is the suffix of every webhook hostname in the cluster. The
-		// API server resolves the names through Talos static host entries on
-		// the control plane (talos.cue), which point them at the Gateway's
-		// address, so it does not depend on the site's resolver. The private
-		// zone's *.<privateDomain> wildcard gives the same answer elsewhere.
-		domain: "webhooks.\(name).\(site.privateDomain)"
-
-		// hosts maps each entry of webhookServices (webhooks.cue) to its
-		// hostname: the Service's name and namespace under domain, as a
-		// Service's cluster DNS name is under svc.cluster.local, or the
-		// entry's own hostname if it sets one. The hostname is the SNI the
-		// Gateway routes on and a DNS name the webhook's serving certificate
-		// carries.
-		hosts: {
-			for K, S in webhookServices {
-				if S.hostname != _|_ {
-					(K): S.hostname
-				}
-				if S.hostname == _|_ {
-					(K): "\(S.name).\(S.namespace).\(domain)"
-				}
-			}
-		}
-
-		// urls maps each entry of webhookServices to the base URL a
-		// webhook's clientConfig names; the webhook's path is appended.
-		urls: {
-			for K, H in hosts {
-				(K): "https://\(H):\(port)"
-			}
-		}
 	}
 }
 
@@ -214,10 +151,6 @@ clusters: treasury: {
 	// The control plane endpoint, treasury-cp-1.
 	serviceAccountIssuer: "https://10.20.0.50:6443"
 	apiServer: address: "10.20.0.50"
-	// Every webhook answers through the gateway's webhooks listener, so the
-	// cluster enforces. A rebuild starts with this false (README.md,
-	// "Admission webhooks").
-	webhooks: enforcing: true
 	// Volumes are images in k8s-rbd, as client.k8s.
 	ceph: {
 		pool: "k8s-rbd"

@@ -1,20 +1,22 @@
-apiVersion: rbac.authorization.k8s.io/v1
+# Source: trust-manager/templates/clusterrole-aggregate.yaml
+# Bundle is a cluster-scoped resource, so its read access is aggregated into
+# the "cluster-reader" ClusterRole (mirroring how cert-manager aggregates its
+# cluster-scoped ClusterIssuers), rather than into the namespaced
+# view/edit/admin roles.
 kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   labels:
-    app.kubernetes.io/instance: trust-manager
-    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: trust-manager
-    app.kubernetes.io/version: v0.25.0
     helm.sh/chart: trust-manager-v0.25.0
+    app.kubernetes.io/instance: trust-manager
+    app.kubernetes.io/version: "v0.25.0"
+    app.kubernetes.io/managed-by: Helm
     rbac.authorization.k8s.io/aggregate-to-cluster-reader: "true"
   name: trust-manager-cluster-view
 rules:
 - apiGroups:
-  - trust.cert-manager.io
+  - "trust.cert-manager.io"
   resources:
-  - bundles
-  verbs:
-  - get
-  - list
-  - watch
+  - "bundles"
+  verbs: ["get", "list", "watch"]

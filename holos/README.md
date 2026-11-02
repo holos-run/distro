@@ -15,8 +15,6 @@ holos/
 ├── registry.cue    the components, in sync order
 ├── collections.cue the ProjectClaim collection, bound into the platform, and its group and user definitions
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
-├── webhooks.cue    the Services that serve admission webhooks
-├── talos.cue       the control plane's Talos patch made from the above; talos_tool.cue writes it
 ├── private-ca.cue  the names of the private CA and its trust bundle, and the shape of its requesters
 ├── istio.cue       the mesh's release, namespace, images and trust domain
 ├── substrate.cue   the Substrate fork's commit and image digests, and the names Substrate is reached by
@@ -76,12 +74,8 @@ in it, comparing the addresses as numbers, so a bad value fails `cue vet`.
 exits 0, which is why the render procedure runs `cue vet` first.
 
 To change the gateway's address, set `loadBalancer.gateway` (or the block)
-and render; the Gateway's `spec.addresses` and both pools follow, and so does
-the control plane's Talos patch of webhook host entries (`cue cmd talos`).
-Apply that with `talosctl` (`providers/talos/README.md`) as soon as
-the Gateway reports its new address: in between, the API server dials the
-old one and every webhook call is refused. Then change the router's
-`*.bank.internal` record to match.
+and render; the Gateway's `spec.addresses` and both pools follow. Then
+change the router's `*.bank.internal` record to match.
 
 ## Components
 
@@ -92,19 +86,19 @@ old one and every webhook call is refused. Then change the router's
 | `coredns` | CoreDNS from the CoreDNS project's Helm chart, replacing the one Talos deploys, with the site's private zone forwarded to its resolvers |
 | `argocd` | Argo CD v3.5.6 from argo-helm's `argo-cd` chart 10.11.6, in `argocd`, syncing this repository's `main` |
 | `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
-| `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook reached through the gateway, and its own approver off once the cluster enforces its webhooks |
-| `approver-policy` | approver-policy v0.29.0 from Jetstack's OCI chart, in `cert-manager`, with its `CertificateRequestPolicy` CRD and its webhook reached through the gateway at its `.svc` name |
+| `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook, and its own approver off |
+| `approver-policy` | approver-policy v0.29.0 from Jetstack's OCI chart, in `cert-manager`, with its `CertificateRequestPolicy` CRD and its webhook |
 | `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate`, the `private-ca` `ClusterIssuer`, and the `CertificateRequestPolicy`s and RBAC every certificate request is approved by |
-| `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook reached through the gateway |
+| `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
 | `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
-| `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks reached through the gateway, the private root as its JWKS trust and holos-authenticator as an ext_authz provider |
+| `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks, the private root as its JWKS trust and holos-authenticator as an ext_authz provider |
 | `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
 | `ztunnel` | Ambient's node proxy on every worker |
-| `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks reached through the gateway; no `Cluster` |
-| `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook reached through the gateway; no store, no `ExternalSecret` |
+| `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks; no `Cluster` |
+| `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook; no store, no `ExternalSecret` |
 | `management-namespaces` | The Secrets Manager's management organization `holos-org-platform` and project `holos-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
-| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the admission webhooks' TLS passthrough listeners and `TLSRoute`s, the `ate` passthrough listener for `*.ate.bank.internal`, and the `k8s` passthrough listener for `k8s.bank.internal` |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the `ate` passthrough listener for `*.ate.bank.internal`, and the `k8s` passthrough listener for `k8s.bank.internal` |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
@@ -184,68 +178,51 @@ private zone does not depend on how the nodes' resolvers are set.
 
 Every webhook configuration names its webhook's Service by the `service:`
 reference its chart ships, with the chart's `failurePolicy` and
-`timeoutSeconds`, as ADR 0003 requires: the control plane runs Cilium, so
-the API server reaches a Service as a pod does.
+`timeoutSeconds`, as ADR 0003 requires. The API server reaches the Service
+as a pod does: the control plane runs a Cilium agent (Cilium, above), so
+the API server, a host-network static pod, reaches pods on the overlay, and
+`--enable-aggregator-routing` makes it dial the Service's endpoints rather
+than its ClusterIP (`providers/talos/patches/controlplane.yaml`). A webhook
+needs nothing outside its own component: no route, no host entry on the
+control plane and no extra name on its serving certificate. `contract-check`
+holds every render to this (Render, below).
 
-The rest of this section describes ADR 0001's path, which no configuration
-takes any more. Its remaining pieces, the Gateway's `webhooks` listener and
-`TLSRoute`s, the host entries and the hostnames on the serving
-certificates, are retired by the follow-up change.
+cert-manager's cainjector fills each configuration's `caBundle`. istiod
+fills its own (see Istio below). CloudNativePG and External Secrets would
+fill their own too, each with a CA of its own, and are told not to
+(CloudNativePG and External Secrets, below).
 
-By ADR 0001's path, built while the control plane was off the pod network,
-the API server reached an admission webhook as a client outside the cluster
-would: through a URL on the ingress Gateway's address, 10.20.0.30, where the
-`webhooks` listener on port 9443 passes TLS through to the webhook's Service,
-routed on SNI by one `TLSRoute` per webhook (The ingress gateway, below). The control
-plane is on the same LAN as the address, so nothing listens on the control
-plane and no proxy is in between.
+Every webhook fails closed: while its pods are down, a request it matches is
+refused, such as any write of a cert-manager resource, a `Bundle`, an Istio
+resource or a CloudNativePG resource, and any write or delete of an
+`ExternalSecret` or a store. Pods and other core objects are not matched
+(the sidecar injector matches only Pods that ask for a sidecar), so a
+webhook's own pods can always be restarted, and no component's objects are
+matched by a webhook its own sync brings up.
 
-Each configuration was rewritten, from the cluster's `webhooks` in
-`clusters.cue`, with:
+A cluster bootstraps with its webhooks failing closed. The root
+`Application` creates each component's `Application` in registry order and
+waits for it to be `Synced` and `Healthy` (Bootstrap Argo CD, below), so a
+webhook's pods are up before a later component writes an object it matches:
+cert-manager's and approver-policy's before `private-ca`'s issuers and
+policies, trust-manager's before `private-ca-bundle`, istiod's before
+anything of Istio's, CloudNativePG's and External Secrets' before their
+first consumers. `istio-base`'s validator fails closed from its first sync,
+before istiod exists, and `istiod`, `istio-cni` and `ztunnel`, which come
+next, write no Istio resource. A call made before cainjector or istiod has
+written the `caBundle` fails, and Argo CD retries the sync it refused.
 
-- `clientConfig.url`: `https://<service>.<namespace>.webhooks.<cluster>.<privateDomain>:9443/<path>`,
-  for example
-  `https://cert-manager-webhook.cert-manager.webhooks.treasury.bank.internal:9443/validate`.
-  The hostname is the SNI the Gateway routes on and a DNS name on the
-  webhook's serving certificate. The control plane resolves it through a
-  Talos host entry to the Gateway's address (`talos.cue`,
-  `providers/talos/README.md`), so the API server does not depend on
-  the router; the router's `*.bank.internal` record gives the same answer
-  everywhere else. One webhook is the exception: approver-policy signs its
-  own serving certificate for `cert-manager-approver-policy.cert-manager.svc`
-  and nothing else, so its entry in `webhooks.cue` sets that as its
-  `hostname`, and its URL is
-  `https://cert-manager-approver-policy.cert-manager.svc:9443/validate-policy-cert-manager-io-v1alpha1-certificaterequestpolicy`
-  (interview Q68). The control plane's host entry points the `.svc` name at
-  the Gateway like the others, the Gateway has a listener of its own for it
-  (The ingress gateway, below), and a pod still resolves it to the Service
-  through cluster DNS. The router's wildcard does not cover it, so it
-  answers only on the control plane.
-- `failurePolicy`: `Ignore` while `webhooks.enforcing` is false, the
-  default; `Fail` once it is set. It is one flag per cluster, ADR 0001's two
-  provisioning steps. `treasury` enforces.
-- `timeoutSeconds`: 3, not the default 10.
+`private-ca`'s root `Certificate` syncs in a wave after the policies that
+approve it, so its request never meets `deny-all` alone: approver-policy
+v0.29.0 denies a request reviewed before a policy that would approve it is
+in its cache, for good, and cert-manager would then back off for an hour.
+A policy that exists but has no `Ready` condition yet leaves the request
+unprocessed instead, until it does. `treasury` was bootstrapped with
+cert-manager's own approver on, so a bootstrap with approver-policy alone is
+untried (Approval, under The private CA, below).
 
-The webhook's Service is registered in `webhooks.cue`, the one list the
-listener's `TLSRoute`s and the control plane's host entries are rendered
-from. A new entry also needs its hostname on the webhook's serving
-certificate, and its host entry applied to a running control plane with
-`talosctl`: Argo CD does not reach the machine config. cert-manager's
-cainjector fills each configuration's `caBundle`; it does so for a URL as it
-does for a Service. istiod fills its own (see Istio below). CloudNativePG
-and External Secrets would fill their own too, each with a CA of its own,
-and are told not to (CloudNativePG and External Secrets, below).
-
-A webhook call costs little: a server-side dry run of a `Certificate` takes
-about 110 ms, a `ConfigMap`'s about 160 ms. While nothing answers on 9443 the
-gateway's address drops the connection, so every call to a webhook failing
-open waits the full 3 seconds (3.1s for a `Certificate`) and the API server
-logs `Failed calling webhook, failing open ... context deadline exceeded`.
-With `Fail` the request is refused instead.
-
-Check that every webhook answers through the Gateway with a request each
-must refuse, as server-side dry runs; each error names the webhook that
-refused it:
+Check that every webhook answers with a request each must refuse, as
+server-side dry runs; each error names the webhook that refused it:
 
 ```sh
 kubectl apply --dry-run=server -f - <<'YAML'
@@ -312,132 +289,14 @@ spec:
   selector: {}
 YAML
 # admission webhook "policy.cert-manager.io" denied the request: [spec.selector: Required value: one of issuerRef or namespace must be defined, ...]
-kubectl -n kube-system logs kube-apiserver-treasury-cp-1 --since=10m | grep -c 'failing open'   # 0
 ```
 
 A `Bundle` with two kinds of source is refused too, but by the CRD's own
 validation, before any webhook is called, so it proves nothing about the
-path. kubectl rewrites CloudNativePG's refusal, a `422 Invalid`, as `The
+webhook. kubectl rewrites CloudNativePG's refusal, a `422 Invalid`, as `The
 Cluster "bad" is invalid: ... Can't set fixed configuration parameter`,
 without the webhook's name; `-v=8` shows the API server's message, which
-names it. From the garage network each hostname answers on the Gateway's
-address with the webhook's own certificate, and a name no route matches is
-reset:
-
-```sh
-for h in cert-manager-webhook.cert-manager cnpg-webhook-service.cnpg-system external-secrets-webhook.external-secrets istiod.istio-system trust-manager.cert-manager; do
-  echo | openssl s_client -connect 10.20.0.30:9443 -servername $h.webhooks.treasury.bank.internal 2>/dev/null |
-    openssl x509 -noout -ext subjectAltName
-done
-echo | openssl s_client -connect 10.20.0.30:9443 -servername cert-manager-approver-policy.cert-manager.svc 2>/dev/null |
-  openssl x509 -noout -issuer -ext subjectAltName   # issuer=CN=approver-policy-webhook-ca
-```
-
-With `Fail`, every webhook depends on the Gateway and on istiod, which
-programs it: while the gateway's Pods are down, a request a webhook matches
-is refused, such as any write of a cert-manager resource, a `Bundle`, an
-Istio resource or a CloudNativePG resource, and any write or delete of an
-`ExternalSecret` or a store. Pods and other core objects are
-not matched (the sidecar injector matches only Pods that ask for a sidecar),
-so the gateway and istiod can always be restarted.
-
-#### Building a cluster with enforcement
-
-A cluster is built with `webhooks.enforcing` false and turned on afterwards,
-as ADR 0001 says. Built with it on, the bootstrap does not converge:
-cert-manager's webhook configuration arrives with `Fail` and a URL on a
-Gateway that does not exist yet, so it refuses `private-ca`'s `Issuer`,
-`Certificate` and `ClusterIssuer`. `private-ca` never reports `Healthy`, so
-the root `Application` never creates the ones after it. The Gateway could
-not come up anyway: it needs istiod, which mounts the `private-ca` ConfigMap
-that trust-manager writes from a `Bundle` its own webhook would refuse, and
-a certificate cert-manager's webhook would refuse. Nothing in that loop can
-start first.
-
-So to rebuild `treasury`, or to build a new cluster:
-
-1. Leave `webhooks.enforcing` at its default, false, for the cluster in
-   `clusters.cue`, render and merge. To rebuild, tear the old cluster down
-   and create the new one (Tearing a cluster down, below). Then bootstrap
-   (Bootstrap Argo CD, below).
-2. Once every `Application` is `Synced` and `Healthy`, check every webhook
-   with the requests above. A webhook that answers refuses them under
-   `Ignore` too.
-3. Merge `webhooks: enforcing: true`. The same flag turns cert-manager's
-   own approver off (`disableAutoApproval`), so from then on approver-policy
-   alone approves certificate requests (Approval, under The private CA,
-   below).
-
-Until step 3, cert-manager approves every certificate request itself, as it
-did before approver-policy. approver-policy decides the same requests too,
-where it can bind a policy: it approves what a policy allows, and through
-`deny-all` it denies what none does, such as a project's request or a new
-component's with no `PrivateCA.requesters` entry. Whichever answers first
-sets the condition, so during a bootstrap such a request may go either way.
-It cannot be otherwise: while cert-manager's webhook fails open, a request
-made while the webhook is unreachable has no `spec.username`, which the
-webhook stamps, and approver-policy cannot bind a policy to a request with
-no user. It leaves such a request unprocessed, and on a rebuild those are
-the root and the Gateway's wildcard, made before the Gateway the webhook is
-reached through: approver-policy alone would deadlock the bootstrap. Once
-the cluster enforces, cert-manager's webhook refuses any request it cannot
-stamp, so every request has a user. `treasury`'s root request,
-`private-ca-root-1`, dates from that time, has no user, and was approved by
-cert-manager.
-
-Between the Gateway coming up and step 3, istiod switches its validators to
-`Fail` (see Istio below) and Argo CD sets them back to `Ignore`, so
-`istio-base` and `istiod` go `OutOfSync` from time to time. Step 3 ends it.
-
-The Gateway, its listener and the `TLSRoute`s must already be live when
-`enforcing` turns on. Argo CD's server-side apply dry-runs every object in an
-`Application`, and the dry run calls the webhooks, so if cert-manager's
-configuration turned to `Fail` before `ingress-gateway` synced, that sync
-would be refused and the listener that fixes it would never land. The
-rebuild procedure has the listener in step 1. Turning enforcement on in the
-same commit that adds the listener needs the Gateway and `TLSRoute`s applied
-by hand first, which is how the first garage cluster, before its rebuild as
-`treasury`, turned enforcement on.
-
-`istio-ingress` carries `cert-manager.io/disable-validation: "true"`, so the
-wildcard `Certificate` never depends on the webhook path, and a commit that
-breaks the path, such as a bad listener, a lost address or a host entry that
-no longer matches, can still be rolled back through Argo CD. Any other sync
-whose objects a webhook matches cannot be until the path works again; then
-apply `gateway-ingress.yaml` and `tlsroute-*.yaml` from a good checkout by
-hand with `--server-side --field-manager=argocd-controller` and
-`argocd app sync ingress-gateway`.
-
-#### Tearing a cluster down
-
-Destroying the VMs leaves two things behind. `cluster.sh gen` reuses a
-`secrets.yaml` it finds, so the state directory must move aside for the new
-cluster to get new secrets. Its RBD images also stay in the cluster's Ceph
-pool, because nothing deletes the PersistentVolumes. Each image is named in
-its PV, so list the images while the cluster still answers, then remove them
-once the VMs are gone. From the repository's root:
-
-```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
-images=$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeAttributes.imageName}{"\n"}{end}')
-echo "$images"   # csi-vol-..., one per volume
-
-set -a; . ~/.config/holos/proxmox.env; set +a
-go run ./providers/talos/cmd/talosvm destroy -cluster treasury        # prints the calls only
-go run ./providers/talos/cmd/talosvm destroy -cluster treasury -yes
-mv ~/.config/holos/talos/treasury ~/.config/holos/talos/treasury.old-$(date +%FT%H%M)
-
-# printf, so zsh splits the list too.
-for i in $(printf '%s\n' "$images"); do ssh root@r620a rbd rm --no-progress "k8s-rbd/$i"; done
-ssh root@r620a rbd ls k8s-rbd   # empty: the pool is treasury's alone
-```
-
-`rbd rm` refuses an image that still has a watcher. A destroyed VM's watch
-expires within about 30 seconds, so retry once if it refuses. Keep the old
-state directory until the new cluster is up, then delete it, since it holds
-the old cluster's secrets. The new cluster comes up by the usage in
-`../providers/talos/README.md`, from `talosvm create` to `cluster.sh
-up`. Its private root is new (The private CA, below).
+names it.
 
 ### The private CA
 
@@ -486,9 +345,9 @@ cert-manager's own approver approves every request for any issuer, so anyone
 who may create a `Certificate` anywhere, such as a project owner with `admin`
 in the project's namespace, could have `private-ca` sign
 `keycloak.bank.internal`, or a CA, which laptops, pods, holos-controller and
-the Talos nodes all trust. Once the cluster enforces its webhooks that
-approver is off (`disableAutoApproval` in `components/cert-manager`), and
-approver-policy (`components/approver-policy`) decides instead, by the
+the Talos nodes all trust. That approver is off (`disableAutoApproval` in
+`components/cert-manager`), and approver-policy
+(`components/approver-policy`) decides instead, by the
 `CertificateRequestPolicy`s the `private-ca` component renders beside the
 issuers they guard. A policy applies to a request when its `issuerRef`
 selector matches the request's issuer, its namespace selector the request's
@@ -501,12 +360,15 @@ it would be left unprocessed, with no condition, for good. A policy allows
 only what its `allowed` lists: a request carrying a DNS name, usage, common
 name or subject field the policy does not list is denied. No policy sets a
 duration constraint, since one denies a request that names no duration, as
-most of the platform's do not.
+most of the platform's do not. `treasury` was bootstrapped while
+cert-manager's own approver was still on, with its webhooks failing open
+(ADR 0001's two steps, since retired): its root request,
+`private-ca-root-1`, has no user and was approved by cert-manager.
 
 | Policy | Issuer | Namespace | Allows | Bound to |
 | --- | --- | --- | --- | --- |
 | `private-ca-root` | `Issuer` `private-ca-bootstrap` | `cert-manager` | the root's common name and subject, a CA | cert-manager's controller |
-| `trust-manager-webhook` | `Issuer` `trust-manager` | `cert-manager` | trust-manager's webhook's two DNS names and its common name | cert-manager's controller |
+| `trust-manager-webhook` | `Issuer` `trust-manager` | `cert-manager` | trust-manager's webhook's DNS name and common name | cert-manager's controller |
 | `private-ca-<namespace>` | `ClusterIssuer` `private-ca` | that namespace | exactly the DNS names, usages and common name its `Certificate`s list, no CA | cert-manager's controller |
 | `deny-all` | any | any | nothing: it requires a DNS name from an empty list | `system:authenticated` |
 
@@ -787,10 +649,9 @@ istiod serves three configurations: the validator
 `istio-validator-istio-system`, `istio-base`'s `istiod-default-validator`
 and the sidecar injector (idle in ambient: it matches only pods or
 namespaces that ask for a sidecar). Each keeps its chart's `service:`
-reference to `istiod` (ADR 0003). `ISTIOD_CUSTOM_HOST` still adds the
-Gateway hostname of ADR 0001's path to istiod's serving certificate until
-the follow-up change retires that path. istiod manages these configurations
-itself, which works with Argo CD:
+reference to `istiod` (ADR 0003), and istiod's serving certificate carries
+only the names istiod gives it. istiod manages these configurations itself,
+which works with Argo CD:
 
 - It writes its own CA's root into every webhook's `caBundle`. The render
   leaves `caBundle` out, and Argo CD diffs server-side, so the field istiod
@@ -842,30 +703,6 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   on 80 takes only the `https-redirect` route, which answers every request
   with a 301 to the same URL over HTTPS. A route attaches with
   `IngressGateway.parentRef`, which names the `https` listener.
-- **Webhooks listener.** `webhooks` on 9443 for
-  `*.webhooks.<cluster>.<privateDomain>`, protocol `TLS` in `Passthrough`
-  mode: the gateway reads the SNI and forwards the connection, and the
-  webhook's Pods terminate TLS. It accepts only `TLSRoute`s, and only from the
-  namespaces of the Services in `webhooks.cue` (`cert-manager`,
-  `cnpg-system`, `external-secrets`, `istio-system`), selected by
-  `kubernetes.io/metadata.name`.
-  This component renders one `TLSRoute` per entry from the registry, in the
-  entry's own namespace, matching its hostname and forwarding to the
-  Service's port.
-  Being in the backend's namespace, a route needs no `ReferenceGrant`; routes
-  in `istio-ingress` would need one in each webhook namespace, more objects
-  for the same result, since only platform namespaces can attach either way.
-  A route matching another webhook's hostname would gain nothing: the API
-  server checks the serving certificate against the webhook's `caBundle`.
-  Every route is rendered here,
-  not by the webhook's component, so the listener and its routes change in
-  one sync. istiod adds 9443 to the gateway's Service.
-  A webhook hostname outside `*.webhooks.<cluster>.<privateDomain>` gets a
-  listener of its own on 9443, `webhooks-<entry>`, for that one name,
-  otherwise the same, taking `TLSRoute`s only from its Service's namespace,
-  and its route attaches there: today `webhooks-cert-manager-approver-policy`
-  for `cert-manager-approver-policy.cert-manager.svc` (Admission webhooks,
-  above).
 - **Ate listener.** `ate` on 443 for `*.ate.<privateDomain>`, protocol `TLS`
   in `Passthrough` mode, beside `https` on the same port: Envoy matches the
   SNI to the most specific name, so `echo.demo.ate.bank.internal` comes here
@@ -1017,24 +854,21 @@ Prometheus Operator.
 
 Its webhooks follow the platform's model (Admission webhooks, above), but
 not with the operator's own certificate. By default the operator makes a CA,
-Secret `cnpg-ca-secret`, and a serving certificate for the Service's
-cluster names only, Secret `cnpg-webhook-cert`, and every hour writes that
-CA into both configurations' `caBundle`; it has no setting to add a DNS
-name. `WEBHOOK_CERT_DIR`, set on the Deployment, turns all of that off: the
-operator serves `apiserver.crt` and `apiserver.key` from the directory and
-leaves the configurations alone. The component mounts Secret
-`cnpg-system/cnpg-webhook-tls` there, from `Certificate` `cnpg-webhook`,
-which `private-ca` issues for the Service's `.svc` name and the webhook
-hostname. The configurations carry `cert-manager.io/inject-ca-from:
+Secret `cnpg-ca-secret`, and a serving certificate, Secret
+`cnpg-webhook-cert`, and every hour writes that CA into both
+configurations' `caBundle`. `WEBHOOK_CERT_DIR`, set on the Deployment,
+turns all of that off: the operator serves `apiserver.crt` and
+`apiserver.key` from the directory and leaves the configurations alone. The
+component mounts Secret `cnpg-system/cnpg-webhook-tls` there, from
+`Certificate` `cnpg-webhook`, which `private-ca` issues for the Service's
+`.svc` name. The configurations carry `cert-manager.io/inject-ca-from:
 cnpg-system/cnpg-webhook`, so cainjector writes the private root into
 their `caBundle`, and nothing else writes it. The root does not change when
 the certificate is renewed, and the operator reloads the files when the
 kubelet updates them. The operator reads the variable before its
 ConfigMap, so it cannot go in `config.data`.
 
-The component comes before `ingress-gateway` in the registry: its
-`TLSRoute`, which `ingress-gateway` renders, is in `cnpg-system`, so the
-namespace must exist first. It needs only cert-manager and `private-ca`.
+It needs only cert-manager and `private-ca` before it.
 
 Check that a one-instance `Cluster` comes up on `ceph-rbd`, takes a
 connection with its app credentials, and leaves no volume once deleted:
@@ -1085,18 +919,17 @@ Its webhook validates `ExternalSecret`s, `SecretStore`s and
 `ClusterSecretStore`s, on create, update and delete, and follows the
 platform's model (Admission webhooks, above), but not with the chart's own
 certificate. By default the chart deploys a cert-controller that makes a CA
-and a serving certificate for the Service's cluster names only, into Secret
-`external-secrets-webhook`, and writes that CA into both configurations'
-`caBundle` and the CRDs'. The component sets `certController.create: false`
-and `webhook.certManager.enabled: true`, which drops the cert-controller
-and that Secret from the output and puts `cert-manager.io/inject-ca-from:
+and a serving certificate into Secret `external-secrets-webhook`, and
+writes that CA into both configurations' `caBundle` and the CRDs'. The
+component sets `certController.create: false` and
+`webhook.certManager.enabled: true`, which drops the cert-controller and
+that Secret from the output and puts `cert-manager.io/inject-ca-from:
 external-secrets/external-secrets-webhook` on both configurations, so
 cainjector writes the private root into their `caBundle` and nothing else
-writes it. The chart's own `Certificate` has no setting for another DNS
-name, so it is off too, and the component renders `Certificate`
-`external-secrets-webhook`, which `private-ca` issues for the Service's
-`.svc` name and the webhook hostname into the Secret the webhook mounts.
-The webhook mints and rotates nothing: it serves the Secret's files,
+writes it. The chart's own `Certificate` is off too, and the component
+renders `Certificate` `external-secrets-webhook`, which `private-ca` issues
+for the Service's `.svc` name into the Secret the webhook mounts. The
+webhook mints and rotates nothing: it serves the Secret's files,
 reloads them when the kubelet updates them, and every five minutes checks
 they chain to `ca.crt` and are valid for the `.svc` name at now plus
 `--lookahead-interval`. Its default, 90 days, is longer than the
@@ -1112,10 +945,7 @@ on every CRD (`crds.annotations`): Argo CD ignores
 `helm.sh/resource-policy: keep`, and deleting a CRD deletes every resource
 of its kind, generated secrets' `ExternalSecret`s and generators with it.
 
-The component comes before `ingress-gateway` in the registry: its
-`TLSRoute`, which `ingress-gateway` renders, is in `external-secrets`, so
-the namespace must exist first. It needs only cert-manager and
-`private-ca`.
+It needs only cert-manager and `private-ca` before it.
 
 #### Generated secrets
 
@@ -2565,10 +2395,7 @@ component reads the same definition for the router's allowed list.
   start only once the pod identity signer issues, so on a new cluster they
   wait for Substrate's key pools (Bringing Substrate up, above).
 - **The namespace.** `substrate-shim` is not in ambient: the gateway is its
-  own proxy, and the router is outside the mesh. Unlike `istio-ingress`, it
-  is not exempt from cert-manager's webhook: the webhook's path is
-  `ingress`'s `webhooks` listener, which this component does not render, so
-  a commit here cannot break the dry run of its own Certificates.
+  own proxy, and the router is outside the mesh.
 - **Client addresses.** `ingress` passes the connection through, so the
   shim, and the actor in `X-Forwarded-For`, see the `ingress` pod's address,
   not the client's.
@@ -3407,14 +3234,8 @@ git submodule update --init vendor/substrate
 cue vet ./...
 rm -rf deploy/clusters
 holos render platform
-cue cmd talos
-git status deploy/ ../providers/talos/clusters/
+git status deploy/
 ```
-
-`cue cmd talos` writes the control plane's Talos patch, the webhook host
-entries, from the same data (`talos.cue`); it is not part of the platform, so
-`holos render platform` does not write it. A change to it reaches a running
-cluster only through `talosctl` (`providers/talos/README.md`).
 
 `holos render platform` writes files but never removes one a component no
 longer renders, such as the Hubble certgen Job whose name changes with the
@@ -3443,17 +3264,17 @@ annotation is listed as an exception instead; none has one.
 
 ## Bootstrap Argo CD
 
-A cluster is built with its webhooks failing open, `webhooks.enforcing`
-false in `clusters.cue`; turn it on once they answer (Building a cluster with
-enforcement, above). Argo CD needs pod networking, and DNS to reach GitHub,
-before it can sync anything, so a new cluster gets four components by hand: `cilium`,
-`coredns`, `argocd` and the root `Application` with its `AppProject`. It
-also gets `management-namespaces` and the Ceph key in it (Storage, above),
-which no component renders. The root then creates every component's
-`Application` in registry order, waiting for each to be `Synced` and
-`Healthy` before the next, and takes over the hand-applied components as it
-goes. Apply from a checkout of `main`, since that is what Argo CD will sync,
-and from this directory:
+A cluster is built with its webhooks failing closed from the start
+(Admission webhooks, above). To rebuild one, tear the old one down first
+(Tearing a cluster down, below). Argo CD needs pod networking, and DNS to
+reach GitHub, before it can sync anything, so a new cluster gets four
+components by hand: `cilium`, `coredns`, `argocd` and the root
+`Application` with its `AppProject`. It also gets `management-namespaces`
+and the Ceph key in it (Storage, above), which no component renders. The
+root then creates every component's `Application` in registry order,
+waiting for each to be `Synced` and `Healthy` before the next, and takes
+over the hand-applied components as it goes. Apply from a checkout of
+`main`, since that is what Argo CD will sync, and from this directory:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
@@ -3563,6 +3384,37 @@ says what each needs before it).
 Argo CD manages itself, `cilium` and `coredns`, so a bad commit to any of the
 three can cut its own path to GitHub; recover by applying them by hand as
 above from a fixed checkout.
+
+### Tearing a cluster down
+
+Destroying the VMs leaves two things behind. `cluster.sh gen` reuses a
+`secrets.yaml` it finds, so the state directory must move aside for the new
+cluster to get new secrets. Its RBD images also stay in the cluster's Ceph
+pool, because nothing deletes the PersistentVolumes. Each image is named in
+its PV, so list the images while the cluster still answers, then remove them
+once the VMs are gone. From the repository's root:
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+images=$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeAttributes.imageName}{"\n"}{end}')
+echo "$images"   # csi-vol-..., one per volume
+
+set -a; . ~/.config/holos/proxmox.env; set +a
+go run ./providers/talos/cmd/talosvm destroy -cluster treasury        # prints the calls only
+go run ./providers/talos/cmd/talosvm destroy -cluster treasury -yes
+mv ~/.config/holos/talos/treasury ~/.config/holos/talos/treasury.old-$(date +%FT%H%M)
+
+# printf, so zsh splits the list too.
+for i in $(printf '%s\n' "$images"); do ssh root@r620a rbd rm --no-progress "k8s-rbd/$i"; done
+ssh root@r620a rbd ls k8s-rbd   # empty: the pool is treasury's alone
+```
+
+`rbd rm` refuses an image that still has a watcher. A destroyed VM's watch
+expires within about 30 seconds, so retry once if it refuses. Keep the old
+state directory until the new cluster is up, then delete it, since it holds
+the old cluster's secrets. The new cluster comes up by the usage in
+`../providers/talos/README.md`, from `talosvm create` to `cluster.sh
+up`. Its private root is new (The private CA, above).
 
 ### Logging in
 
@@ -3794,22 +3646,22 @@ LoadBalancer addresses answer TCP and UDP on the Service's ports only; they
 do not answer ping, and a connection to any other port is dropped, not
 refused.
 
-Istio and the gateway: the node agents on the workers only, the webhooks
-enforcing through the gateway, the gateway at its pinned address, and hello answering through
-it with a certificate that chains to the root, from the garage network and
-from a pod. Until the private zone has its wildcard, `--resolve` stands in
-for it.
+Istio and the gateway: the node agents on the workers only, every webhook
+failing closed by its Service, the gateway at its pinned address, and hello
+answering through it with a certificate that chains to the root, from the
+garage network and from a pod. Until the private zone has its wildcard,
+`--resolve` stands in for it.
 
 ```sh
 kubectl -n istio-system get pods -o wide        # istiod, and istio-cni-node and ztunnel on each worker
 kubectl get validatingwebhookconfiguration istio-validator-istio-system \
-  -o jsonpath='{.webhooks[0].failurePolicy} {.webhooks[0].clientConfig.url}{"\n"}'
+  -o jsonpath='{.webhooks[0].failurePolicy} {.webhooks[0].clientConfig.service.name}{"\n"}'   # Fail istiod
 kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
 kubectl get ciliumloadbalancerippools            # treasury: 0 available; treasury-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
-kubectl get tlsroute -A                          # cert-manager-webhook, trust-manager, cnpg-webhook-service, external-secrets-webhook, istiod
+kubectl get tlsroute -A                          # ate, k8s
 kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
-  -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy'   # Fail everywhere
+  -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy,SVC:.webhooks[*].clientConfig.service.name'   # Fail everywhere, every one a Service
 
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > /tmp/root.pem
 curl --resolve hello.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://hello.bank.internal/

@@ -157,10 +157,10 @@ jobs:
       # The tools the render runs, at the versions deploy/ is rendered with,
       # each checked against its published SHA-256: holos 0.106.0, which
       # runs helm for the charts and kubectl's kustomize for the patches,
-      # and cue for `cue vet` and `cue cmd talos`. The runner's own helm and
-      # kubectl, if it has any, could render a chart or a kustomization
-      # differently, so these come first on PATH. Linux x86_64 only, which
-      # the garage runners and ubuntu-latest are.
+      # and cue for `cue vet`. The runner's own helm and kubectl, if it has
+      # any, could render a chart or a kustomization differently, so these
+      # come first on PATH. Linux x86_64 only, which the garage runners and
+      # ubuntu-latest are.
       - name: install holos, helm, kubectl and cue
         env:
           HOLOS_VERSION: "0.106.0"
@@ -218,10 +218,9 @@ jobs:
           cue vet ./...
           rm -rf deploy/clusters
           holos render platform
-          cue cmd talos
 
       # Anything at all: a modified, deleted or untracked file, anywhere in
-      # the repository, since cue cmd talos writes outside holos/.
+      # the repository.
       - name: deploy/ is the render
         run: |
           changes="$(git status --porcelain)"

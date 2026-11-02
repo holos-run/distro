@@ -118,8 +118,6 @@ spec:
             value: "istio-system/ztunnel"
           - name: ENABLE_INGRESS_WAYPOINT_ROUTING
             value: "true"
-          - name: ISTIOD_CUSTOM_HOST
-            value: "istiod.istio-system.webhooks.treasury.bank.internal"
           - name: PILOT_ENABLE_AMBIENT
             value: "true"
           - name: PILOT_TRACE_SAMPLING

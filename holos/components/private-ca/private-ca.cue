@@ -61,7 +61,7 @@ let RootSubject = {
 // TrustManager is trust-manager's webhook: its Service, and its
 // self-signed Issuer and the Certificate the chart issues from it, both
 // named after the release (components/trust-manager).
-let TrustManager = webhookServices["trust-manager"]
+let TrustManager = {name: "trust-manager", namespace: PrivateCA.namespace}
 
 // Exactly is an allowed string list of approver-policy's that permits
 // exactly the names given. values are patterns, in which * matches any
@@ -102,8 +102,18 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// rotates: with cert-manager's default (Always), any reissue, a spec
 		// edit or a manual renew, would make a new root that every certificate
 		// already issued stops verifying against.
+		//
+		// A wave after the rest of the component, so every policy that
+		// approves it exists before its request does. approver-policy is the
+		// sole approver from a cluster's first sync, and it denies a request
+		// reviewed before private-ca-root is in its cache by deny-all, for
+		// good; cert-manager then backs off for an hour and the bootstrap
+		// stalls.
 		Certificate: (PrivateCA.root): {
-			metadata: namespace: PrivateCA.namespace
+			metadata: {
+				namespace: PrivateCA.namespace
+				annotations: "argocd.argoproj.io/sync-wave": "1"
+			}
 			spec: {
 				RootSubject
 				isCA:       true
@@ -151,9 +161,8 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		}
 
 		// trust-manager's webhook certificate, from its own self-signed
-		// Issuer, in cert-manager's namespace: the chart's name and common
-		// name, the Service's cluster name, and the hostname the
-		// trust-manager component adds for the Gateway (webhooks.cue).
+		// Issuer, in cert-manager's namespace: the chart's common name and
+		// DNS name, both the Service's cluster name.
 		CertificateRequestPolicy: "trust-manager-webhook": spec: {
 			let SVC = "\(TrustManager.name).\(TrustManager.namespace).svc"
 			allowed: {
@@ -161,7 +170,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					required: true
 					value:    SVC
 				}
-				dnsNames: (#Exactly & {names: [SVC, Cluster.webhooks.hosts[TrustManager.name]]}).out
+				dnsNames: (#Exactly & {names: [SVC]}).out
 				isCA: false
 			}
 			selector: {
@@ -249,9 +258,10 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}]
 		}
 
-		// Everyone may use deny-all. A request with no user, made while
-		// cert-manager's webhook was unreachable, matches no group and stays
-		// unprocessed (components/cert-manager, disableAutoApproval).
+		// Everyone may use deny-all. A request with no user would match no
+		// group and stay unprocessed, but cert-manager's webhook, which fails
+		// closed, stamps every request (components/cert-manager,
+		// disableAutoApproval).
 		let DenyAll = "approver-policy:deny-all"
 		ClusterRole: (DenyAll): rules: [{
 			apiGroups: ["policy.cert-manager.io"]
