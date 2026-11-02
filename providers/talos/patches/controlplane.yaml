@@ -21,14 +21,8 @@ enabled: false
 # host-network static pod, reaches Services in the VXLAN overlay.
 # Aggregator routing makes it dial a Service's endpoints rather than its
 # ClusterIP, as GKE and EKS do, so a Service that works only by ClusterIP
-# fails here first (ADR 0003).
-#
-# Admission webhooks still name a URL on the ingress Gateway's LoadBalancer
-# address, which the control plane reaches on the LAN (the host entries are in
-# clusters/<cluster>/controlplane.yaml). An APIService can only name a
-# Service, so aggregator routing makes the API server dial the Service's
-# endpoints instead of its ClusterIP; a selectorless Service whose
-# EndpointSlice names the Gateway's address then works.
+# fails here first (ADR 0003). Every admission webhook names its Service, as
+# an APIService must, and is reached the same way.
 apiVersion: v1alpha1
 kind: KubeAPIServerConfig
 extraArgs:

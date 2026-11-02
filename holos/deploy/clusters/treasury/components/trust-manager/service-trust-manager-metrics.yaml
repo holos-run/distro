@@ -1,22 +1,23 @@
+# Source: trust-manager/templates/metrics-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
+  name: trust-manager-metrics
+  namespace: cert-manager
   labels:
     app: trust-manager
     app.kubernetes.io/component: metrics
-    app.kubernetes.io/instance: trust-manager
-    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: trust-manager
-    app.kubernetes.io/version: v0.25.0
     helm.sh/chart: trust-manager-v0.25.0
-  name: trust-manager-metrics
-  namespace: cert-manager
+    app.kubernetes.io/instance: trust-manager
+    app.kubernetes.io/version: "v0.25.0"
+    app.kubernetes.io/managed-by: Helm
 spec:
+  type: ClusterIP
   ports:
-  - name: metrics
-    port: 9402
-    protocol: TCP
-    targetPort: 9402
+    - port: 9402
+      targetPort: 9402
+      protocol: TCP
+      name: metrics
   selector:
     app: trust-manager
-  type: ClusterIP

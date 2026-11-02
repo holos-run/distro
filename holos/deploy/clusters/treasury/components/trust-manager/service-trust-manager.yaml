@@ -1,21 +1,22 @@
+# Source: trust-manager/templates/webhook.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    app: trust-manager
-    app.kubernetes.io/instance: trust-manager
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: trust-manager
-    app.kubernetes.io/version: v0.25.0
-    helm.sh/chart: trust-manager-v0.25.0
   name: trust-manager
   namespace: cert-manager
+  labels:
+    app: trust-manager
+    app.kubernetes.io/name: trust-manager
+    helm.sh/chart: trust-manager-v0.25.0
+    app.kubernetes.io/instance: trust-manager
+    app.kubernetes.io/version: "v0.25.0"
+    app.kubernetes.io/managed-by: Helm
 spec:
+  type: ClusterIP
   ports:
-  - name: webhook
-    port: 443
-    protocol: TCP
-    targetPort: 6443
+    - port: 443
+      targetPort: 6443
+      protocol: TCP
+      name: webhook
   selector:
     app: trust-manager
-  type: ClusterIP

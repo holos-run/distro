@@ -11,8 +11,6 @@ CertManagerVersion: "v1.21.3"
 
 CertManagerNamespace: "cert-manager"
 
-let Webhook = webhookServices["cert-manager-webhook"]
-
 holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: CertManagerNamespace
 	chart: {
@@ -34,36 +32,20 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			tag:    CertManagerVersion
 			digest: "sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"
 		}
-		webhook: {
-			image: {
-				tag:    CertManagerVersion
-				digest: "sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458"
-			}
-			// The webhook's dynamic serving certificate also carries the
-			// hostname the API server dials through the Gateway
-			// (webhooks.cue). The chart's webhook.url.host would add it too,
-			// but it renders the URL without a port.
-			extraArgs: ["--dynamic-serving-dns-names=\(Cluster.webhooks.hosts[Webhook.name])"]
+		webhook: image: {
+			tag:    CertManagerVersion
+			digest: "sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458"
 		}
 		// cert-manager's own approver approves every CertificateRequest for
 		// any Issuer or ClusterIssuer, so anyone who may create a Certificate
-		// could have the private CA sign any name, or a CA. Once the cluster
-		// enforces its webhooks it is off, with the RBAC that lets it
-		// approve, and approver-policy decides alone, against the
-		// CertificateRequestPolicies in private-ca (README.md, "The private
-		// CA").
-		//
-		// It follows the enforcing flag, not true everywhere, because of how
-		// a cluster bootstraps. While its webhooks fail open, a request
-		// created while cert-manager's webhook is unreachable carries no
-		// spec.username or spec.groups, which the webhook stamps. approver-
-		// policy can bind no policy to a request with no user, so it leaves
-		// it unprocessed, and on a rebuild that would hold back the root and
-		// the ingress Gateway's wildcard, which the webhooks are reached
-		// through: a deadlock. So cert-manager approves as before while the
-		// cluster bootstraps. Once enforcing, cert-manager's webhook refuses
-		// a request it cannot stamp, so every request has a user.
-		disableAutoApproval: Cluster.webhooks.enforcing
+		// could have the private CA sign any name, or a CA. It is off, with
+		// the RBAC that lets it approve, and approver-policy decides alone,
+		// against the CertificateRequestPolicies in private-ca (README.md,
+		// "The private CA"). approver-policy binds a policy to a request by
+		// its spec.username and spec.groups, which cert-manager's webhook
+		// stamps; the webhook fails closed, so no request is made without
+		// them.
+		disableAutoApproval: true
 
 		// startupapicheck is a post-install Helm hook Job, which holos does
 		// not render (helm template --no-hooks). Off, so the values say so.

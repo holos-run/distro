@@ -268,7 +268,7 @@ func TestCommittedDeploy(t *testing.T) {
 		t.Errorf("run(%s): %v\n%s", dir, err, stdout.String())
 	}
 	// A tree that read nothing would pass too, so the treasury summary must
-	// name the webhook configurations the Gateway path still excepts.
+	// count treasury's webhook configurations.
 	if !strings.Contains(stdout.String(), "cluster treasury: ") ||
 		strings.Contains(stdout.String(), "cluster treasury: 0 configurations") {
 		t.Errorf("run(%s) checked no treasury configurations:\n%s", dir, stdout.String())

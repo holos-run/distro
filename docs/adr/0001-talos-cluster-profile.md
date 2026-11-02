@@ -3,7 +3,8 @@
 Status: accepted, 2026-10-23; amended 2026-10-26 (webhooks reach the
 ingress Gateway's address, not an HAProxy load balancer); amended
 2026-10-31 (the control plane joins the pod network); amended 2026-11-01
-(the pod network label goes)
+(the pod network label goes); amended 2026-11-01 (the Gateway webhook path
+is retired)
 
 ## Context
 
@@ -298,3 +299,20 @@ announcement policy. The Cilium agent and envoy run on the node. The
 amendment's last paragraph, that treasury keeps the prior form until its
 rebuild, is reversed too: treasury joins Cilium in place. ADR 0003's
 amendment of the same date has both.
+
+## Amendment, 2026-11-01: the Gateway webhook path is retired
+
+Talos_Upstream_Control_Plane's retire-the-gateway-webhook-path item carries
+out, on treasury, what the 2026-10-31 amendment says goes: every webhook
+configuration names its Service with its chart's `failurePolicy`, the
+per-cluster `enforcing` flag is gone, and the platform no longer renders
+the `StaticHostConfig` of webhook host entries, so nothing under
+`providers/talos/clusters/` is rendered and `cluster.sh gen` adds a
+cluster's own patch only if one is committed there. The 2026-10-31
+amendment's last paragraph, that treasury's render "carries the
+`holos.run/contract-exception` annotation on each of its eleven webhook
+configurations", no longer holds: none carries it, and `contract-check`
+reports no exceptions (ADR 0003's amendment of the same date). A control
+plane configured before this change keeps its host entries until its
+machine config is regenerated or the document is deleted
+(`providers/talos/README.md`, "Admission webhooks"); nothing uses them.

@@ -1,7 +1,8 @@
 # 0003. Control plane to pod network Service contract
 
 Status: accepted, 2026-10-31; amended 2026-11-01 (no admission policy in
-the cluster); amended 2026-11-01 (treasury joins Cilium in place)
+the cluster); amended 2026-11-01 (treasury joins Cilium in place); amended
+2026-11-01 (the Gateway webhook path is retired)
 
 ## Context
 
@@ -407,3 +408,30 @@ What stands: the contract, `--enable-aggregator-routing`
 (Talos_Upstream_Control_Plane Q9), the default control plane taint and no
 workload pods on the node, and the Gateway webhook path with its eleven
 exceptions until retire-the-gateway-webhook-path removes it.
+
+## Amendment, 2026-11-01: the Gateway webhook path is retired
+
+Talos_Upstream_Control_Plane's retire-the-gateway-webhook-path item retires
+ADR 0001's Gateway webhook path on treasury, in two changes (distro#50 and
+distro#51). The first deleted `#WebhookPatch` and its eleven call sites:
+every webhook configuration keeps its chart's `service:`, `failurePolicy`
+and `timeoutSeconds`, and none carries the exception annotation. The second
+deleted the rest of what Consequences lists: `holos/webhooks.cue`, the
+Gateway's webhooks listeners and their TLSRoutes, the extra hostnames on the
+serving certificates, the `StaticHostConfig` and `holos/talos.cue`, and
+`Cluster.webhooks` with the `enforcing` flag. cert-manager's
+`disableAutoApproval` is true on every cluster, so approver-policy is the
+only approver from the first request, and a cluster bootstraps with its
+webhooks failing closed, ordered by Argo CD's sync waves; `private-ca`'s
+root Certificate syncs a wave after the policies that approve it. The two
+Istio validators render `Fail` through the charts' own
+`base.validationFailurePolicy`, so the render agrees with istiod. That
+bootstrap is untried: treasury was built with cert-manager's own approver
+on.
+
+`contract-check` reports 0 violations and 0 exceptions on treasury's render.
+Where this record or its amendments describe the path, the exceptions or the
+`enforcing` flag as current, they describe the state before this amendment;
+"the Gateway webhook path with its eleven exceptions until
+retire-the-gateway-webhook-path removes it", under "What stands" in the
+previous amendment, is done.

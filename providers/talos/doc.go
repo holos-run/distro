@@ -15,7 +15,6 @@
 //
 // The program talosvm, under cmd/talosvm, is the one place that wires the
 // Proxmox provider in. cluster.sh turns the VMs into a cluster with talosctl
-// and the patches beside it, and clusters/<cluster>/ holds each cluster's
-// rendered patches. README.md covers the program, the patches and the
-// cluster's bring-up, and docs/ the control plane's memory.
+// and the patches beside it. README.md covers the program, the patches and
+// the cluster's bring-up, and docs/ the control plane's memory.
 package talos

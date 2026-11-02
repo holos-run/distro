@@ -14,8 +14,11 @@ package holos
 // does not allow, and it is denied.
 
 let DB = Substrate.database
-let CNPG = webhookServices["cnpg-webhook-service"]
-let ESO = webhookServices["external-secrets-webhook"]
+
+// CNPG and ESO are the webhook Services of CloudNativePG and External
+// Secrets, whose serving certificates are the private CA's.
+let CNPG = {name: "cnpg-webhook-service", namespace: "cnpg-system"}
+let ESO = {name: "external-secrets-webhook", namespace: "external-secrets"}
 
 PrivateCA: requesters: {
 	// The Substrate database's server certificate (components/substrate),
@@ -31,16 +34,10 @@ PrivateCA: requesters: {
 		usages: ["server auth"]
 	}
 	// The webhooks' serving certificates (components/cloudnative-pg,
-	// components/external-secrets): the Service's cluster name and the
-	// hostname the API server dials through the Gateway (webhooks.cue).
-	(CNPG.namespace): "cnpg-webhook": dnsNames: [
-		"\(CNPG.name).\(CNPG.namespace).svc",
-		Cluster.webhooks.hosts[CNPG.name],
-	]
-	(ESO.namespace): "external-secrets-webhook": dnsNames: [
-		"\(ESO.name).\(ESO.namespace).svc",
-		Cluster.webhooks.hosts[ESO.name],
-	]
+	// components/external-secrets): the Service's cluster name, which the
+	// API server dials by the configurations' service: reference (ADR 0003).
+	(CNPG.namespace): "cnpg-webhook": dnsNames: ["\(CNPG.name).\(CNPG.namespace).svc"]
+	(ESO.namespace): "external-secrets-webhook": dnsNames: ["\(ESO.name).\(ESO.namespace).svc"]
 	// The Kubernetes API's host on holos-authenticator's Gateway
 	// (components/holos-authenticator).
 	(HolosAuthenticator.namespace): (HolosAuthenticator.gateway.name): dnsNames: [HolosAuthenticator.host]

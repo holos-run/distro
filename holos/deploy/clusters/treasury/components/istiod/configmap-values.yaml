@@ -25,8 +25,7 @@ data:
         "validationFailurePolicy": "Fail"
       },
       "env": {
-        "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
-        "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.treasury.bank.internal"
+        "ENABLE_INGRESS_WAYPOINT_ROUTING": "true"
       },
       "global": {
         "proxy": {
@@ -96,7 +95,6 @@ data:
       "deploymentLabels": {},
       "env": {
         "ENABLE_INGRESS_WAYPOINT_ROUTING": "true",
-        "ISTIOD_CUSTOM_HOST": "istiod.istio-system.webhooks.treasury.bank.internal",
         "PILOT_ENABLE_AMBIENT": "true"
       },
       "envVarFrom": [],

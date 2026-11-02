@@ -110,7 +110,6 @@ Projects: {
 			Substrate.workerPool.namespace,
 			AteGateway.namespace,
 			Kagent.namespace,
-			for W in webhookServices {W.namespace},
 			"cilium-secrets",
 			"cnpg-system",
 			"local-path-storage",

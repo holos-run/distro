@@ -1,7 +1,5 @@
 package holos
 
-import "encoding/json"
-
 // trust-manager copies the private CA's root into every namespace
 // (private-ca-bundle holds the Bundle).
 //
@@ -9,8 +7,6 @@ import "encoding/json"
 // chart names on quay.io, pinned by digest. It runs in cert-manager's
 // namespace, which is also its trust namespace, where the root's Secret is.
 TrustManagerVersion: "v0.25.0"
-
-let Webhook = webhookServices["trust-manager"]
 
 holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: PrivateCA.namespace
@@ -37,22 +33,4 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		// helm template generate a key into deploy/.
 		app: webhook: tls: helmCert: enabled: false
 	}
-
-	patches: [
-		// The serving certificate also carries the hostname the API server
-		// dials through the Gateway (webhooks.cue).
-		{
-			target: {
-				group:   "cert-manager.io"
-				version: "v1"
-				kind:    "Certificate"
-				name:    "trust-manager"
-			}
-			patch: json.Marshal([{
-				op:    "add"
-				path:  "/spec/dnsNames/-"
-				value: Cluster.webhooks.hosts[Webhook.name]
-			}])
-		},
-	]
 }).artifact]

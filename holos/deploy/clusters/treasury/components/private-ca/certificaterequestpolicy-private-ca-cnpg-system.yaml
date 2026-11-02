@@ -8,7 +8,6 @@ spec:
             required: true
             values:
                 - cnpg-webhook-service.cnpg-system.svc
-                - cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal
         isCA: false
     selector:
         issuerRef:

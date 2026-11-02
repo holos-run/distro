@@ -9,12 +9,11 @@ GCE or EC2, and its tests run against a fake compute.
 It owns the Talos side: the Image Factory schematic and the ISO it names, the
 nocloud network config each guest reads, rendered from the NIC compute
 assigns the VM, the cluster's shape (the control plane and pools, their sizes
-and addresses), the role and pool labels, `restart`, `cluster.sh` with the
-machine configuration patches, and each cluster's rendered patches under
-`clusters/<cluster>/`. It does not create VMs, disks, buckets or hypervisor
-credentials, and installs no CNI, storage class or platform component: the
-cluster it hands over has its API and registered nodes, which are not Ready
-until the platform installs Cilium.
+and addresses), the role and pool labels, `restart`, and `cluster.sh` with
+the machine configuration patches. It does not create VMs, disks, buckets or
+hypervisor credentials, and installs no CNI, storage class or platform
+component: the cluster it hands over has its API and registered nodes, which
+are not Ready until the platform installs Cilium.
 
 The garage's compute is the [Proxmox provider](../proxmox/README.md), which
 covers the API token, the snippets mount, the node network and its address
@@ -317,11 +316,9 @@ CNI and no kube-proxy. Every node stays `NotReady` until Cilium is installed,
 the control plane included: the Cilium agent and envoy run there, as upstream
 Talos runs its CNI, so the API server reaches Services in the cluster, and
 Talos's default `node-role.kubernetes.io/control-plane:NoSchedule` taint
-keeps every other pod off it (ADR 0003). The API server still reaches
-webhooks through the ingress Gateway's LoadBalancer address on the LAN.
-Webhooks start permissive and are switched to enforcing by a CUE flag once
-each answers through the Gateway. ADR 0001 has the reasoning and the two
-provisioning steps.
+keeps every other pod off it (ADR 0003). The API server reaches every
+admission webhook by the Service its configuration names (Admission
+webhooks, below).
 
 ### Patches
 
@@ -329,7 +326,7 @@ provisioning steps.
 | --- | --- | --- |
 | [`patches/all.yaml`](patches/all.yaml) | every node | KubePrism on `127.0.0.1:7445`; sysctls for sandbox density and user namespaces |
 | [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled, Talos's CoreDNS disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true` |
-| [`clusters/<cluster>/controlplane.yaml`](clusters/treasury/controlplane.yaml) (rendered, committed) | the cluster's control plane | `StaticHostConfig`: every admission webhook hostname at the ingress Gateway's address |
+| `clusters/<cluster>/controlplane.yaml` (optional, committed; none today) | the cluster's control plane | whatever that one cluster needs |
 | `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and `holos.run/nodepool` on workers |
 
 The sysctls:
@@ -352,8 +349,7 @@ The patches in `patches/` name no cluster, node or address. `gen` adds the
 rest:
 
 - the cluster's own patch, `clusters/<cluster>/controlplane.yaml`, on the
-  control plane (Webhook host entries, below);
-
+  control plane, if the file exists;
 - the cluster name and the endpoint `https://<control plane address>:6443`,
   with no VIP;
 - the installer image `factory.talos.dev/nocloud-installer/<schematic>:v1.14.4`,
@@ -445,62 +441,31 @@ kubectl get nodes -o wide --show-labels
 All three can be rerun. To change the patches on a running cluster, edit
 them, then `gen` and `apply`.
 
-### Webhook host entries
+### Admission webhooks
 
-The API server reaches every admission webhook at
-`https://<service>.<namespace>.webhooks.<cluster>.<privateDomain>:9443`, on
-the ingress Gateway's address (`holos/webhooks.cue`), or at a hostname the
-webhook's entry sets instead, as approver-policy's
-`cert-manager-approver-policy.cert-manager.svc`. The control plane
-resolves those names from a `StaticHostConfig` document, the Talos 1.14 form
-of `extraHostEntries`, so it does not depend on the router's
-`*.bank.internal` record. Talos's host DNS, which the API server resolves
-through, answers them itself.
+The API server reaches every admission webhook by the `service:` reference
+its configuration names, as ADR 0003 requires: the control plane runs a
+Cilium agent, so the API server, a host-network static pod, reaches pods on
+the overlay, and `--enable-aggregator-routing` makes it dial the Service's
+endpoints, as GKE and EKS do. Nothing in the machine config names a webhook,
+so a webhook added to the platform needs no change here.
 
-The document is rendered from the platform's CUE (`holos/talos.cue`): every
-hostname in the webhook registry, at `clusters.<cluster>.loadBalancer.gateway`.
-Render it with every platform render and commit it:
-
-```sh
-cd holos
-cue cmd talos   # writes providers/talos/clusters/<cluster>/controlplane.yaml
-git status ../providers/talos/clusters
-```
-
-`gen` refuses a cluster without it. Only the control plane calls webhooks, so
-the workers get no entries.
-
-A webhook added to the registry, or a new gateway address, reaches a running
-control plane only through `talosctl`, not Argo CD. `gen` and `apply` do it
-like any other patch change, from scratch. Without the Proxmox credentials
-`gen` needs, patch the control plane in place. Host entries apply without a
-reboot; check that with a dry run first:
+A control plane configured before ADR 0001's Gateway webhook path was
+retired still has its `StaticHostConfig`, which pointed every webhook
+hostname at the ingress Gateway's address. Nothing uses the entries. A
+`gen` and `apply` drops them; without the Proxmox credentials `gen` needs,
+delete the document in place, which needs no reboot, and bring the saved
+config in step so that a later `apply` without `gen` does not restore it:
 
 ```sh
 export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
-p=providers/talos/clusters/treasury/controlplane.yaml
 del=$'apiVersion: v1alpha1\nkind: StaticHostConfig\nname: 10.20.0.30\n$patch: delete'
-talosctl -n 10.20.0.50 patch mc -p "$del" -p @$p --dry-run   # "without a reboot", and the diff
-talosctl -n 10.20.0.50 patch mc -p "$del" -p @$p --mode no-reboot
-talosctl -n 10.20.0.50 get statichosts
-```
-
-The delete comes first because a patch appends to `hostnames` rather than
-replacing it: applied twice, the same file would list every name twice.
-Deleting the document by its `name`, the address, and adding it again makes
-the patch idempotent; a second run reports `no changes detected`. If the
-address changed, delete the old one. Then bring the saved config in step, so
-that a later `apply` without `gen` does not take the entries away:
-
-```sh
+talosctl -n 10.20.0.50 patch mc -p "$del" --dry-run   # "without a reboot", and the diff
+talosctl -n 10.20.0.50 patch mc -p "$del" --mode no-reboot
+talosctl -n 10.20.0.50 get statichosts                # treasury-cp-1 alone, the node's own name
 c=~/.config/holos/talos/treasury/nodes/treasury-cp-1.yaml
-talosctl machineconfig patch $c -p "$del" -p @$p --output $c
+talosctl machineconfig patch $c -p "$del" --output $c
 ```
-
-The kube-apiserver Pod's own `/etc/hosts` is the kubelet's copy and does not
-list the entries; Talos's host DNS on `169.254.116.108` answers them, with
-the authoritative flag and a 10-second TTL, where a forwarded name has
-neither.
 
 `talosctl health` passes without a CNI: it skips the node-ready, kube-proxy
 and CoreDNS checks. Talos's own CoreDNS is disabled by the control plane

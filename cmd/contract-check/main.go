@@ -37,12 +37,12 @@
 //
 // A configuration that cannot comply carries the holos.run/contract-exception
 // annotation, whose value is the reason. It is reported, and its findings do
-// not fail the run, unless the reason names neither an ADR, as "ADR 0001",
-// nor a Planboard item, as "Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer"
-// (a project name of two or more capitalized words joined by underscores, a
-// slash, and an item slug of lowercase words joined by hyphens), or the
-// configuration already satisfies all three rules: the exception is no longer
-// needed. Either is a violation.
+// not fail the run, unless the reason names neither an ADR, as "ADR 0003",
+// nor a Planboard item, as "Some_Project/fix-the-chart-upstream" (a project
+// name of two or more capitalized words joined by underscores, a slash, and
+// an item slug of lowercase words joined by hyphens), or the configuration
+// already satisfies all three rules: the exception is no longer needed.
+// Either is a violation.
 //
 // Output is plain text for a CI log, one line per finding:
 //

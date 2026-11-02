@@ -5,8 +5,6 @@ package holos
 // self-signed CA, and deploys a gateway for every Gateway of class istio
 // (ingress-gateway). Istio's names are in Istio (istio.cue).
 
-let Webhook = webhookServices.istiod
-
 holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: Istio.namespace
 	chart: {
@@ -59,11 +57,6 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			// relies on it yet: holos-authenticator, for which it was
 			// turned on, runs on a Gateway of its own instead.
 			ENABLE_INGRESS_WAYPOINT_ROUTING: "true"
-			// Adds the webhook hostname (webhooks.cue) to the DNS names of
-			// istiod's serving certificate, which serves the webhooks on 15017,
-			// so the API server can verify it when it dials the hostname
-			// through the Gateway.
-			ISTIOD_CUSTOM_HOST: Cluster.webhooks.hosts[Webhook.name]
 		}
 
 		// istiod trusts the private CA's root, besides the system pool, when

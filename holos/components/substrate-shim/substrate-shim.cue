@@ -116,10 +116,7 @@ let Suffix = ".\(AG.domain)"
 holos: spec: artifacts: [(#ResourcesArtifact & {
 	resources: {
 		// Not in ambient: the gateway is its own proxy, and the router it
-		// dials is outside the mesh. Not exempt from cert-manager's webhook,
-		// unlike istio-ingress: the webhook's path is the ingress Gateway's
-		// webhooks listener, which this component does not render, so a
-		// commit here cannot break the dry run of its own Certificates.
+		// dials is outside the mesh.
 		Namespace: (AG.namespace): {}
 
 		// One wildcard per atespace, from the private CA, ECDSA P-256 as the

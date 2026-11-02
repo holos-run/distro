@@ -7,8 +7,9 @@
 #   cluster.sh bootstrap <cluster>   bootstrap etcd, write kubeconfig
 #   cluster.sh up        <cluster>   gen, apply, bootstrap
 #
-# The patches in patches/ are the same for every cluster. Those in
-# clusters/<cluster>/ are the cluster's own, rendered from holos/talos.cue.
+# The patches in patches/ are the same for every cluster. A cluster that
+# needs a patch of its own puts it in clusters/<cluster>/controlplane.yaml;
+# none does today.
 #
 # Secrets, machine configs, talosconfig and kubeconfig live outside the
 # repository in $HOLOS_TALOS_DIR/<cluster> (default ~/.config/holos/talos),
@@ -93,10 +94,16 @@ installer() {
 }
 
 gen() {
-  # The cluster's own patches, rendered from the platform's CUE (holos/talos.cue)
-  # by `cue cmd talos` and committed: the API server's webhook host entries.
-  local rendered=$here/clusters/$cluster/controlplane.yaml
-  [[ -s $rendered ]] || die "no $rendered; run cue cmd talos in holos/"
+  # The cluster's own control plane patch, if it has one, committed beside
+  # the shared patches. The platform's CUE writes nothing here: the base does
+  # not reach into the Kubernetes layer (ADR 0003). The array expands with +
+  # so that an empty one passes set -u in bash 3.2 too.
+  local own=$here/clusters/$cluster/controlplane.yaml
+  local -a own_patch=()
+  if [[ -e $own ]]; then
+    [[ -s $own ]] || die "$own is empty"
+    own_patch=(--config-patch-control-plane "@$own")
+  fi
 
   list "$state/nodes.json.tmp"
   mv "$state/nodes.json.tmp" "$state/nodes.json"
@@ -119,7 +126,7 @@ gen() {
     --install-image "$image" \
     --config-patch "@$patches/all.yaml" \
     --config-patch-control-plane "@$patches/controlplane.yaml" \
-    --config-patch-control-plane "@$rendered" \
+    ${own_patch[@]+"${own_patch[@]}"} \
     --output "$base" --force >/dev/null
 
   talosctl --talosconfig "$base/talosconfig" config endpoint "$cp"

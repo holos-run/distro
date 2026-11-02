@@ -37,10 +37,9 @@ import "encoding/yaml"
 //
 // All eight CRDs, quay.holos.run's too: the manager starts a controller for
 // every kind it serves and needs each kind's CRD to start. The manager
-// registers no admission webhook, so it needs no route on the gateway's
-// webhooks listener. Its own resources, the Instance and the rest, are the
-// keycloak-realm and quay components', after this one, so their CRDs are
-// established before Argo CD applies them.
+// registers no admission webhook. Its own resources, the Instance and the
+// rest, are the keycloak-realm and quay components', after this one, so
+// their CRDs are established before Argo CD applies them.
 //
 // The manager reads its Keycloak credential from Secret
 // holos-controller-keycloak-creds in its own namespace, by POD_NAMESPACE,

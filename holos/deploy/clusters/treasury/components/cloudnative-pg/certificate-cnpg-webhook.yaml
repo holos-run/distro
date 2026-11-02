@@ -6,7 +6,6 @@ metadata:
 spec:
   dnsNames:
   - cnpg-webhook-service.cnpg-system.svc
-  - cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal
   issuerRef:
     group: cert-manager.io
     kind: ClusterIssuer
