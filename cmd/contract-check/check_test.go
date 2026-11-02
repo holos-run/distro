@@ -11,7 +11,7 @@ import (
 
 // reason is the exception #WebhookPatch gives treasury's webhook
 // configurations (holos/components/webhooks.cue).
-const reason = "ADR 0001's Gateway webhook path, kept on treasury until its rebuild; see ADR 0003 and Talos_Control_Plane_Ready/rebuild-treasury-on-the-new-layer"
+const reason = "ADR 0001's Gateway webhook path, kept on treasury until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer"
 
 // TestRun checks each fixture tree under testdata. In want, $C/ stands for the
 // case's clusters directory, testdata/<case>/clusters/.
@@ -241,7 +241,7 @@ func TestNamesReason(t *testing.T) {
 	}{
 		{reason, true},
 		{"the chart has no setting for it; ADR 0003", true},
-		{"see Talos_Control_Plane_Ready/rebuild-treasury-on-the-new-layer", true},
+		{"see Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer", true},
 		{"until [[Agent_Substrate_Day_MVP/argo-cd-bootstrap]] lands", true},
 		{"needed", false},
 		{"", false},
@@ -249,8 +249,8 @@ func TestNamesReason(t *testing.T) {
 		{"ADR-0001", false},            // not how the ADRs are named
 		{"adr 0001", false},            // nor this
 		{"see Gateway/webhook", false}, // one word is not a project's name
-		{"see Talos_Control_Plane_Ready", false},
-		{"see talos_control_plane_ready/rebuild", false},
+		{"see Talos_Kubernetes_Layer", false},
+		{"see talos_kubernetes_layer/rebuild", false},
 	} {
 		if got := namesReason(tc.reason); got != tc.want {
 			t.Errorf("namesReason(%q) = %v, want %v", tc.reason, got, tc.want)

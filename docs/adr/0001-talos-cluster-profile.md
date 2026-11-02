@@ -278,7 +278,7 @@ constraint is that the base names a Service and nothing else, and
 `contract-check` states it in CI rather than leaving the network to fail.
 
 Treasury keeps the prior form until
-Talos_Control_Plane_Ready/rebuild-treasury-on-the-new-layer rebuilds it on
+Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer rebuilds it on
 the new layer. Until then, from the day 0003's render check lands, its
 render carries the `holos.run/contract-exception` annotation on each of its
 eleven webhook configurations, naming this record and that item.
