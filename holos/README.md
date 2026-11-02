@@ -31,6 +31,48 @@ holos/
 └── deploy/         rendered manifests, committed; never edited by hand
 ```
 
+## Before you start
+
+The commands in this README act on one cluster, named by three shell
+variables. Set them first, in every shell the commands run in:
+
+```sh
+cluster=treasury
+domain=$cluster.bank.internal
+root_ca=$HOME/$cluster-root-ca.pem
+```
+
+`cluster` is the cluster the commands act on. `domain` is its
+`ingressDomain`, the zone every service is named in, `<service>.$domain`.
+`root_ca` is the file its private root is exported to (The private CA,
+below).
+
+A second cluster changes only `cluster=`. The rest follows from it while
+the cluster keeps the default `ingressDomain`, `<cluster>.<privateDomain>`
+(Clusters, below), and was built with `providers/talos/cluster.sh` with
+`HOLOS_TALOS_DIR` unset, so its admin kubeconfig and talosconfig are in
+`~/.config/holos/talos/<cluster>/`. Every block that runs admin commands
+starts by exporting `KUBECONFIG`, and `TALOSCONFIG` where it runs
+`talosctl`, from `$cluster`, so it never acts on whatever cluster the shell
+last pointed at. The blocks that log in through Keycloak use the kubectl
+context and user `$cluster-oidc` instead (Logging in with kubectl, below).
+
+Two things do not follow from `$cluster`. Ceph: the commands that reach it
+run on the Ceph host `r620a` (`ssh root@r620a`) and name treasury's pool and
+user, `k8s-rbd` and `client.k8s`; another cluster's are its own `ceph.pool`
+and `ceph.user` in `clusters.cue` (Storage, below). And the storage check
+names workers `$cluster-general-1` and `$cluster-general-3`, which assumes
+the cluster has a `general` node pool of at least three workers.
+
+The same names stand for their values outside the shell too: a URL to open
+in a browser, such as `https://argocd.$domain`, or a path in an instruction,
+is your cluster's. Email addresses are identities on the site's zone, such
+as `jeff@bank.internal`, on every cluster, and never take `$domain`.
+Expected-output comments follow `$domain` and `$cluster` too. Prose that
+describes the platform as it runs names `treasury`, the garage's cluster,
+and its hosts, such as `keycloak.treasury.bank.internal`, and recorded logs
+and IP addresses, such as the gateway's 10.20.0.30, are treasury's.
+
 ## Clusters
 
 `clusters.cue` holds everything that differs between clusters: the site the
@@ -238,6 +280,7 @@ Check that every webhook answers with a request each must refuse, as
 server-side dry runs; each error names the webhook that refused it:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl apply --dry-run=server -f - <<'YAML'
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -328,19 +371,20 @@ A recreated cluster has a new root. Export it for the laptop, and for the
 kubectl plugin, from any namespace's ConfigMap:
 
 ```sh
-kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > ~/treasury-root-ca.pem
-openssl x509 -in ~/treasury-root-ca.pem -noout -subject -dates -fingerprint -sha256
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > "$root_ca"
+openssl x509 -in "$root_ca" -noout -subject -dates -fingerprint -sha256
 # macOS: trust it for TLS
 sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain ~/treasury-root-ca.pem
+  -k /Library/Keychains/System.keychain "$root_ca"
 # Debian or Ubuntu
-sudo cp ~/treasury-root-ca.pem /usr/local/share/ca-certificates/treasury-root-ca.crt
+sudo cp "$root_ca" "/usr/local/share/ca-certificates/$cluster-root-ca.crt"
 sudo update-ca-certificates
 ```
 
 Before replacing a trusted root, remove the old one: macOS's Keychain Access
-lists it as `Bank of Pinky treasury root CA`. curl takes it without installing it,
-`--cacert ~/treasury-root-ca.pem`.
+lists it as `Bank of Pinky $cluster root CA`. curl takes it without installing it,
+`--cacert "$root_ca"`.
 
 #### Approval
 
@@ -424,6 +468,7 @@ later.
 Check that each request is approved by its own policy:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl get certificaterequestpolicies   # every one READY True
 kubectl get certificaterequests -A -o 'custom-columns=NS:.metadata.namespace,NAME:.metadata.name,USER:.spec.username,APPROVED:.status.conditions[?(@.type=="Approved")].message,DENIED:.status.conditions[?(@.type=="Denied")].message'
 # ate-system  substrate-db-server-2  system:serviceaccount:cert-manager:cert-manager  Approved by CertificateRequestPolicy: "private-ca-ate-system"  <none>
@@ -575,6 +620,7 @@ passphrase, on his GitHub account and deliberately not in `signing-keys/` or
 `-S`:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 # Make a passphrase-less signing key in gpg-agent's keyring; the private key
 # never leaves it.
 gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key \
@@ -819,6 +865,7 @@ Check that the copy is ESO's and matches Ceph, without the key reaching the
 terminal:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n ceph-csi-rbd get secretstore,externalsecret   # Valid; SecretSynced
 kubectl -n ceph-csi-rbd get secret ceph-client-k8s -o jsonpath='{.metadata.labels.reconcile\.external-secrets\.io/managed} {.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'   # true ExternalSecret/ceph-client-k8s
 cmp -s <(kubectl -n ceph-csi-rbd get secret ceph-client-k8s -o jsonpath='{.data.userKey}' | base64 -d) \
@@ -834,6 +881,7 @@ restart. So restart every pod with a `ceph-rbd` volume afterwards, which
 stages its volume again with the new key:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 ssh root@r620a ceph auth rotate client.k8s > /dev/null
 key=$(ssh root@r620a ceph auth get-key client.k8s) && [ -n "$key" ] &&
 printf %s "$key" | jq -Rc '{data: {userKey: @base64}}' |
@@ -896,6 +944,7 @@ Check that a one-instance `Cluster` comes up on `ceph-rbd`, takes a
 connection with its app credentials, and leaves no volume once deleted:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n cnpg-system get pods -o wide   # one operator, on a worker
 kubectl -n cnpg-system get secrets        # cnpg-webhook-tls only
 kubectl create ns cnpg-test
@@ -1048,6 +1097,7 @@ then the `ExternalSecret`; then start the pods again.
   synced, and writes a new Secret at once.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 for a in argocd-apps <app>; do
   kubectl -n argocd patch application $a --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'
 done
@@ -1074,6 +1124,7 @@ cue export ./components --out text -e 'yaml.MarshalStream([for K, V in (#Generat
 Then:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n external-secrets get pods -o wide     # controller and webhook, on workers
 kubectl -n external-secrets get secrets          # external-secrets-webhook only
 kubectl create ns eso-test
@@ -1090,6 +1141,7 @@ kubectl delete ns eso-test                       # the Secret, orphaned on purpo
 Check a health result with Argo CD's own Lua, from the server's Pod:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 P=$(kubectl -n argocd get pod -l app.kubernetes.io/name=argocd-server -o name)
 kubectl -n eso-test get externalsecret eso-test -o yaml |
   kubectl -n argocd exec -i $P -- sh -c 'cat > /tmp/es.yaml'
@@ -1149,6 +1201,7 @@ removes the old one, whose access key no longer matches, so the old key
 stops working at once; then rotate the consumer's copy.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n rustfs get pods                      # rustfs only; no rustfs-register
 kubectl -n rustfs delete secret rustfs-substrate
 kubectl -n rustfs delete externalsecret rustfs-substrate
@@ -1161,6 +1214,7 @@ the buckets live on the volume, not in the root's keys, so the users
 survive it. Afterwards the pod's keys match the Secret's:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 for k in RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY; do
   [ "$(kubectl -n rustfs get secret rustfs-root -o jsonpath="{.data.$k}" | base64 -d)" = \
     "$(kubectl -n rustfs exec deploy/rustfs -c rustfs -- printenv $k)" ] && echo "$k matches"
@@ -1171,6 +1225,7 @@ Check the store, the Job and the policies, with a pod holding the
 consumers' keys:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n rustfs get pods,pvc          # rustfs Running; rustfs-data Bound on ceph-rbd
 kubectl -n rustfs get secret -o custom-columns='NAME:.metadata.name,IMMUTABLE:.immutable,OWNER:.metadata.ownerReferences'
 kubectl -n rustfs run s3-test --image=docker.io/rustfs/rc:v0.1.36 --restart=Never \
@@ -1271,9 +1326,10 @@ Both credentials are generated in the cluster with `#GeneratedSecret`
   creates and Keycloak connects as.
 
 Read the admin's credential, to log in at
-`https://keycloak.treasury.bank.internal/admin/`:
+`https://keycloak.$domain/admin/`:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n keycloak get secret keycloak-admin -o json | jq '.data | map_values(@base64d)'
 ```
 
@@ -1300,16 +1356,17 @@ Check the server, the route and the admin, from the claude VM and from a
 pod, without printing a credential:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n keycloak get cluster,keycloak,pods,pvc   # healthy, Ready, keycloak-db-1 Bound on ceph-rbd
 kubectl -n keycloak get pod keycloak-0 -o jsonpath='{.spec.containers[0].args}'   # ends in start
 kubectl -n keycloak get secret keycloak-admin keycloak-db \
   -o custom-columns='NAME:.metadata.name,TYPE:.type,IMMUTABLE:.immutable,OWNER:.metadata.ownerReferences'
 kubectl -n keycloak get configmap private-ca -o jsonpath='{.data.ca\.crt}' > root.pem
-curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/.well-known/openid-configuration |
-  jq -r .issuer                                     # https://keycloak.treasury.bank.internal/realms/master
+curl -s --cacert root.pem https://keycloak.$domain/realms/master/.well-known/openid-configuration |
+  jq -r .issuer                                     # https://keycloak.$domain/realms/master
 u=$(kubectl -n keycloak get secret keycloak-admin -o jsonpath='{.data.username}' | base64 -d)
 p=$(kubectl -n keycloak get secret keycloak-admin -o jsonpath='{.data.password}' | base64 -d)
-curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/protocol/openid-connect/token \
+curl -s --cacert root.pem https://keycloak.$domain/realms/master/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" \
   --data-urlencode "password=$p" | jq 'has("access_token")'   # true
 unset u p
@@ -1432,15 +1489,16 @@ makes them again. With automation paused on `keycloak-realm` (and on the
 root, `argocd-apps`, which would turn it back on):
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 # 1. Let the controller remove what it made: its finalizers delete the
 #    groups, memberships and clients in Keycloak. Deleting the realm first
 #    would leave its resources reporting errors with finalizers stuck.
 kubectl -n keycloak delete groupmembership,group --all     # and any Client or User in other namespaces
 # 2. The import, then the realm, with the master admin's token.
 kubectl -n keycloak delete keycloakrealmimport default
-t=$(curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/protocol/openid-connect/token \
+t=$(curl -s --cacert root.pem https://keycloak.$domain/realms/master/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
-curl -s --cacert root.pem -X DELETE -H "Authorization: Bearer $t" https://keycloak.treasury.bank.internal/admin/realms/default -w '%{http_code}\n'  # 204
+curl -s --cacert root.pem -X DELETE -H "Authorization: Bearer $t" https://keycloak.$domain/admin/realms/default -w '%{http_code}\n'  # 204
 # 3. Turn automation back on; the sync re-creates the import, the groups and
 #    the memberships, and its PostSync Job runs again.
 ```
@@ -1453,9 +1511,10 @@ secrets, above) needs that pod gone first, and a re-import after, since the
 realm holds the values it was imported with.
 
 jeff's password, to log in at
-`https://keycloak.treasury.bank.internal/realms/default/account` or to Argo CD:
+`https://keycloak.$domain/realms/default/account` or to Argo CD:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n keycloak get secret bank-of-pinky-user-jeff -o jsonpath='{.data.password}' | base64 -d
 ```
 
@@ -1463,21 +1522,22 @@ Check the realm, the controller and a token, without printing a secret
 (`root.pem`, `u` and `p` as under Keycloak, above):
 
 ```sh
-curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/default/.well-known/openid-configuration |
-  jq -r .issuer                                  # https://keycloak.treasury.bank.internal/realms/default
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+curl -s --cacert root.pem https://keycloak.$domain/realms/default/.well-known/openid-configuration |
+  jq -r .issuer                                  # https://keycloak.$domain/realms/default
 kubectl -n keycloak get keycloakrealmimport default \
   -o jsonpath='{.status.conditions[?(@.type=="Done")].status}'   # True
 kubectl -n bank-of-pinky-controller get deploy,externalsecret,secretstore   # 1/1, SecretSynced, Valid
 kubectl -n keycloak get instance,group,groupmembership             # READY True
-t=$(curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/protocol/openid-connect/token \
+t=$(curl -s --cacert root.pem https://keycloak.$domain/realms/master/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
-a=https://keycloak.treasury.bank.internal/admin/realms/default
+a=https://keycloak.$domain/admin/realms/default
 uid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/users?email=jeff@bank.internal&exact=true" | jq -r '.[0].id')
 cid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/clients?clientId=kubectl" | jq -r '.[0].id')
 curl -s --cacert root.pem -H "Authorization: Bearer $t" \
   "$a/clients/$cid/evaluate-scopes/generate-example-id-token?userId=$uid&scope=openid" |
   jq -c '{aud, groups}'                          # {"aud":"kubectl","groups":["/platform/owners"]}
-curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/default/protocol/openid-connect/auth/device \
+curl -s --cacert root.pem https://keycloak.$domain/realms/default/protocol/openid-connect/auth/device \
   -d client_id=kubectl -d scope=openid | jq 'has("device_code")'   # true
 ```
 
@@ -1605,18 +1665,25 @@ From a machine that trusts the private root (The private CA, above), with
 kubelogin (`kubectl oidc-login`). `--grant-type=device-code` prints a URL to
 open anywhere, for a machine without a browser; leave it out on a laptop,
 and kubelogin opens the browser and listens on `localhost:8000`, a redirect
-the `kubectl` client allows.
+the `kubectl` client allows. The cluster, user and context are all
+`$cluster-oidc`, so each cluster's login keeps its own issuer: on treasury
+this renames the user from `oidc`, as earlier versions of this block named
+it, to `treasury-oidc`, and running the block again adds it and repoints
+the context. The block unsets `KUBECONFIG`, which an earlier block may have
+pointed at the Talos admin kubeconfig, so the login goes in
+`~/.kube/config`.
 
 ```sh
-kubectl config set-cluster treasury-oidc --server=https://k8s.treasury.bank.internal \
-  --certificate-authority="$HOME/treasury-root-ca.pem" --embed-certs
-kubectl config set-credentials oidc --exec-api-version=client.authentication.k8s.io/v1 \
+unset KUBECONFIG
+kubectl config set-cluster $cluster-oidc --server=https://k8s.$domain \
+  --certificate-authority="$root_ca" --embed-certs
+kubectl config set-credentials $cluster-oidc --exec-api-version=client.authentication.k8s.io/v1 \
   --exec-interactive-mode=IfAvailable --exec-command=kubectl \
   --exec-arg=oidc-login --exec-arg=get-token \
-  --exec-arg=--oidc-issuer-url=https://keycloak.treasury.bank.internal/realms/default \
+  --exec-arg=--oidc-issuer-url=https://keycloak.$domain/realms/default \
   --exec-arg=--oidc-client-id=kubectl --exec-arg=--grant-type=device-code
-kubectl config set-context treasury-oidc --cluster=treasury-oidc --user=oidc
-kubectl --context treasury-oidc auth whoami   # oidc:jeff, [/platform/owners system:authenticated]
+kubectl config set-context $cluster-oidc --cluster=$cluster-oidc --user=$cluster-oidc
+kubectl --context $cluster-oidc auth whoami   # oidc:jeff, [/platform/owners system:authenticated]
 ```
 
 The ID token lasts five minutes; kubelogin renews it with its refresh token
@@ -1651,7 +1718,7 @@ Render and commit. The sync changes the impersonator's `ClusterRole` and the
 #### Checking holos-authenticator
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n bank-of-pinky-authenticator get gateway,certificate,backend,pods -o wide
     # k8s PROGRAMMED True; k8s Ready; backend kubernetes READY True;
     # two bank-of-pinky-authenticator and two k8s-istio pods, on two nodes each
@@ -1662,13 +1729,13 @@ kubectl -n bank-of-pinky-authenticator exec deploy/k8s-istio -c istio-proxy -- \
   pilot-agent request GET 'config_dump?resource=dynamic_listeners' \
   | jq -r '.. | .http_filters? // empty | [.[].name] | join(" -> ")'
 # With $TOKEN a kubectl ID token for a member of /platform/owners (The Substrate shim):
-kubectl --kubeconfig=/dev/null --server=https://k8s.treasury.bank.internal \
-  --certificate-authority="$HOME/treasury-root-ca.pem" --token="$TOKEN" auth whoami
-curl --cacert ~/treasury-root-ca.pem https://k8s.treasury.bank.internal/api                  # 401
-curl --cacert ~/treasury-root-ca.pem -H "Authorization: Bearer $TOKEN" \
-  -H 'Impersonate-Group: system:masters' https://k8s.treasury.bank.internal/api            # 403
-curl --cacert ~/treasury-root-ca.pem -H "Authorization: Bearer $TOKEN" \
-  -H 'x-impersonate-groups: system:masters' https://k8s.treasury.bank.internal/api         # 403
+kubectl --kubeconfig=/dev/null --server=https://k8s.$domain \
+  --certificate-authority="$root_ca" --token="$TOKEN" auth whoami
+curl --cacert "$root_ca" https://k8s.$domain/api                  # 401
+curl --cacert "$root_ca" -H "Authorization: Bearer $TOKEN" \
+  -H 'Impersonate-Group: system:masters' https://k8s.$domain/api            # 403
+curl --cacert "$root_ca" -H "Authorization: Bearer $TOKEN" \
+  -H 'x-impersonate-groups: system:masters' https://k8s.$domain/api         # 403
 # An ID token for another client, such as argocd, gets 401. The impersonator
 # may impersonate only the listed users and groups:
 kubectl create -o jsonpath='{.status.allowed}{"\n"}' -f - <<'YAML'                 # false
@@ -1850,7 +1917,7 @@ it on its first sync (Storage, above).
 
 #### Adding a platform secret
 
-1. Log in at `https://secrets.treasury.bank.internal` as a member of
+1. Log in at `https://secrets.$domain` as a member of
    `/platform/owners`, such as `jeff` (Logging in, under Bootstrap Argo
    CD: the same password), choose the `Platform` organization and open
    its `Platform` project.
@@ -1870,14 +1937,15 @@ Check the server, the client and the route (`root.pem` as under Keycloak,
 above):
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n secrets-manager get deploy,client               # 1/1, READY True
 kubectl -n secrets-manager get httproute secrets-manager \
   -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}'   # True
 kubectl -n keycloak get referencegrants.security.holos.run
 kubectl get ns -L holos.run/resource-type,holos.run/organization -l app.kubernetes.io/managed-by=holos.run
 kubectl -n bank-of-pinky-prj-platform get rolebinding secrets-manager-secrets
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.treasury.bank.internal/          # 200
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.treasury.bank.internal/metrics   # 500
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.$domain/          # 200
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.$domain/metrics   # 500
 kubectl -n secrets-manager exec deploy/secrets-manager -- /bin/secrets-manager --version           # the pinned release
 ```
 
@@ -1885,6 +1953,7 @@ Check a store with a throwaway consumer, rendered from the definition, and a
 secret `sm-test` made in the UI:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 cue export ./components --out text -e 'yaml.MarshalStream([for K, V in (#ScopedSecretStore &
   {name: "platform", namespace: "sm-test", secrets: ["sm-test"]}).resources for R in V {R}])' > store.yaml
 kubectl create ns sm-test
@@ -2051,6 +2120,7 @@ What it runs, in `ate-system` unless named:
   only cluster admins, from the laptop. To mint one for `--token-file`:
 
   ```sh
+  export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
   kubectl -n ate-system create token ate-client --duration=1h --audience=api.ate-system.svc > ate-client.token
   ```
 
@@ -2093,7 +2163,7 @@ second run changes nothing. ate-setup uses `KUBECONFIG`'s current context
 time.
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl get ns ate-system podcertificate-controller-system   # synced
 cd holos/vendor/substrate                                    # from the repository's root
 go run ./cmd/ate-setup create podcertificate-controller-cas  # service-dns-, pod-identity-, postgres-ca-pool
@@ -2127,6 +2197,7 @@ after a rebuild, whose root is new, restart atelet
 (`kubectl -n ate-system rollout restart ds/atelet`).
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 go build -o ~/bin/kubectl-ate ./cmd/kubectl-ate   # from holos/vendor/substrate; ~/bin on PATH
 kubectl ate create atespace demo
 
@@ -2138,14 +2209,14 @@ digest=sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
 export DOCKER_CONFIG=$(mktemp -d)
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > $DOCKER_CONFIG/root.pem
 tok=$(kubectl -n bank-of-pinky-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d)
-printf '{"auths":{"quay.treasury.bank.internal":{"auth":"%s"}}}' \
+printf '{"auths":{"%s":{"auth":"%s"}}}' "quay.$domain" \
   "$(printf '%s' "\$oauthtoken:$tok" | base64 -w0)" > $DOCKER_CONFIG/config.json
 unset tok
 SSL_CERT_DIR=$DOCKER_CONFIG docker buildx imagetools create \
-  -t quay.treasury.bank.internal/demo/echo:v1.12.0 docker.io/traefik/whoami:v1.12.0@$digest
+  -t quay.$domain/demo/echo:v1.12.0 docker.io/traefik/whoami:v1.12.0@$digest
 rm -rf $DOCKER_CONFIG; unset DOCKER_CONFIG
 
-image=quay.treasury.bank.internal/demo/echo@$digest
+image=quay.$domain/demo/echo@$digest
 for a in echo other; do
   kubectl ate create actor-template -f - <<EOF
 metadata: {atespace: demo, name: $a}
@@ -2175,7 +2246,7 @@ git -C vendor/substrate checkout <commit>
 # components/substrate/ATE-SETUP.md: walk steps/deploy.go again, change what moved,
 # then the line numbers and the pin at its top
 cue vet ./... && rm -rf deploy/clusters && holos render platform
-git diff deploy/clusters/treasury/components/substrate   # what the bump changes on the cluster
+git diff deploy/clusters/$cluster/components/substrate   # what the bump changes on the cluster
 git add vendor/substrate substrate.cue components/substrate deploy
 ```
 
@@ -2187,7 +2258,7 @@ pin ([docs/forks.md](../docs/forks.md), Rebasing on upstream):
 # components/kagent/setup.sql: re-copy go/core/pkg/postgressetup/setup.sql if it changed
 rm -rf components/kagent/vendor components/kagent-crds/vendor   # the render pulls both charts at Kagent.version
 cue vet ./... && rm -rf deploy/clusters && holos render platform
-git diff deploy/clusters/treasury/components/kagent deploy/clusters/treasury/components/kagent-crds
+git diff deploy/clusters/$cluster/components/kagent deploy/clusters/$cluster/components/kagent-crds
 git add kagent.cue components/kagent components/kagent-crds deploy
 ```
 
@@ -2196,10 +2267,11 @@ If the bump's diff changes ConfigMap `atenet-router-envoy-config` or
 once Argo CD has synced it, since no hash covers them:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n ate-system rollout restart deploy/atenet-router deploy/atenet-egress
 ```
 
-Test the bump on treasury before it merges with automation paused on the
+Test the bump on `$cluster` before it merges with automation paused on the
 root `argocd-apps` **and** on `substrate`, `kagent-crds` and `kagent`, and
 keep the root paused until the merge: the root renders the children's
 `syncPolicy`, so restoring it alone re-applies `automated` to the three and
@@ -2222,6 +2294,7 @@ delete the directory from a privileged pod with the host path mounted and
 delete the atelet pod; atelet re-creates the cache and pulls what it needs:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n ate-system apply -f - <<'EOF'
 apiVersion: v1
 kind: Pod
@@ -2265,6 +2338,7 @@ holds in the schema is lost; the `Agent`, `Harness` and `ModelConfig`
 objects in `kagent` are not, and the controller reconciles them again.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n ate-system exec substrate-db-1 -c postgres -- psql -d substrate \
   -c 'drop schema kagent cascade'
 argocd app sync kagent
@@ -2301,7 +2375,7 @@ None of these has been exercised on a cluster yet.
 #### Checking Substrate
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 # 1. Running, migrated, its database and secrets in place.
 kubectl -n ate-system get pods,cluster.postgresql.cnpg.io   # every pod Running; substrate-db healthy
 kubectl -n ate-system get externalsecret,secretstore        # every one SecretSynced, every store Valid
@@ -2448,11 +2522,11 @@ member of `/platform/owners`. kubelogin prints the `kubectl` client's ID
 token, which lasts five minutes:
 
 ```sh
-TOKEN=$(kubectl oidc-login get-token --oidc-issuer-url=https://keycloak.treasury.bank.internal/realms/default \
+TOKEN=$(kubectl oidc-login get-token --oidc-issuer-url=https://keycloak.$domain/realms/default \
   --oidc-client-id=kubectl --grant-type=device-code | jq -r .status.token)
-curl https://echo.demo.ate.treasury.bank.internal/                                       # 403 RBAC: access denied
-curl -H "Authorization: Bearer $TOKEN" https://echo.demo.ate.treasury.bank.internal/     # Name: echo
-curl -H "Authorization: Bearer $TOKEN" https://other.demo.ate.treasury.bank.internal/    # Name: other
+curl https://echo.demo.ate.$domain/                                       # 403 RBAC: access denied
+curl -H "Authorization: Bearer $TOKEN" https://echo.demo.ate.$domain/     # Name: echo
+curl -H "Authorization: Bearer $TOKEN" https://other.demo.ate.$domain/    # Name: other
 ```
 
 The actor wakes on the request, if it was suspended, before it answers.
@@ -2497,23 +2571,23 @@ claim (atespace-from-the-projectclaim); the Gateway already allows it.
 #### Checking the shim
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n substrate-shim get gateway,certificate,pods -o wide
     # ate PROGRAMMED True; both wildcards Ready; two ate-istio pods on two nodes
 kubectl -n istio-ingress get gateway ingress \
   -o jsonpath='{range .status.listeners[*]}{.name} {.attachedRoutes}{"\n"}{end}'   # ate 1
 # With $TOKEN as above:
 curl -H "Authorization: Bearer $TOKEN" -H 'ate-target-actor: demo/other' \
-  https://echo.demo.ate.treasury.bank.internal/ | head -1                     # still Name: echo
-curl https://foo.nope.ate.treasury.bank.internal/                             # exit 35, no listener
+  https://echo.demo.ate.$domain/ | head -1                     # still Name: echo
+curl https://foo.nope.ate.$domain/                             # exit 35, no listener
 # A token for a user outside the atespace's groups, such as
 # svc-quay-controller, gets 403. The router refuses any other identity:
 # Checking Substrate, above, step 2, under ServiceAccount default.
-docker pull quay.treasury.bank.internal/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
+docker pull quay.$domain/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
     # ingress still passes Quay's own bearer tokens
 ```
 
-A 401 with `Jwt verification fails` for a token that `k8s.treasury.bank.internal`
+A 401 with `Jwt verification fails` for a token that `k8s.$domain`
 accepts means istiod holds no signing key for the realm. istiod fetches the
 JWKS when it starts, and if Keycloak does not answer then, it keeps a key
 that matches nothing until its next refresh, 20 minutes later by default
@@ -2524,6 +2598,7 @@ again 20 minutes after the failed fetch, with no restart. To skip the wait,
 restart istiod once Keycloak answers:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n istio-system logs deploy/istiod | grep 'JWKS fetch failed' | tail -1
 kubectl -n istio-system rollout restart deploy/istiod
 ```
@@ -2631,6 +2706,7 @@ above). The `ExternalSecret` `kagent/kagent-anthropic` copies it within the
 hour, or at once with:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n kagent annotate externalsecret kagent-anthropic force-sync=$(date +%s) --overwrite
 kubectl -n kagent get externalsecret kagent-anthropic   # SecretSynced
 ```
@@ -2691,16 +2767,16 @@ directory.
 #### Checking kagent
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n kagent get pods,client,externalsecret   # four pods 1/1; Client READY True; all SecretSynced but kagent-anthropic
 kubectl -n ate-system exec substrate-db-1 -c postgres -- psql -d substrate -At \
   -c "select version_id from kagent.schema_migrations" \
   -c "select usename, ssl from pg_stat_activity join pg_stat_ssl using (pid) where usename like 'kagent%'"
     # the migrations; kagent_readwrite_user connections with ssl t
-curl -s --cacert root.pem -o /dev/null -w '%{http_code} %{redirect_url}\n' https://kagent.treasury.bank.internal/oauth2/start
-    # 302 to https://keycloak.treasury.bank.internal/realms/default/protocol/openid-connect/auth?...client_id=kagent...
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://kagent.treasury.bank.internal/api/   # 403 without a session
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-Uri: /login' https://kagent.treasury.bank.internal/api/   # 403 too
+curl -s --cacert root.pem -o /dev/null -w '%{http_code} %{redirect_url}\n' https://kagent.$domain/oauth2/start
+    # 302 to https://keycloak.$domain/realms/default/protocol/openid-connect/auth?...client_id=kagent...
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://kagent.$domain/api/   # 403 without a session
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-Uri: /login' https://kagent.$domain/api/   # 403 too
 kubectl auth can-i get secrets -n keycloak --as=system:serviceaccount:kagent:kagent-controller   # no
 # From a pod outside kagent, every kagent port times out:
 kubectl -n default run np-test --image=curlimages/curl:8.11.1 --restart=Never --command -- sleep 600
@@ -2783,10 +2859,10 @@ From a machine that trusts the private root, `$TOKEN` a member of
 `notifications/initialized`, then the method.
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n toolhive get mcpserver,mcpoidcconfig,mcpauthzconfig,pods
     # everything Ready; keycloak and everything VALID True; two pods 1/1
-U=https://toolhive.treasury.bank.internal/mcp
+U=https://toolhive.$domain/mcp
 function mcp {
   local t=$1 m=$2 p=$3 h s
   h=$(mktemp)
@@ -2960,7 +3036,7 @@ below). Quay itself comes up once the `Client` has delivered `quay-oidc`,
 `quay-db` is healthy and `rustfs-quay` is copied.
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n quay rollout status deploy/quay --timeout=15m
 kubectl -n quay get client quay                     # READY True
 
@@ -2994,7 +3070,8 @@ rewrites `/etc/ssl/certs/ca-certificates.crt` with it, under a header of
 the document's name, without a reboot:
 
 ```sh
-export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/$cluster/talosconfig
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > root.pem
 { printf 'apiVersion: v1alpha1\nkind: TrustedRootsConfig\nname: private-ca\ncertificates: |\n'
   sed 's/^/  /' root.pem; } > trusted-roots.yaml
@@ -3024,10 +3101,10 @@ rest):
 ```sh
 # From the repository's root.
 set -a; . ~/.config/holos/proxmox.env; set +a
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
-export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
-go run ./providers/talos/cmd/talosvm restart -cluster treasury -dry-run     # the steps of each worker
-go run ./providers/talos/cmd/talosvm restart -cluster treasury
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/$cluster/talosconfig
+go run ./providers/talos/cmd/talosvm restart -cluster "${cluster:?set cluster first}" -dry-run     # the steps of each worker
+go run ./providers/talos/cmd/talosvm restart -cluster "${cluster:?set cluster first}"
 kubectl -n argocd get applications                                          # every one Synced and Healthy
 ```
 
@@ -3058,24 +3135,26 @@ What Quay uses, once it has run a while (no metrics server here), to check
 its memory request against:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n quay exec deploy/quay -c quay -- cat /sys/fs/cgroup/memory.current   # bytes
 ```
 
 From the repository's root on the claude VM, with `root.pem` as above,
 docker trusting the root
 (`sudo install -D root.pem
-/etc/docker/certs.d/quay.treasury.bank.internal/ca.crt`). A machine set up
+/etc/docker/certs.d/quay.$domain/ca.crt`). A machine set up
 before the rename to cluster-qualified names also drops the old directory, the
 old root in it and the old login: `sudo rm -rf
 /etc/docker/certs.d/quay.bank.internal; docker logout quay.bank.internal`.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 # 1. Running, migrated, Synced and Healthy.
 kubectl -n quay get cluster,deploy,pods                 # quay-db healthy; quay and quay-redis 1/1
 kubectl -n argocd get application quay -o jsonpath='{.status.sync.status} {.status.health.status}{"\n"}'   # Synced Healthy
 kubectl -n quay logs deploy/quay -c quay | grep -i -m3 'migrat'
 
-# 2. By hand, in a browser: log in at https://quay.treasury.bank.internal as jeff
+# 2. By hand, in a browser: log in at https://quay.$domain as jeff
 #    through Keycloak, log out, and log in again (no 400 on the code exchange).
 
 # 3. The command converges, and the secret is listed under Platform.
@@ -3087,18 +3166,18 @@ kubectl -n bank-of-pinky-prj-platform get secret -l app.kubernetes.io/managed-by
 kubectl -n quay get organization,repository             # READY True
 tok=$(kubectl -n bank-of-pinky-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d)
 curl -s --cacert root.pem -H "Authorization: Bearer $tok" \
-  https://quay.treasury.bank.internal/api/v1/organization/demo/team/platformowners/members | jq -c '[.members[].name]'
+  https://quay.$domain/api/v1/organization/demo/team/platformowners/members | jq -c '[.members[].name]'
                                                         # lists jeff, once jeff has logged in
 
 # 5. A multi-layer image, one layer large, pushed to the public repository
 #    with the controller's token, which docker login takes as $oauthtoken,
 #    and its blobs in RustFS.
-printf %s "$tok" | docker login quay.treasury.bank.internal -u '$oauthtoken' --password-stdin
+printf %s "$tok" | docker login quay.$domain -u '$oauthtoken' --password-stdin
 d=$(mktemp -d)
 printf 'FROM docker.io/library/busybox:1.37.0\nRUN head -c 300000000 /dev/urandom > /big\nRUN echo one > /one\nRUN echo two > /two\n' > $d/Dockerfile
-docker build -t quay.treasury.bank.internal/demo/echo:check $d
-docker push quay.treasury.bank.internal/demo/echo:check
-docker logout quay.treasury.bank.internal
+docker build -t quay.$domain/demo/echo:check $d
+docker push quay.$domain/demo/echo:check
+docker logout quay.$domain
 kubectl -n quay run s3-test --image=docker.io/rustfs/rc:v0.1.36 --restart=Never \
   --overrides='{"spec":{"containers":[{"name":"s3-test","image":"docker.io/rustfs/rc:v0.1.36",
     "command":["sleep","600"],"env":[
@@ -3112,11 +3191,11 @@ unset tok
 
 # 6. An anonymous pull of the public image, by a worker and from the laptop.
 kubectl create ns quay-test
-kubectl -n quay-test run anonymous --image=quay.treasury.bank.internal/demo/echo:check --image-pull-policy=Always \
+kubectl -n quay-test run anonymous --image=quay.$domain/demo/echo:check --image-pull-policy=Always \
   --restart=Never --command -- sleep 600
 kubectl -n quay-test get pods                           # anonymous Running, with no pull secret
 kubectl delete ns quay-test
-#   on the laptop, logged out: docker pull quay.treasury.bank.internal/demo/echo:check
+#   on the laptop, logged out: docker pull quay.$domain/demo/echo:check
 
 # 7. A clean render reproduces deploy/ (Render, below).
 ```
@@ -3241,15 +3320,16 @@ editor and viewer groups. The collection is empty in the repository (Q67).
    with kubectl:
 
    ```sh
-   kubectl --context treasury-oidc auth whoami       # oidc:alice, [/projects/my-project/roles/owner system:authenticated]
-   kubectl --context treasury-oidc auth can-i create deployments -n my-project   # yes
-   kubectl --context treasury-oidc auth can-i create deployments -n default      # no
+   unset KUBECONFIG                                  # the login's ~/.kube/config
+   kubectl --context $cluster-oidc auth whoami       # oidc:alice, [/projects/my-project/roles/owner system:authenticated]
+   kubectl --context $cluster-oidc auth can-i create deployments -n my-project   # yes
+   kubectl --context $cluster-oidc auth can-i create deployments -n default      # no
    ```
 
 ### Checking a project
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd get application project-my-project my-project   # Synced Healthy
 kubectl -n my-project get groups.keycloak.holos.run,users.keycloak.holos.run,groupmemberships.keycloak.holos.run,organizations.quay.holos.run
     # every READY True
@@ -3264,6 +3344,7 @@ finalizer (Argo CD, above), so everything it made stays. Remove it by hand,
 in this order, after the merge:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd delete application <name>
 kubectl -n argocd delete appproject <name>
 kubectl delete namespace <name>        # wait: the controller's finalizers delete the groups and the membership
@@ -3339,9 +3420,9 @@ over the hand-applied components as it goes. Apply from a checkout of
 `main`, since that is what Argo CD will sync, and from this directory:
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
-export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
-d=deploy/clusters/treasury/components
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/$cluster/talosconfig
+d=deploy/clusters/$cluster/components
 
 kubectl apply --server-side --field-manager=argocd-controller -f $d/cilium/
 kubectl -n kube-system rollout status ds/cilium
@@ -3392,6 +3473,7 @@ trust-manager writes the ConfigMap, and Go reads the trust pool only at
 start.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd rollout restart deploy/argocd-server
 ```
 
@@ -3428,6 +3510,7 @@ kagent's key included, sync the root again with the automated policy's
 prune and retry. This needs no `argocd` CLI:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd patch app argocd-apps --type merge -p '{"operation":{
   "initiatedBy":{"username":"bootstrap"},
   "sync":{"prune":true,"syncOptions":["ServerSideApply=true"]},
@@ -3457,18 +3540,18 @@ its PV, so list the images while the cluster still answers, then remove them
 once the VMs are gone. From the repository's root:
 
 ```sh
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 images=$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeAttributes.imageName}{"\n"}{end}')
 echo "$images"   # csi-vol-..., one per volume
 
 set -a; . ~/.config/holos/proxmox.env; set +a
-go run ./providers/talos/cmd/talosvm destroy -cluster treasury        # prints the calls only
-go run ./providers/talos/cmd/talosvm destroy -cluster treasury -yes
-mv ~/.config/holos/talos/treasury ~/.config/holos/talos/treasury.old-$(date +%FT%H%M)
+go run ./providers/talos/cmd/talosvm destroy -cluster "${cluster:?set cluster first}"        # prints the calls only
+go run ./providers/talos/cmd/talosvm destroy -cluster "${cluster:?set cluster first}" -yes
+mv ~/.config/holos/talos/$cluster ~/.config/holos/talos/$cluster.old-$(date +%FT%H%M)
 
 # printf, so zsh splits the list too.
 for i in $(printf '%s\n' "$images"); do ssh root@r620a rbd rm --no-progress "k8s-rbd/$i"; done
-ssh root@r620a rbd ls k8s-rbd   # empty: the pool is treasury's alone
+ssh root@r620a rbd ls k8s-rbd   # empty: the pool is the cluster's alone
 ```
 
 `rbd rm` refuses an image that still has a watcher. A destroyed VM's watch
@@ -3482,8 +3565,8 @@ up`. Its private root is new (The private CA, above).
 
 Through Keycloak, as a member of `/platform/owners`, which the `argocd-rbac-cm`
 policy makes `role:admin`: in a browser at
-https://argocd.treasury.bank.internal, **Log in via Keycloak**, or with the
-CLI, `argocd login argocd.treasury.bank.internal --grpc-web --sso`, which
+`https://argocd.$domain`, **Log in via Keycloak**, or with the
+CLI, `argocd login argocd.$domain --grpc-web --sso`, which
 opens a browser and listens on `localhost:8085`. Argo CD's `oidc.config` names
 the realm's issuer, the public client `argocd` with PKCE and the scopes
 `openid profile email groups`, and no secret (The realm, above). The server
@@ -3499,6 +3582,7 @@ above). Log in as `jeff`, with the generated password from the `keycloak`
 namespace:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n keycloak get secret bank-of-pinky-user-jeff -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
@@ -3511,7 +3595,8 @@ above). The gateway serves HTTP/1.1 to the server, so the CLI needs
 `--grpc-web`; without it the CLI warns and falls back to it.
 
 ```sh
-argocd login argocd.treasury.bank.internal --grpc-web --username admin --password \
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+argocd login argocd.$domain --grpc-web --username admin --password \
   "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
 argocd app list
 ```
@@ -3520,6 +3605,7 @@ Without the gateway, as during a bootstrap, a port-forward reaches the
 server, which serves plain HTTP:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd port-forward svc/argocd-server 8080:80 &
 argocd login localhost:8080 --plaintext --username admin --password ...
 ```
@@ -3558,6 +3644,7 @@ ownership only, never a value; the `test` refuses the patch if the entry
 moved, and objects Argo CD has not applied are skipped:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 for f in $d/*/*.yaml; do
   i=$(kubectl get -f $f --show-managed-fields -o json 2>/dev/null | jq '
     if any(.metadata.managedFields[]; .manager == "argocd-controller")
@@ -3582,10 +3669,12 @@ Switch over once, before applying the `coredns` component, from the
 repository root:
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/$cluster/talosconfig
 # 1. Disable Talos's CoreDNS (the patch is already in controlplane.yaml).
 set -a; . ~/.config/holos/proxmox.env; set +a
-providers/talos/cluster.sh gen treasury
-providers/talos/cluster.sh apply treasury
+providers/talos/cluster.sh gen $cluster
+providers/talos/cluster.sh apply $cluster
 
 # 2. Remove Talos's objects and their inventory entries. This is what
 #    `talosctl upgrade-k8s` would do, without touching the control plane.
@@ -3612,23 +3701,24 @@ in place never has Talos's CoreDNS and needs none of this.
 ## Check
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd get applications   # every one Synced and Healthy
 kubectl get nodes
 kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg status
 kubectl get ciliumloadbalancerippools
 
-kubectl create ns treasury-test
-kubectl -n treasury-test run dnstest --image=docker.io/nicolaka/netshoot:v0.14 \
+kubectl create ns $cluster-test
+kubectl -n $cluster-test run dnstest --image=docker.io/nicolaka/netshoot:v0.14 \
   --restart=Never --command -- sleep 3600
-kubectl -n treasury-test exec dnstest -- dig +search kubernetes.default A
-kubectl -n treasury-test exec dnstest -- dig +short @10.96.0.10 test.treasury.bank.internal A   # 10.20.0.30
-kubectl -n treasury-test exec dnstest -- dig @10.96.0.10 test.bank.internal A | grep status       # NXDOMAIN, in no cluster's subdomain
-kubectl -n treasury-test create deployment echo \
+kubectl -n $cluster-test exec dnstest -- dig +search kubernetes.default A
+kubectl -n $cluster-test exec dnstest -- dig +short @10.96.0.10 test.$domain A   # the gateway's address, 10.20.0.30
+kubectl -n $cluster-test exec dnstest -- dig @10.96.0.10 test.bank.internal A | grep status       # NXDOMAIN, in no cluster's subdomain
+kubectl -n $cluster-test create deployment echo \
   --image=registry.k8s.io/e2e-test-images/agnhost:2.53 -- /agnhost netexec --http-port=8080
-kubectl -n treasury-test expose deployment echo --type=LoadBalancer --port=80 --target-port=8080
-kubectl -n treasury-test get svc echo   # EXTERNAL-IP from 10.20.0.31-.33, never the gateway's .30
+kubectl -n $cluster-test expose deployment echo --type=LoadBalancer --port=80 --target-port=8080
+kubectl -n $cluster-test get svc echo   # EXTERNAL-IP from 10.20.0.31-.33, never the gateway's .30
 curl http://<external-ip>/hostname   # from the garage network
-kubectl delete ns treasury-test
+kubectl delete ns $cluster-test
 ```
 
 CoreDNS's metrics show which upstream answered: a `bank.internal` query is
@@ -3636,7 +3726,8 @@ counted against `to="192.168.2.1:53"`, anything else against host DNS,
 `to="169.254.116.108:53"`:
 
 ```sh
-kubectl -n treasury-test exec dnstest -- curl -s http://<coredns pod IP>:9153/metrics |
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+kubectl -n $cluster-test exec dnstest -- curl -s http://<coredns pod IP>:9153/metrics |
   grep proxy_request_duration_seconds_count
 ```
 
@@ -3644,15 +3735,16 @@ The private CA: issue a certificate, check it chains to the root in the
 namespace's bundle, and remove it.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl create ns ca-test
 kubectl -n ca-test get configmap private-ca   # trust-manager's copy of the root
-kubectl -n ca-test apply -f - <<'EOF'
+kubectl -n ca-test apply -f - <<EOF
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata: {name: test}
 spec:
   secretName: test-tls
-  dnsNames: [test.ca-test.treasury.bank.internal]
+  dnsNames: [test.ca-test.$domain]
   issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: private-ca}
 EOF
 kubectl -n ca-test wait --for=condition=Ready certificate/test
@@ -3668,6 +3760,7 @@ workers only, and a volume written on one worker read back on another, its
 image in the pool while the claim exists and gone once it is deleted.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl get sc                             # ceph-rbd (default), local-path
 kubectl -n ceph-csi-rbd get pods -o wide   # a nodeplugin and a provisioner on each worker
 kubectl create ns storage-test
@@ -3693,11 +3786,11 @@ spec:
   volumes: [{name: d, persistentVolumeClaim: {claimName: rbd}}]
 EOF
 }
-pod writer treasury-general-1 'hostname > /data/x'
+pod writer $cluster-general-1 'hostname > /data/x'
 kubectl -n storage-test wait --for=condition=Ready --timeout=2m pod/writer
 ssh root@r620a rbd ls k8s-rbd              # csi-vol-...
 kubectl -n storage-test delete pod writer
-pod reader treasury-general-3 'cat /data/x'
+pod reader $cluster-general-3 'cat /data/x'
 kubectl -n storage-test wait --for=condition=Ready --timeout=2m pod/reader
 kubectl -n storage-test logs reader        # writer, the pod that wrote it on general-1
 PV=$(kubectl -n storage-test get pvc rbd -o jsonpath='{.spec.volumeName}')
@@ -3717,20 +3810,22 @@ garage network and from a pod. Until the private zone has its wildcard,
 `--resolve` stands in for it.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n istio-system get pods -o wide        # istiod, and istio-cni-node and ztunnel on each worker
 kubectl get validatingwebhookconfiguration istio-validator-istio-system \
   -o jsonpath='{.webhooks[0].failurePolicy} {.webhooks[0].clientConfig.service.name}{"\n"}'   # Fail istiod
 kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMMED True
-kubectl get ciliumloadbalancerippools            # treasury: 0 available; treasury-general: none CONFLICTING
+gw=$(kubectl -n istio-ingress get gateway ingress -o jsonpath='{.spec.addresses[0].value}')   # the pinned address
+kubectl get ciliumloadbalancerippools            # $cluster: 0 available; $cluster-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
 kubectl get tlsroute -A                          # ate, k8s
 kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
   -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy,SVC:.webhooks[*].clientConfig.service.name'   # Fail everywhere, every one a Service
 
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > /tmp/root.pem
-curl --resolve hello.treasury.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://hello.treasury.bank.internal/
-curl -sI --resolve hello.treasury.bank.internal:80:10.20.0.30 http://hello.treasury.bank.internal/   # 301 to https
-curl -s --resolve argocd.treasury.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://argocd.treasury.bank.internal/api/version
+curl --resolve hello.$domain:443:$gw --cacert /tmp/root.pem https://hello.$domain/
+curl -sI --resolve hello.$domain:80:$gw http://hello.$domain/   # 301 to https
+curl -s --resolve argocd.$domain:443:$gw --cacert /tmp/root.pem https://argocd.$domain/api/version
 
 kubectl create ns gw-test
 kubectl label ns gw-test istio.io/dataplane-mode=ambient
@@ -3738,7 +3833,7 @@ kubectl -n gw-test run curl --image=docker.io/curlimages/curl:8.11.1 --restart=N
   --overrides='{"spec":{"containers":[{"name":"curl","image":"docker.io/curlimages/curl:8.11.1","command":["sleep","3600"],"volumeMounts":[{"name":"ca","mountPath":"/ca"}]}],"volumes":[{"name":"ca","configMap":{"name":"private-ca"}}]}}'
 kubectl -n gw-test wait --for=condition=Ready pod/curl
 kubectl -n gw-test exec curl -- curl -s --cacert /ca/ca.crt \
-  --resolve hello.treasury.bank.internal:443:10.20.0.30 https://hello.treasury.bank.internal/
+  --resolve hello.$domain:443:$gw https://hello.$domain/
 kubectl -n gw-test exec curl -- curl -s http://hello.hello/   # pod to pod over HBONE
 kubectl -n istio-system logs ds/ztunnel | grep 'connection complete'   # one ztunnel's; src.identity and dst.identity
 kubectl delete ns gw-test
@@ -3752,11 +3847,13 @@ for it, and the gateway's Service comes back at it after a delete, which
 istiod answers by recreating it.
 
 ```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+gw=$(kubectl -n istio-ingress get gateway ingress -o jsonpath='{.spec.addresses[0].value}')   # the pinned address
 kubectl create ns lb-test
 kubectl -n lb-test create service loadbalancer t1 --tcp=80:8080   # 10.20.0.31-.33
-kubectl -n lb-test create -f - <<'EOF'
+kubectl -n lb-test create -f - <<EOF
 {"apiVersion": "v1", "kind": "Service", "metadata": {"name": "t30"},
- "spec": {"type": "LoadBalancer", "loadBalancerIP": "10.20.0.30", "ports": [{"port": 80}]}}
+ "spec": {"type": "LoadBalancer", "loadBalancerIP": "$gw", "ports": [{"port": 80}]}}
 EOF
 kubectl -n lb-test get svc t30 -o jsonpath='{.status.conditions[0].reason}{"\n"}'   # pool_selector_mismatch
 kubectl -n istio-ingress delete svc ingress-istio
