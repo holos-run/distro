@@ -3,8 +3,6 @@ kind: MutatingWebhookConfiguration
 metadata:
   annotations:
     cert-manager.io/inject-ca-from-secret: cert-manager/cert-manager-webhook-ca
-    holos.run/contract-exception: ADR 0001's Gateway webhook path, kept on treasury
-      until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer
   labels:
     app: webhook
     app.kubernetes.io/component: webhook
@@ -18,7 +16,10 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    url: https://cert-manager-webhook.cert-manager.webhooks.treasury.bank.internal:9443/mutate
+    service:
+      name: cert-manager-webhook
+      namespace: cert-manager
+      path: /mutate
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: webhook.cert-manager.io
@@ -32,4 +33,4 @@ webhooks:
     resources:
     - certificaterequests
   sideEffects: None
-  timeoutSeconds: 3
+  timeoutSeconds: 30

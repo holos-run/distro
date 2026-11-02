@@ -1,46 +1,49 @@
+# Source: istiod/templates/validatingwebhookconfiguration.yaml
+# Created if this is not a remote istiod, OR if it is and is also a config cluster
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  annotations:
-    holos.run/contract-exception: ADR 0001's Gateway webhook path, kept on treasury
-      until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer
+  name: istio-validator-istio-system
   labels:
     app: istiod
-    app.kubernetes.io/instance: istiod
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: istiod
-    app.kubernetes.io/part-of: istio
-    app.kubernetes.io/version: 1.31.3
-    helm.sh/chart: istiod-1.31.3
-    istio: istiod
-    istio.io/rev: default
     release: istiod
-  name: istio-validator-istio-system
+    istio: istiod
+    istio.io/rev: "default"
+    app.kubernetes.io/name: "istiod"
+    app.kubernetes.io/managed-by: "Helm"
+    app.kubernetes.io/instance: "istiod"
+    app.kubernetes.io/part-of: "istio"
+    app.kubernetes.io/version: "1.31.3"
+    helm.sh/chart: istiod-1.31.3
 webhooks:
-- admissionReviewVersions:
-  - v1
-  clientConfig:
-    url: https://istiod.istio-system.webhooks.treasury.bank.internal:9443/validate
-  failurePolicy: Fail
-  name: rev.validation.istio.io
-  objectSelector:
-    matchExpressions:
-    - key: istio.io/rev
-      operator: In
-      values:
-      - default
-  rules:
-  - apiGroups:
-    - security.istio.io
-    - networking.istio.io
-    - telemetry.istio.io
-    - extensions.istio.io
-    apiVersions:
-    - '*'
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - '*'
-  sideEffects: None
-  timeoutSeconds: 3
+  # Webhook handling per-revision validation. Mostly here so we can determine whether webhooks
+  # are rejecting invalid configs on a per-revision basis.
+  - name: rev.validation.istio.io
+    clientConfig:
+      # Should change from base but cannot for API compat
+      service:
+        name: istiod
+        namespace: "istio-system"
+        path: "/validate"
+    rules:
+      - operations:
+          - CREATE
+          - UPDATE
+        apiGroups:
+          - security.istio.io
+          - networking.istio.io
+          - telemetry.istio.io
+          - extensions.istio.io
+        apiVersions:
+          - "*"
+        resources:
+          - "*"
+    failurePolicy: Fail
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    objectSelector:
+      matchExpressions:
+        - key: istio.io/rev
+          operator: In
+          values:
+          - "default"

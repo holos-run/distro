@@ -1,9 +1,6 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  annotations:
-    holos.run/contract-exception: ADR 0001's Gateway webhook path, kept on treasury
-      until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer
   labels:
     app: istiod
     app.kubernetes.io/instance: istio-base
@@ -20,7 +17,10 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    url: https://istiod.istio-system.webhooks.treasury.bank.internal:9443/validate
+    service:
+      name: istiod
+      namespace: istio-system
+      path: /validate
   failurePolicy: Fail
   name: validation.istio.io
   rules:
@@ -37,4 +37,3 @@ webhooks:
     resources:
     - '*'
   sideEffects: None
-  timeoutSeconds: 3

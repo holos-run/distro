@@ -182,17 +182,26 @@ private zone does not depend on how the nodes' resolvers are set.
 
 ### Admission webhooks
 
-The API server reaches an admission webhook by ADR 0001's path, built while
-the control plane was off the pod network, as a client outside the cluster
+Every webhook configuration names its webhook's Service by the `service:`
+reference its chart ships, with the chart's `failurePolicy` and
+`timeoutSeconds`, as ADR 0003 requires: the control plane runs Cilium, so
+the API server reaches a Service as a pod does.
+
+The rest of this section describes ADR 0001's path, which no configuration
+takes any more. Its remaining pieces, the Gateway's `webhooks` listener and
+`TLSRoute`s, the host entries and the hostnames on the serving
+certificates, are retired by the follow-up change.
+
+By ADR 0001's path, built while the control plane was off the pod network,
+the API server reached an admission webhook as a client outside the cluster
 would: through a URL on the ingress Gateway's address, 10.20.0.30, where the
 `webhooks` listener on port 9443 passes TLS through to the webhook's Service,
 routed on SNI by one `TLSRoute` per webhook (The ingress gateway, below). The control
 plane is on the same LAN as the address, so nothing listens on the control
 plane and no proxy is in between.
 
-Every component that registers a webhook renders its configurations with
-`#WebhookPatch` (`components/webhooks.cue`), which sets, from the cluster's
-`webhooks` in `clusters.cue`:
+Each configuration was rewritten, from the cluster's `webhooks` in
+`clusters.cue`, with:
 
 - `clientConfig.url`: `https://<service>.<namespace>.webhooks.<cluster>.<privateDomain>:9443/<path>`,
   for example
@@ -774,43 +783,32 @@ digest, and the trust domain, `cluster.local`. A workload's mesh identity is
   namespaces stay out: their port-scoped NetworkPolicies would have to admit
   the mesh port 15008, and with it every mesh identity.
 
-istiod's webhooks follow the platform's model (Admission webhooks, above).
-The validator `istio-validator-istio-system`, `istio-base`'s
-`istiod-default-validator` and the sidecar injector (idle in ambient: it
-matches only pods or namespaces that ask for a sidecar) all name
-`https://istiod.istio-system.webhooks.<cluster>.<privateDomain>:9443`, and
-`ISTIOD_CUSTOM_HOST` adds that hostname to istiod's serving certificate.
-istiod manages these configurations itself, which works with the URL and
-with Argo CD:
+istiod serves three configurations: the validator
+`istio-validator-istio-system`, `istio-base`'s `istiod-default-validator`
+and the sidecar injector (idle in ambient: it matches only pods or
+namespaces that ask for a sidecar). Each keeps its chart's `service:`
+reference to `istiod` (ADR 0003). `ISTIOD_CUSTOM_HOST` still adds the
+Gateway hostname of ADR 0001's path to istiod's serving certificate until
+the follow-up change retires that path. istiod manages these configurations
+itself, which works with Argo CD:
 
-- It writes its own CA's root into every webhook's `caBundle`, whether
-  `clientConfig` names a Service or a URL. The render leaves `caBundle` out,
-  and Argo CD diffs server-side, so the field istiod owns is no difference.
-- It switches a validator's `failurePolicy` from `Ignore` to `Fail` only once
-  a dry-run create of a known-invalid Istio `Gateway` is refused by the
-  webhook. While the URL is unreachable the API server fails open, the dry
-  run passes, and istiod leaves `Ignore` alone: it retries about once a
-  minute and logs `Not ready to switch validation to fail-closed`. The
-  configurations' `resourceVersion` does not move.
-- Once the Gateway reaches istiod, the dry run is refused and istiod sets
-  `Fail`. It remembers that until it restarts: from then on it sets `Fail`
-  again whenever the configuration changes, even after the Gateway stops
-  reaching it. With `webhooks.enforcing` false the render says `Ignore`, so
-  Argo CD's self-heal and istiod take turns, `istio-base` and `istiod` go
-  `OutOfSync` between Argo CD's self-heal attempts, and every turn bumps the
-  configurations' `resourceVersion`. With `enforcing` true the two agree and
-  nothing moves. Measured on the first garage cluster: about ten updates a
-  configuration in the first 90 seconds with the listener up and `Ignore`
-  rendered; none in six minutes with `Fail` rendered.
-- Turning `enforcing` off on a cluster whose istiod has seen the webhook
-  answer therefore needs an istiod restart as well
-  (`kubectl -n istio-system delete pod -l app=istiod`) once the Gateway
-  no longer reaches it, or the two keep taking turns.
-
-The chart's own URL values, `istiodRemote.injectionURL` and
-`base.validationURL`, would set the URL too, but not the timeout or the
-enforcement flag's `failurePolicy`, so `#WebhookPatch` is used, as for every
-other component.
+- It writes its own CA's root into every webhook's `caBundle`. The render
+  leaves `caBundle` out, and Argo CD diffs server-side, so the field istiod
+  owns is no difference.
+- It switches a validator's `failurePolicy` from `Ignore` to `Fail` once a
+  dry-run create of a known-invalid Istio `Gateway` is refused by the
+  webhook, and remembers that until it restarts, setting `Fail` again
+  whenever the configuration changes. `helm template` cannot tell an install
+  from an upgrade, so the charts render `Ignore`; left so, Argo CD's
+  self-heal and istiod would take turns, `istio-base` and `istiod` would go
+  `OutOfSync`, and every turn would bump the configurations'
+  `resourceVersion`. Measured on the first garage cluster: about ten updates
+  a configuration in the first 90 seconds with `Ignore` rendered; none in
+  six minutes with `Fail` rendered.
+- So both validators render `Fail` through the charts'
+  `base.validationFailurePolicy`, which the charts offer for exactly this
+  case, and the render agrees with istiod. The sidecar injector keeps the
+  chart's `Fail`.
 
 ### The ingress gateway
 
@@ -3440,9 +3438,8 @@ It reads each cluster's tree under `deploy/clusters` and fails a webhook
 configuration, conversion webhook or APIService that reaches its webhook by
 `url:`, names a Service the tree does not hold, or one without a selector or
 headless, or one whose selector matches no pod template or a pod template on
-`hostNetwork`. The webhook configurations treasury still routes through the Gateway are listed
-as exceptions instead, from the `holos.run/contract-exception` annotation
-`#WebhookPatch` gives each (`components/webhooks.cue`).
+`hostNetwork`. A configuration with the `holos.run/contract-exception`
+annotation is listed as an exception instead; none has one.
 
 ## Bootstrap Argo CD
 

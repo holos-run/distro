@@ -44,16 +44,11 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	// update; Argo CD's server-side apply owns only the metadata, so the
 	// two do not fight over it. cainjector copies the CA into the
 	// configuration's caBundle, through the chart's
-	// inject-ca-from-secret annotation, whether the configuration names
-	// a Service or a URL. The API server dials the .svc name itself
-	// through the Gateway (webhooks.cue).
+	// inject-ca-from-secret annotation. The API server reaches the
+	// webhook by the chart's service: reference (ADR 0003), the name the
+	// certificate carries.
+
 	patches: [
-		(#WebhookPatch & {
-			kind:    "ValidatingWebhookConfiguration"
-			name:    "cert-manager-approver-policy"
-			service: Webhook.name
-			webhooks: "policy.cert-manager.io": path: "/validate-policy-cert-manager-io-v1alpha1-certificaterequestpolicy"
-		}).patch,
 		// Argo CD neither prunes nor deletes the CRD. Deleting it deletes
 		// every CertificateRequestPolicy, and with cert-manager's own
 		// approver off every new request would then wait unapproved, so

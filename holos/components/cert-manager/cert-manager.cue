@@ -71,20 +71,4 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	}
 
 	resources: Namespace: (CertManagerNamespace): _
-
-	// Both webhook configurations are served by the one webhook Service.
-	patches: [
-		(#WebhookPatch & {
-			kind:    "ValidatingWebhookConfiguration"
-			name:    "cert-manager-webhook"
-			service: Webhook.name
-			webhooks: "webhook.cert-manager.io": path: "/validate"
-		}).patch,
-		(#WebhookPatch & {
-			kind:    "MutatingWebhookConfiguration"
-			name:    "cert-manager-webhook"
-			service: Webhook.name
-			webhooks: "webhook.cert-manager.io": path: "/mutate"
-		}).patch,
-	]
 }).artifact]

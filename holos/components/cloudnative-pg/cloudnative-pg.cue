@@ -99,29 +99,6 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	// Both webhook configurations are served by the one webhook Service, and
 	// cainjector fills their caBundle from the cnpg-webhook Certificate.
 	patches: [
-		(#WebhookPatch & {
-			kind:    "MutatingWebhookConfiguration"
-			name:    "cnpg-mutating-webhook-configuration"
-			service: Webhook.name
-			webhooks: {
-				"mbackup.cnpg.io": path:          "/mutate-postgresql-cnpg-io-v1-backup"
-				"mcluster.cnpg.io": path:         "/mutate-postgresql-cnpg-io-v1-cluster"
-				"mdatabase.cnpg.io": path:        "/mutate-postgresql-cnpg-io-v1-database"
-				"mscheduledbackup.cnpg.io": path: "/mutate-postgresql-cnpg-io-v1-scheduledbackup"
-			}
-		}).patch,
-		(#WebhookPatch & {
-			kind:    "ValidatingWebhookConfiguration"
-			name:    "cnpg-validating-webhook-configuration"
-			service: Webhook.name
-			webhooks: {
-				"vbackup.cnpg.io": path:          "/validate-postgresql-cnpg-io-v1-backup"
-				"vcluster.cnpg.io": path:         "/validate-postgresql-cnpg-io-v1-cluster"
-				"vscheduledbackup.cnpg.io": path: "/validate-postgresql-cnpg-io-v1-scheduledbackup"
-				"vdatabase.cnpg.io": path:        "/validate-postgresql-cnpg-io-v1-database"
-				"vpooler.cnpg.io": path:          "/validate-postgresql-cnpg-io-v1-pooler"
-			}
-		}).patch,
 		InjectCA & {target: {kind: "MutatingWebhookConfiguration", name: "cnpg-mutating-webhook-configuration"}},
 		InjectCA & {target: {kind: "ValidatingWebhookConfiguration", name: "cnpg-validating-webhook-configuration"}},
 		// Argo CD neither prunes nor deletes the CRDs. Deleting one deletes

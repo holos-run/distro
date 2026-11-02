@@ -3,8 +3,6 @@ kind: MutatingWebhookConfiguration
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: cnpg-system/cnpg-webhook
-    holos.run/contract-exception: ADR 0001's Gateway webhook path, kept on treasury
-      until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer
   labels:
     app.kubernetes.io/instance: cloudnative-pg
     app.kubernetes.io/managed-by: Helm
@@ -16,7 +14,11 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-backup
+    service:
+      name: cnpg-webhook-service
+      namespace: cnpg-system
+      path: /mutate-postgresql-cnpg-io-v1-backup
+      port: 443
   failurePolicy: Fail
   name: mbackup.cnpg.io
   rules:
@@ -30,11 +32,14 @@ webhooks:
     resources:
     - backups
   sideEffects: None
-  timeoutSeconds: 3
 - admissionReviewVersions:
   - v1
   clientConfig:
-    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-cluster
+    service:
+      name: cnpg-webhook-service
+      namespace: cnpg-system
+      path: /mutate-postgresql-cnpg-io-v1-cluster
+      port: 443
   failurePolicy: Fail
   name: mcluster.cnpg.io
   rules:
@@ -48,11 +53,14 @@ webhooks:
     resources:
     - clusters
   sideEffects: None
-  timeoutSeconds: 3
 - admissionReviewVersions:
   - v1
   clientConfig:
-    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-database
+    service:
+      name: cnpg-webhook-service
+      namespace: cnpg-system
+      path: /mutate-postgresql-cnpg-io-v1-database
+      port: 443
   failurePolicy: Fail
   name: mdatabase.cnpg.io
   rules:
@@ -66,11 +74,14 @@ webhooks:
     resources:
     - databases
   sideEffects: None
-  timeoutSeconds: 3
 - admissionReviewVersions:
   - v1
   clientConfig:
-    url: https://cnpg-webhook-service.cnpg-system.webhooks.treasury.bank.internal:9443/mutate-postgresql-cnpg-io-v1-scheduledbackup
+    service:
+      name: cnpg-webhook-service
+      namespace: cnpg-system
+      path: /mutate-postgresql-cnpg-io-v1-scheduledbackup
+      port: 443
   failurePolicy: Fail
   name: mscheduledbackup.cnpg.io
   rules:
@@ -84,4 +95,3 @@ webhooks:
     resources:
     - scheduledbackups
   sideEffects: None
-  timeoutSeconds: 3

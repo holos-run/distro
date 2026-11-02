@@ -110,26 +110,4 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			}
 		}
 	}
-
-	// Both webhook configurations are served by the one webhook Service, and
-	// cainjector fills their caBundle from the Certificate above.
-	patches: [
-		(#WebhookPatch & {
-			kind:    "ValidatingWebhookConfiguration"
-			name:    "externalsecret-validate"
-			service: Webhook.name
-			webhooks: {
-				"validate.externalsecret.external-secrets.io": path: "/validate-external-secrets-io-v1-externalsecret"
-			}
-		}).patch,
-		(#WebhookPatch & {
-			kind:    "ValidatingWebhookConfiguration"
-			name:    "secretstore-validate"
-			service: Webhook.name
-			webhooks: {
-				"validate.secretstore.external-secrets.io": path:        "/validate-external-secrets-io-v1-secretstore"
-				"validate.clustersecretstore.external-secrets.io": path: "/validate-external-secrets-io-v1-clustersecretstore"
-			}
-		}).patch,
-	]
 }).artifact]

@@ -44,6 +44,13 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		// autoscaler that cannot read metrics reports Degraded in Argo CD.
 		autoscaleEnabled: false
 
+		// The validator fails closed from the start. helm template renders
+		// Ignore, istiod switches it to Fail once the webhook answers, and
+		// Argo CD's self-heal would switch it back, the two taking turns
+		// (README.md, "Istio"). The chart offers this for exactly that case.
+		// istio-base sets the same for the default revision's validator.
+		base: validationFailurePolicy: "Fail"
+
 		env: {
 			// A Gateway sends a request for a Service labeled
 			// istio.io/ingress-use-waypoint through the Service's waypoint.
@@ -79,32 +86,4 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			readOnly:  true
 		}]
 	}
-
-	// istiod patches these configurations' caBundle with its CA's root, a
-	// field the render leaves out and Argo CD's server-side diff ignores. It
-	// also switches the validators' failurePolicy to Fail once a dry run of an
-	// invalid resource is refused by the webhook, that is once the Gateway
-	// reaches istiod, and from then on until it restarts, whatever the render
-	// says; webhooks.enforcing must agree (README.md, "Istio").
-	patches: [
-		(#WebhookPatch & {
-			kind:    "ValidatingWebhookConfiguration"
-			name:    "istio-validator-\(Istio.namespace)"
-			service: Webhook.name
-			webhooks: "rev.validation.istio.io": path: "/validate"
-		}).patch,
-		// The sidecar injector. Ambient pods have no sidecar, so it matches
-		// only pods or namespaces that ask for one by label; none do.
-		(#WebhookPatch & {
-			kind:    "MutatingWebhookConfiguration"
-			name:    "istio-sidecar-injector"
-			service: Webhook.name
-			webhooks: {
-				"rev.namespace.sidecar-injector.istio.io": path: "/inject"
-				"rev.object.sidecar-injector.istio.io": path:    "/inject"
-				"namespace.sidecar-injector.istio.io": path:     "/inject"
-				"object.sidecar-injector.istio.io": path:        "/inject"
-			}
-		}).patch,
-	]
 }).artifact]
