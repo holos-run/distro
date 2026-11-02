@@ -23,9 +23,10 @@ Keycloak: {
 	// port is the server's plain HTTP port, behind the ingress gateway.
 	port: 8080
 
-	// url is the server's one public URL, at the ingress gateway, which pods
-	// and the laptop resolve alike (interview Q40). A realm's issuer is
-	// <url>/realms/<realm>.
+	// url is the server's one public URL, keycloak.<ingressDomain> at the
+	// ingress gateway (IngressGateway.hosts, the Cluster_Qualified_Hostnames
+	// planning project), which pods and the laptop resolve alike. A realm's
+	// issuer is <url>/realms/<realm>.
 	url: "https://\(IngressGateway.hosts.keycloak)"
 
 	// realm is the platform's realm, holos, which the keycloak-realm

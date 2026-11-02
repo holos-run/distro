@@ -40,7 +40,7 @@ Quay: {
 	// mint holos-controller's OAuth token (Q57).
 	controller: {
 		username:  "svc-quay-controller"
-		email:     "\(username)@\(IngressGateway.domain)"
+		email:     "\(username)@\(Cluster.site.privateDomain)"
 		firstName: "Quay"
 		lastName:  "Controller"
 	}

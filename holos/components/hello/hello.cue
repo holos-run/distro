@@ -1,7 +1,7 @@
 package holos
 
 // hello is a small echo service in an ambient namespace, routed from the
-// ingress Gateway at hello.<privateDomain>, to show the path from the laptop
+// ingress Gateway at hello.<ingressDomain>, to show the path from the laptop
 // through the gateway to a mesh workload: the gateway terminates TLS with the
 // private CA's wildcard and reaches the pod over HBONE through its node's
 // ztunnel. Traefik's whoami answers with the request it received.

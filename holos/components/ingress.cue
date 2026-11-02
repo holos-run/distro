@@ -26,14 +26,18 @@ IngressGateway: {
 	parameters: "ingress-gateway"
 
 	// address is the gateway's LoadBalancer address, reserved in the cluster's
-	// block (clusters.cue), where the private zone's wildcard points.
+	// block (clusters.cue), where the private zone's *.<domain> record points.
 	address: Cluster.loadBalancer.gateway
 
-	// domain is the private zone. Every gateway hostname is
-	// <service>.<domain> (interview Q40), one label under the zone, so the
-	// listener's one wildcard certificate covers them all. Gateway
-	// hostnames carry no cluster name.
-	domain:   Cluster.site.privateDomain
+	// domain is the cluster's ingress domain, Cluster.ingressDomain:
+	// <cluster>.<privateDomain> unless the cluster pins it, as treasury does
+	// to the bare zone until its rebuild (clusters.cue). Every gateway
+	// hostname is <service>.<domain>, <service>.<cluster>.<privateDomain>
+	// (the Cluster_Qualified_Hostnames planning project), one label under
+	// the domain, so the listener's one wildcard certificate covers them
+	// all. Email addresses are not hostnames: they stay under the site's
+	// zone, Cluster.site.privateDomain.
+	domain:   Cluster.ingressDomain
 	wildcard: "*.\(domain)"
 
 	// hosts maps each service the gateway routes to its hostname.

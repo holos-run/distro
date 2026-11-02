@@ -1,7 +1,7 @@
 package holos
 
 // toolhive is the platform's one ToolHive MCP server (ToolHive,
-// components/toolhive.cue) at https://toolhive.<privateDomain>/mcp, behind
+// components/toolhive.cue) at https://toolhive.<ingressDomain>/mcp, behind
 // a Keycloak ID token and Cedar. The toolhive-operator component, before
 // it, holds its namespace.
 //
@@ -182,7 +182,7 @@ _Resources: #Resources & {
 	}
 	// The proxy runner may send to four places alone: the cluster's DNS;
 	// the MCP server; Keycloak, through the ingress Gateway, whose address
-	// keycloak.<privateDomain> resolves to and which Cilium translates to
+	// keycloak.<ingressDomain> resolves to and which Cilium translates to
 	// the gateway's pods before it applies the policy; and the API server,
 	// where it creates and watches the MCP server's StatefulSet and
 	// Services. The API server is a host-network static pod on the control

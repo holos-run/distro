@@ -11,8 +11,10 @@ import "net"
 #Site: {
 	name: string
 	// privateDomain is the site's private DNS zone. Every platform hostname
-	// is under it, and the LAN resolver points *.<privateDomain> at a
-	// cluster's ingress Gateway.
+	// is under it, in its cluster's ingressDomain (#Cluster), and the LAN
+	// resolver points each *.<ingressDomain> at that cluster's ingress
+	// Gateway. Email addresses are identities, not hostnames, and are
+	// <user>@<privateDomain> on every cluster of the site.
 	privateDomain: string
 	// resolvers serve privateDomain. CoreDNS forwards the zone to them.
 	resolvers: [...net.IPv4 & string] & [_, ...]
@@ -31,6 +33,14 @@ import "net"
 #Cluster: {
 	name: =~"^[a-z][a-z0-9-]{0,30}$"
 	site: #Site
+
+	// ingressDomain is the zone the cluster's hostnames are in: every
+	// service is <service>.<ingressDomain>, <service>.<cluster>.<privateDomain>
+	// unless a cluster pins it (the Cluster_Qualified_Hostnames planning
+	// project), so two clusters on one site never claim the same name once no
+	// cluster is pinned to the bare zone. The ingress Gateway's wildcard
+	// certificate is *.<ingressDomain> (components/ingress.cue).
+	ingressDomain: string | *"\(name).\(site.privateDomain)"
 
 	// kubernetesVersion is the version Talos runs, pinned in
 	// providers/talos/cluster.sh. Charts see it as
@@ -85,7 +95,7 @@ import "net"
 		// gateway is the ingress Gateway's address (components/ingress.cue),
 		// the block's first unless set. It is reserved, not left to LB IPAM:
 		// cilium-resources gives it a pool of its own that only the gateway's
-		// Service draws from, so the private zone's *.<privateDomain> record
+		// Service draws from, so the private zone's *.<ingressDomain> record
 		// stays right across a recreate of the Gateway or the cluster.
 		gateway: net.IPv4 & string | *start
 
@@ -144,6 +154,11 @@ sites: garage: {
 // four addresses of the ingress range.
 clusters: treasury: {
 	site: sites.garage
+	// ingressDomain is pinned to the bare zone, bank.internal, the names
+	// treasury was built with, until its rebuild: a later change,
+	// the-flip-held-for-the-rebuild, removes the pin, and treasury's names
+	// move to <service>.treasury.bank.internal with the rest of the rule.
+	ingressDomain: "bank.internal"
 	loadBalancer: {
 		start: "10.20.0.30"
 		stop:  "10.20.0.33"

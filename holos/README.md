@@ -693,17 +693,22 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   hand the gateway the address without any request, since it is the only
   address its Service can take; the request makes a mismatch show as a
   Pending Service with a reason rather than a different address.
-- **Hostnames.** Every service is `<service>.<privateDomain>` (interview
-  Q40), `hello.bank.internal`, `argocd.bank.internal`,
-  `keycloak.bank.internal`, `secrets.bank.internal`, named in
-  `IngressGateway.hosts`, one label under the zone and no cluster name.
+- **Hostnames.** Every service is `<service>.<ingressDomain>`, named in
+  `IngressGateway.hosts`, one label under the cluster's `ingressDomain`
+  (`clusters.cue`), which is `<cluster>.<privateDomain>` unless a cluster
+  pins it (the Cluster_Qualified_Hostnames planning project). Treasury pins
+  it to the bare zone until its rebuild, so its names are still
+  `hello.bank.internal`, `argocd.bank.internal`, `keycloak.bank.internal`,
+  `secrets.bank.internal`; at the rebuild they become
+  `hello.treasury.bank.internal` and so on. Email addresses stay
+  `<user>@<privateDomain>` on every cluster.
 - **Listeners.** `https` on 443 for `*.bank.internal`, terminating TLS with
   the `wildcard` `Certificate` from `ClusterIssuer` `private-ca` (Secret
   `istio-ingress/wildcard-tls`), open to routes from every namespace. `http`
   on 80 takes only the `https-redirect` route, which answers every request
   with a 301 to the same URL over HTTPS. A route attaches with
   `IngressGateway.parentRef`, which names the `https` listener.
-- **Ate listener.** `ate` on 443 for `*.ate.<privateDomain>`, protocol `TLS`
+- **Ate listener.** `ate` on 443 for `*.ate.<ingressDomain>`, protocol `TLS`
   in `Passthrough` mode, beside `https` on the same port: Envoy matches the
   SNI to the most specific name, so `echo.demo.ate.bank.internal` comes here
   and every other host under the zone to `https`. It accepts only
@@ -711,7 +716,7 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   to the Substrate shim's own Gateway (The Substrate shim, below). `ingress`
   never terminates those connections, so none of the shim's policy runs on
   it.
-- **K8s listener.** `k8s` on 443 for `k8s.<privateDomain>`, protocol `TLS`
+- **K8s listener.** `k8s` on 443 for `k8s.<ingressDomain>`, protocol `TLS`
   in `Passthrough` mode, an exact name, so it wins over `https`'s wildcard.
   It accepts only `TLSRoute`s from `holos-authenticator`, whose one route
   forwards the connection to holos-authenticator's own Gateway

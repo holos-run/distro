@@ -47,6 +47,10 @@ let NS = Q.namespace
 let Name = Q.name
 let Labels = {"app.kubernetes.io/name": Name}
 
+// Site is the cluster's site, whose private zone every organization's email
+// is under. A let, since Cluster inside the resources is CloudNativePG's kind.
+let Site = Cluster.site
+
 // DB is the CloudNativePG cluster's name and its owner's Secret's.
 // CloudNativePG names its read-write Service <name>-rw. The database and its
 // owner are both quay.
@@ -544,7 +548,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				metadata: namespace: NS
 				spec: {
 					name:           O.name
-					email:          "quay+\(O.name)@\(IngressGateway.domain)"
+					email:          "quay+\(O.name)@\(Site.privateDomain)"
 					deletionPolicy: "Orphan"
 					syncedTeams: [{
 						name:      Q.ownersTeam
