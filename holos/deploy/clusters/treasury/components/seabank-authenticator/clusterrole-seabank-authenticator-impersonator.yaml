@@ -10,6 +10,7 @@ rules:
   - oidc:alice
   - oidc:bob
   - oidc:carol
+  - oidc:dave
   resources:
   - users
   verbs:
@@ -20,6 +21,7 @@ rules:
   - /platform/owners
   - /projects/checkout/roles/owner
   - /projects/ledger/roles/owner
+  - /projects/lending/roles/owner
   - /projects/payments/roles/owner
   resources:
   - groups

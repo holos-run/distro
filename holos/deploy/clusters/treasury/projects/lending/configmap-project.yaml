@@ -1,0 +1,12 @@
+apiVersion: v1
+data:
+    name: lending
+    ownerAccess: admin
+    ownerGroup: /projects/lending/roles/owner
+    owners: dave@bank.internal
+kind: ConfigMap
+metadata:
+    labels:
+        holos.run/project: lending
+    name: project
+    namespace: lending
