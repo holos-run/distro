@@ -227,9 +227,12 @@ approve it, so its request never meets `deny-all` alone: approver-policy
 v0.29.0 denies a request reviewed before a policy that would approve it is
 in its cache, for good, and cert-manager would then back off for an hour.
 A policy that exists but has no `Ready` condition yet leaves the request
-unprocessed instead, until it does. `treasury` was bootstrapped with
-cert-manager's own approver on, so a bootstrap with approver-policy alone is
-untried (Approval, under The private CA, below).
+unprocessed instead, until it does. The `private-ca` `ClusterIssuer` syncs
+in the wave after the root's: it is not `Ready` until the root's Secret
+exists, and Argo CD holds a wave back while an earlier one is `Degraded`.
+`treasury`'s rebuild of 2026-11-02 was the first bootstrap with
+approver-policy alone, and the root was approved on its first request
+(Approval, under The private CA, below).
 
 Check that every webhook answers with a request each must refuse, as
 server-side dry runs; each error names the webhook that refused it:
@@ -370,10 +373,10 @@ it would be left unprocessed, with no condition, for good. A policy allows
 only what its `allowed` lists: a request carrying a DNS name, usage, common
 name or subject field the policy does not list is denied. No policy sets a
 duration constraint, since one denies a request that names no duration, as
-most of the platform's do not. `treasury` was bootstrapped while
-cert-manager's own approver was still on, with its webhooks failing open
-(ADR 0001's two steps, since retired): its root request,
-`private-ca-root-1`, has no user and was approved by cert-manager.
+most of the platform's do not. `treasury` was rebuilt on 2026-11-02 with
+approver-policy as the sole approver from its first sync: its root request,
+`private-ca-root-1`, names cert-manager's ServiceAccount as its user and
+was approved by policy `private-ca-root`.
 
 | Policy | Issuer | Namespace | Allows | Bound to |
 | --- | --- | --- | --- | --- |
@@ -2508,6 +2511,21 @@ curl https://foo.nope.ate.treasury.bank.internal/                             # 
 # Checking Substrate, above, step 2, under ServiceAccount default.
 docker pull quay.treasury.bank.internal/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
     # ingress still passes Quay's own bearer tokens
+```
+
+A 401 with `Jwt verification fails` for a token that `k8s.treasury.bank.internal`
+accepts means istiod holds no signing key for the realm. istiod fetches the
+JWKS when it starts, and if Keycloak does not answer then, it keeps a key
+that matches nothing until its next refresh, 20 minutes later by default
+(`PILOT_JWT_PUB_KEY_REFRESH_INTERVAL`). Its log says `JWKS fetch failed for
+issuer`. A bootstrap meets this when `talosvm restart` moves istiod while
+Keycloak is down. On treasury's rebuild of 2026-11-02 the shim answered
+again 20 minutes after the failed fetch, with no restart. To skip the wait,
+restart istiod once Keycloak answers:
+
+```sh
+kubectl -n istio-system logs deploy/istiod | grep 'JWKS fetch failed' | tail -1
+kubectl -n istio-system rollout restart deploy/istiod
 ```
 
 ### kagent

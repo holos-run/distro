@@ -103,8 +103,8 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// edit or a manual renew, would make a new root that every certificate
 		// already issued stops verifying against.
 		//
-		// A wave after the rest of the component, so every policy that
-		// approves it exists before its request does. approver-policy is the
+		// A wave after the policies, so every policy that approves it
+		// exists before its request does. approver-policy is the
 		// sole approver from a cluster's first sync, and it denies a request
 		// reviewed before private-ca-root is in its cache by deny-all, for
 		// good; cert-manager then backs off for an hour and the bootstrap
@@ -132,7 +132,15 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		ClusterIssuer: (PrivateCA.issuer): spec: ca: secretName: PrivateCA.root
+		// A wave after the root's: the issuer reports Ready=False, which
+		// Argo CD reads as Degraded, until the root's Secret exists. Before
+		// the root's wave it held that wave back, so on a new cluster the
+		// root was never issued; after it, the root's Certificate is Ready,
+		// so its Secret exists, and the issuer is Ready when it is applied.
+		ClusterIssuer: (PrivateCA.issuer): {
+			metadata: annotations: "argocd.argoproj.io/sync-wave": "2"
+			spec: ca: secretName: PrivateCA.root
+		}
 
 		// The root's request, in cert-manager's namespace, from the
 		// bootstrap Issuer: the root's common name and subject, and a CA.

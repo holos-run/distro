@@ -435,3 +435,17 @@ Where this record or its amendments describe the path, the exceptions or the
 "the Gateway webhook path with its eleven exceptions until
 retire-the-gateway-webhook-path removes it", under "What stands" in the
 previous amendment, is done.
+
+## Amendment, 2026-11-02: the bootstrap is tried
+
+treasury was destroyed and rebuilt on 2026-11-02, the first cluster
+bootstrapped with approver-policy as its only approver and every webhook
+failing closed from the first sync. The previous amendment's "That bootstrap
+is untried" no longer holds. The rebuild found one gap: the `private-ca`
+`ClusterIssuer`, in wave 0, reports `Ready=False` until the root's Secret
+exists, Argo CD reads that as `Degraded`, and so the root's wave was never
+applied. The `ClusterIssuer` now syncs in the wave after the root's. With
+the root applied, approver-policy approved `private-ca-root-1` by policy
+`private-ca-root` on its first request, and all 22 webhooks answered `Fail`
+and refused the README's bad requests. `contract-check` still reports 0
+violations and 0 exceptions.
