@@ -1,10 +1,11 @@
 package holos
 
-// secrets-manager is the Holos Secrets Manager (interview Q18), at
+// secrets-manager is the Bank of Pinky Secrets Manager (interview Q18,
+// SecretsManager.appName), at
 // https://secrets.treasury.bank.internal: a Go server with a web UI that
 // manages Kubernetes Secrets directly, with Keycloak login and project
 // grants, so there is no external store. A platform secret is made here, in
-// the management namespace holos-prj-platform (Q54), which
+// the management namespace bank-of-pinky-prj-platform (Q54), which
 // management-namespaces renders, early in the registry, and copied into each
 // consumer's namespace by an ExternalSecret through that consumer's
 // per-namespace store (#ScopedSecretStore).
@@ -14,15 +15,15 @@ package holos
 // distroless image, serving plain HTTP on 8080 behind the ingress gateway,
 // which terminates TLS as it does for Keycloak, in the mesh namespace
 // secrets-manager. It keeps no state of its own beyond Namespaces and
-// Secrets: a project is a Namespace named holos-prj-<project> with its
+// Secrets: a project is a Namespace named bank-of-pinky-prj-<project> with its
 // labels, and every grant is a JSON annotation on a Namespace or a Secret.
 //
-// Login is OIDC against the realm holos, through the public client
-// secrets-manager, which a holos-controller Client here creates. The SPA
+// Login is OIDC against the realm default, through the public client
+// secrets-manager, which a platform controller Client here creates. The SPA
 // runs the authorization code flow with PKCE in the browser and sends a
 // token as its bearer to the server's API, which verifies it as an ID token:
 // iss the realm's issuer, aud the client ID, and the person's groups from
-// the claim groups. Holos services authenticate a person with the ID token,
+// the claim groups. The platform's services authenticate a person with the ID token,
 // never the access token (Q53, ADR 0002).
 //
 // Platform owners alone create organizations (Q55), and own the platform
@@ -33,7 +34,7 @@ package holos
 // secret to themselves, and so read it.
 //
 // Every kind's CRD comes from an earlier component: Client and the
-// security.holos.run ReferenceGrant from holos-controller, HTTPRoute from
+// security.holos.run ReferenceGrant from the platform controller, HTTPRoute from
 // gateway-api. The Instance the Client names is keycloak-realm's.
 
 let SM = SecretsManager
@@ -54,7 +55,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// The server acts as its own ServiceAccount and impersonates no
 		// one. It reads and writes Secrets only in project namespaces,
-		// holos-prj-<project>, and in this distro those come from git, as
+		// bank-of-pinky-prj-<project>, and in this distro those come from git, as
 		// organizations come only from platform owners (Q55). So its access
 		// is two ClusterRoles:
 		//
@@ -63,7 +64,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		//     Namespaces the server may make at runtime.
 		//   - SM.secretsRole, secrets, bound by a RoleBinding in each
 		//     project namespace git renders, beside the namespace
-		//     (components/management-namespaces), so holos-prj-platform
+		//     (components/management-namespaces), so bank-of-pinky-prj-platform
 		//     alone for now.
 		//
 		// The cost: a project made in the UI has a namespace but no access
@@ -75,8 +76,9 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// namespace writes are still cluster wide: the ServiceAccount may
 		// update or delete any Namespace in the cluster, and deleting one
 		// deletes everything in it, Keycloak's included. A
-		// ValidatingAdmissionPolicy holding its namespace writes to holos-
-		// namespaces with the server's labels is open hardening.
+		// ValidatingAdmissionPolicy holding its namespace writes to
+		// SM.namespacePrefix namespaces with the server's labels is open
+		// hardening.
 		ServiceAccount: (Name): metadata: namespace: NS
 		ClusterRole: (Name): rules: [{
 			apiGroups: [""]
@@ -202,19 +204,19 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			spec: {
 				clientId:    SM.clientId
 				type:        "public"
-				description: "Holos Secrets Manager"
-				instanceRef: HolosController.instance
+				description: SM.appName
+				instanceRef: PlatformController.instance
 				redirectUris: ["\(SM.url)/pkce/verify"]
 				webOrigins: [SM.url]
 			}
 		}
 
 		// The Client names the Instance in keycloak, another namespace,
-		// which holos-controller allows only with a ReferenceGrant there,
+		// which the platform controller allows only with a ReferenceGrant there,
 		// from Clients in this namespace to that one Instance.
 		ReferenceGrant: "\(Name)-clients": {
 			apiVersion: "security.holos.run/v1alpha1"
-			metadata: namespace: HolosController.instance.namespace
+			metadata: namespace: PlatformController.instance.namespace
 			spec: {
 				from: [{
 					group:     "keycloak.holos.run"
@@ -224,7 +226,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				to: [{
 					group: "keycloak.holos.run"
 					kind:  "Instance"
-					name:  HolosController.instance.name
+					name:  PlatformController.instance.name
 				}]
 			}
 		}
@@ -234,6 +236,15 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 // Args are the server's flags (cli/cli.go at the release):
 //
 //   - --plain-http on :8080, since TLS ends at the gateway.
+//   - --app-name, the product's name (SecretsManager.appName, Brand), the
+//     page title and the SPA's sidebar, in place of the release's default,
+//     Holos Secrets Manager.
+//   - --namespace-prefix, the distribution's <slug>- in place of the
+//     release's default, holos-, so the organization and project namespaces
+//     are SecretsManager.platform's. The --metadata-domain default,
+//     holos.run, the domain of the server's label and annotation keys, is
+//     kept: it is the software's, as the holos.run/* keys
+//     management-namespaces renders are.
 //   - --origin, the public URL, from which the server derives the redirect
 //     and post-logout URIs it hands the SPA.
 //   - --issuer, the realm's. It must always be set: an empty issuer turns
@@ -250,6 +261,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 let Args = [
 	"--plain-http",
 	"--listen=:\(SM.port)",
+	"--app-name=\(SM.appName)",
 	"--origin=\(SM.url)",
 	"--issuer=\(Keycloak.issuer)",
 	"--client-id=\(SM.clientId)",
@@ -257,4 +269,5 @@ let Args = [
 	"--roles-claim=\(Keycloak.groupsClaim)",
 	"--disable-org-creation",
 	"--org-creator-roles=\(SM.owners)",
+	"--namespace-prefix=\(SM.namespacePrefix)",
 ]

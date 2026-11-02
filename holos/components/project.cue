@@ -84,8 +84,9 @@ Projects: {
 	// that namespace. CUE drops a map key whose value is bottom rather than
 	// failing, so nothing short of an explicit check refuses the name, and
 	// #Unreserved is that check, which the project component applies to its
-	// name. Beside these, #Unreserved refuses the prefixes kube- and holos-,
-	// which Kubernetes and the Secrets Manager's organizations and projects
+	// name. Beside these, #Unreserved refuses the prefixes kube- and
+	// <slug>- (Brand.slug), which Kubernetes, the platform's controllers and
+	// the Secrets Manager's organizations and projects
 	// (SecretsManager.platform) use, and project-, which would let a
 	// project's Application collide with another project's component.
 	reserved: {
@@ -102,8 +103,8 @@ Projects: {
 			Istio.namespace,
 			IngressGateway.namespace,
 			Keycloak.namespace,
-			HolosController.namespace,
-			HolosAuthenticator.namespace,
+			PlatformController.namespace,
+			PlatformAuthenticator.namespace,
 			SecretsManager.namespace,
 			Quay.namespace,
 			Substrate.namespace,
@@ -134,5 +135,5 @@ Projects: {
 		for A in AteGateway.atespaces {(A.name): true}
 	}
 
-	#Unreserved: !~"^(kube|holos|project)-" & and([for NAME, _ in reserved {!=NAME}])
+	#Unreserved: !~"^(kube|\(Brand.slug)|project)-" & and([for NAME, _ in reserved {!=NAME}])
 }

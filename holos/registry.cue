@@ -97,10 +97,11 @@ registry: [
 	// private-ca.
 	{name: "external-secrets"},
 	// management-namespaces is the Secrets Manager's management organization
-	// and project, holos-org-platform and holos-prj-platform, and the
+	// and project, bank-of-pinky-org-platform and bank-of-pinky-prj-platform
+	// (<slug>-org-platform and <slug>-prj-platform, Brand), and the
 	// RoleBinding that grants the server's secrets verbs in the project. A
 	// consumer of a platform secret renders its per-namespace store's Role
-	// and RoleBinding into holos-prj-platform, so every consumer comes after
+	// and RoleBinding into the project, so every consumer comes after
 	// this component, which needs nothing before it. It comes straight after
 	// external-secrets, whose CRDs every store needs, so any component after
 	// that can write one; it is not part of external-secrets, a chart whose
@@ -135,29 +136,38 @@ registry: [
 	// CRDs of cloudnative-pg, external-secrets and keycloak-operator, a
 	// ceph-rbd volume and the Gateway, so it comes after all of them.
 	{name: "keycloak"},
-	// holos-controller reconciles the realm's groups, memberships, users and
+	// <slug>-controller is the platform controller, the software
+	// holos-controller, from the holos-controller component
+	// (PlatformController, components/keycloak.cue, which builds the same
+	// name). It reconciles the realm's groups, memberships, users and
 	// clients from keycloak.holos.run resources: its CRDs, its RBAC and its
 	// manager. It needs only the mesh; its credential and resources are
 	// keycloak-realm's, after it, so its CRDs are established first.
-	{name: "holos-controller"},
-	// keycloak-realm is the realm holos: the KeycloakRealmImport and its
-	// generated Secrets, holos-controller's credential, the Instance, the
+	{
+		name:      "\(Brand.slug)-controller"
+		component: "holos-controller"
+	},
+	// keycloak-realm is the realm default: the KeycloakRealmImport and its
+	// generated Secrets, the platform controller's credential, the Instance, the
 	// platform's groups and memberships, and the PostSync Job that writes
 	// the private root into the Instance's caBundle (interview Q52). Argo CD
 	// ignores the field it writes, which no render carries. The names are
-	// HolosController.instance's (components/keycloak.cue), which the
+	// PlatformController.instance's (components/keycloak.cue), which the
 	// platform, rendering from here, does not load.
 	{
 		name: "keycloak-realm"
 		ignoreDifferences: [{
 			group:     "keycloak.holos.run"
 			kind:      "Instance"
-			name:      "holos"
+			name:      "default"
 			namespace: "keycloak"
 			jsonPointers: ["/spec/caBundle"]
 		}]
 	},
-	// holos-authenticator is the Kubernetes API at k8s.<domain> behind a
+	// <slug>-authenticator is the platform authenticator, the software
+	// holos-authenticator, from the holos-authenticator component
+	// (PlatformAuthenticator, components/holos-authenticator.cue, which
+	// builds the same name): the Kubernetes API at k8s.<domain> behind a
 	// Keycloak login: its Backend CRD, the manager and its RBAC, the
 	// impersonator and its grants, the Backend, and its own Gateway behind
 	// the ingress Gateway's k8s listener, with the ext_authz policy, the
@@ -169,13 +179,15 @@ registry: [
 	// is a kind it installs, so the dry run skips it until the CRD is
 	// established.
 	{
-		name: "holos-authenticator"
+		name:      "\(Brand.slug)-authenticator"
+		component: "holos-authenticator"
 		syncOptions: ["SkipDryRunOnMissingResource=true"]
 	},
-	// secrets-manager is the Holos Secrets Manager: its Deployment, RBAC and
-	// route, and the holos-controller Client it logs in through, with the
-	// ReferenceGrant that lets the Client name the Instance in keycloak. It
-	// needs the Client CRD from holos-controller and the Instance from
+	// secrets-manager is the Bank of Pinky Secrets Manager (Brand.name): its
+	// Deployment, RBAC and route, and the platform controller Client it logs
+	// in through, with the ReferenceGrant that lets the Client name the
+	// Instance in keycloak. It needs the Client CRD from the platform
+	// controller and the Instance from
 	// keycloak-realm, so it comes after both. Its HTTPRoute is in its own
 	// namespace, on the HTTPS listener, which takes routes from every
 	// namespace, so it need not come before ingress-gateway. A consumer of a

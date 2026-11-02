@@ -2,17 +2,21 @@ package holos
 
 import "list"
 
-// HolosAuthenticator names holos-authenticator, which the holos-authenticator
-// component installs in front of the Kubernetes API server at
+// PlatformAuthenticator names the platform authenticator, the software
+// holos-authenticator, which the holos-authenticator component installs, as
+// the Argo CD Application <slug>-authenticator, in front of the Kubernetes
+// API server at
 // https://k8s.<domain> (overview §4): an Envoy external authorization server
 // that verifies a person's Keycloak ID token and answers with the headers that
 // make the request an impersonation of them, so Kubernetes RBAC does the rest.
 // It runs behind a Gateway of its own (gateway, below), reached through the
 // ingress Gateway's k8s listener, as the Substrate shim is (interview Q60).
 // istiod reads provider for its mesh configuration, and ingress-gateway reads
-// host and namespace for the listener.
-HolosAuthenticator: {
-	let Self = HolosAuthenticator
+// host and namespace for the listener. The identifier is brand-neutral, as a
+// CUE identifier cannot follow Brand; the names it holds are built from
+// Brand.slug.
+PlatformAuthenticator: {
+	let Self = PlatformAuthenticator
 
 	// version is the aavis-ops release, and image its image, the tag kept
 	// for the reader and the index digest the tag pointed to. The tag
@@ -27,11 +31,14 @@ HolosAuthenticator: {
 	// mesh: ztunnel enforces who may call the manager's gRPC port. The
 	// gateway's pods opt out of ambient by themselves, as every gateway
 	// istiod deploys does (istio.io/dataplane-mode: none).
-	namespace: "holos-authenticator"
-	// name is the manager's Deployment, ServiceAccount and Service, and the
-	// extension provider's name in istiod's mesh configuration, which the
-	// CUSTOM AuthorizationPolicy names.
-	name: "holos-authenticator"
+	namespace: name
+	// name is the distribution's name for it, <slug>-authenticator: its
+	// namespace, its Argo CD Application (registry.cue, which builds the
+	// same name, since the platform does not load this file), the manager's
+	// Deployment, ServiceAccount and Service, and the extension provider's
+	// name in istiod's mesh configuration, which the CUSTOM
+	// AuthorizationPolicy names.
+	name: "\(Brand.slug)-authenticator"
 	// grpcPort is the manager's plaintext ext_authz gRPC port, its
 	// --grpc-bind-address default.
 	grpcPort: 9000

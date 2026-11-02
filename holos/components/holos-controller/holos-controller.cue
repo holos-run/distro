@@ -1,8 +1,11 @@
 package holos
 
-import "encoding/yaml"
+import (
+	"encoding/json"
+	"encoding/yaml"
+)
 
-// holos-controller reconciles the realm's groups, group memberships, users and
+// holos-controller, the platform controller, reconciles the realm's groups, group memberships, users and
 // clients from keycloak.holos.run resources, against an Instance naming a
 // realm that already exists (the keycloak-realm component's import), and
 // Quay's organizations and repositories from quay.holos.run resources (the
@@ -42,16 +45,42 @@ import "encoding/yaml"
 // their CRDs are established before Argo CD applies them.
 //
 // The manager reads its Keycloak credential from Secret
-// holos-controller-keycloak-creds in its own namespace, by POD_NAMESPACE,
-// which keycloak-realm writes; until it exists, each resource reports
-// CredentialsNotFound and is retried. Its Quay credential is
-// holos-controller-quay-creds, there too, which the quay component copies
-// from the platform secret cmd/quay-bootstrap writes; until then each
-// Organization and Repository is retried the same way. HolosController
+// bank-of-pinky-controller-keycloak-creds in its own namespace, by
+// POD_NAMESPACE, which keycloak-realm writes; until it exists, each resource
+// reports CredentialsNotFound and is retried. Its Quay credential is
+// bank-of-pinky-controller-quay-creds, there too, which the quay component
+// copies from the platform secret cmd/quay-bootstrap writes; until then each
+// Organization and Repository is retried the same way. PlatformController
 // (components/keycloak.cue) holds the version, the image and the names.
+//
+// The names are the distribution's, not the release's (Brand): the vendored
+// files name the namespace holos-controller and their objects
+// holos-controller-<suffix>, and the files stay as released, so the
+// namespace below and the Rename patches give the namespace and every
+// object PlatformController.name in their place, <slug>-controller and
+// <slug>-controller-<suffix>. Kustomize follows a name a patch changes into
+// every reference to it, the Deployment's serviceAccountName and the
+// bindings' roleRef and subjects among them. The manager finds its
+// namespace by POD_NAMESPACE, and hardcodes none of these names.
 
-let Vendor = "vendor/\(HolosController.version)"
-let NS = HolosController.namespace
+let Vendor = "vendor/\(PlatformController.version)"
+let NS = PlatformController.namespace
+let Name = PlatformController.name
+
+// Upstream is the release's name for the manager, in the vendored files.
+let Upstream = "holos-controller"
+
+// Renamed are the vendored objects by kind, each named Upstream and a suffix,
+// which the Rename patches give Name and the same suffix.
+let Renamed = {
+	ServiceAccount: ["-manager"]
+	Deployment: ["-manager"]
+	Service: ["-manager-metrics-service"]
+	Role: ["-leader-election-role"]
+	RoleBinding: ["-leader-election-rolebinding"]
+	ClusterRole: ["-manager-role", "-metrics-reader"]
+	ClusterRoleBinding: ["-manager-rolebinding"]
+}
 
 // CAMount is where the manager mounts the private root (patches, below).
 let CAMount = "/etc/ssl/private-ca"
@@ -127,18 +156,18 @@ holos: spec: artifacts: [(#FileArtifact & {
 		// trust-manager comes earlier in the registry. The Instance's
 		// caBundle, which keycloak-realm's Job writes, is left as it is.
 		{
-			target: {kind: "Deployment", name: "holos-controller-manager"}
+			target: {kind: "Deployment", name: "\(Upstream)-manager"}
 			patch: yaml.Marshal({
 				apiVersion: "apps/v1"
 				kind:       "Deployment"
 				metadata: {
-					name:      "holos-controller-manager"
+					name:      "\(Upstream)-manager"
 					namespace: NS
 				}
 				spec: template: spec: {
 					containers: [{
 						name:            "manager"
-						image:           HolosController.image
+						image:           PlatformController.image
 						imagePullPolicy: "IfNotPresent"
 						env: [{name: "SSL_CERT_DIR", value: "/etc/ssl/certs:\(CAMount)"}]
 						volumeMounts: [{name: "private-ca", mountPath: CAMount, readOnly: true}]
@@ -146,6 +175,20 @@ holos: spec: artifacts: [(#FileArtifact & {
 					volumes: [{name: "private-ca", configMap: name: PrivateCA.bundle}]
 				}
 			})
+		},
+		// Rename: each vendored object to the distribution's name, after the
+		// patch above, which names the Deployment as released.
+		for KIND, SUFFIXES in Renamed for SUFFIX in SUFFIXES {
+			target: {kind: KIND, name: "\(Upstream)\(SUFFIX)"}
+			patch: json.Marshal([{op: "replace", path: "/metadata/name", value: "\(Name)\(SUFFIX)"}])
+		},
+		// The release's app.kubernetes.io/name label, on every object that
+		// carries it, to the distribution's name. No selector reads it: the
+		// Deployment and the Service select control-plane:
+		// controller-manager.
+		{
+			target: labelSelector: "app.kubernetes.io/name=\(Upstream)"
+			patch: json.Marshal([{op: "replace", path: "/metadata/labels/app.kubernetes.io~1name", value: Name}])
 		},
 	]
 }).artifact]

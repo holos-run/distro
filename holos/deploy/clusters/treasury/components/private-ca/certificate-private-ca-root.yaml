@@ -6,7 +6,7 @@ metadata:
     name: private-ca-root
     namespace: cert-manager
 spec:
-    commonName: Holos treasury root CA
+    commonName: Bank of Pinky treasury root CA
     duration: 87600h
     isCA: true
     issuerRef:
@@ -22,4 +22,4 @@ spec:
         organizationalUnits:
             - treasury.bank.internal
         organizations:
-            - Holos
+            - Bank of Pinky

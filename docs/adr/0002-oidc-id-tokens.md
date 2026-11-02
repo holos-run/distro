@@ -1,11 +1,14 @@
 # 0002. OIDC ID tokens, never access tokens
 
-Status: accepted, 2026-10-27; amended 2026-10-29 (holos-authenticator's audience)
+Status: accepted, 2026-10-27; amended 2026-10-29 (holos-authenticator's audience);
+amended 2026-11-02 (the realm is `default`)
 
 ## Context
 
-Every person on the platform logs in through Keycloak, the realm `holos` at
-`https://keycloak.treasury.bank.internal/realms/holos`, and then presents a
+Every person on the platform logs in through Keycloak, the realm `default`
+at `https://keycloak.treasury.bank.internal/realms/default` (Amendment,
+2026-11-02, below; the realm was `holos` when this was decided), and then
+presents a
 token to the service they use: Argo CD, the Kubernetes API through
 `kubectl`, the Secrets Manager, and later Substrate's shim,
 holos-authenticator and kagent.
@@ -38,8 +41,8 @@ The two tokens are different kinds of thing:
 
 ## Decision
 
-Holos services authenticate a person with the OIDC ID token, never the
-OAuth access token. A service verifies the ID token's signature against the
+The distribution's services authenticate a person with the OIDC ID token,
+never the OAuth access token. A service verifies the ID token's signature against the
 issuer's JWKS, its `iss`, its `exp`, and that its `aud` holds the service's
 own client ID, and takes the person's identity and groups from its claims.
 
@@ -104,3 +107,20 @@ refused by both with 401. The authenticator's verifier is go-oidc's ID
 token verifier, which requires `aud` to hold the client ID; Keycloak's
 access tokens carry no `aud` in this realm, so an access token is refused
 too.
+
+## Amendment, 2026-11-02: the realm is `default`
+
+The realm this record names, `holos`, is renamed `default`, and the issuer
+with it: `https://keycloak.treasury.bank.internal/realms/default` on
+treasury (Planboard item plumb-the-bank-of-pinky-name). The realm is not
+part of the distribution's brand (`Brand`, `holos/brand.cue`): every
+distribution built on this repository names its realm `default`, and the
+issuer's host, under the distribution's own domain, tells them apart, so a
+token's `iss` differs from one vendor's distribution to another's by domain
+alone. The Decision's "the distribution's services" was "Holos services";
+the quotation above it still reads Holos, as it was said.
+
+Nothing else here changes: every service still verifies the ID token's
+`iss`, now the `default` realm's, and the `aud` rules above and in the
+2026-10-29 amendment stand. The rename lands with a rebuild of treasury, so
+no token from the old issuer outlives it.

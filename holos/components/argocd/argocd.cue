@@ -84,7 +84,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			cm: {
 				"admin.enabled": true
 
-				// Keycloak's realm holos, through the public argocd client
+				// Keycloak's realm default, through the public argocd client
 				// with PKCE, S256 (interview Q51): the UI and the CLI keep
 				// no secret, so there is none here. Its groups scope is a
 				// realm default, but a client may still ask for it by name;

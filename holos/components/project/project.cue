@@ -26,15 +26,15 @@ import "strings"
 // No Keycloak client: aavis-ops makes one per project only so that Quay
 // teams can sync from its client roles, and Quay here syncs teams from the
 // full group paths in the groups claim (interview Q65). No Secrets Manager
-// project, holos-prj-<project>, yet (Q64). No ResourceQuota, and no RBAC
+// project, bank-of-pinky-prj-<project>, yet (Q64). No ResourceQuota, and no RBAC
 // for the editor and viewer groups, which nothing binds.
 //
 // Every kind's CRD comes from an earlier component: Group, User,
 // GroupMembership, Organization and the security.holos.run ReferenceGrant
 // from holos-controller, AppProject and Application from argocd. The
 // Instance the Keycloak resources name is keycloak-realm's, and the Quay
-// credential the Organization is reconciled with is quay's copy in
-// holos-controller's namespace.
+// credential the Organization is reconciled with is quay's copy in the
+// platform controller's namespace, which the Organization names.
 
 // ProjectName is the claim this instance renders, the project parameter
 // its registry entry passes (#ProjectRegistrations). Projects.#Unreserved
@@ -114,7 +114,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 					}
 					spec: {
 						path:        G.path
-						instanceRef: HolosController.instance
+						instanceRef: PlatformController.instance
 					}
 				}
 			}
@@ -137,7 +137,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 					spec: {
 						email:          O.email
 						username:       O.username
-						instanceRef:    HolosController.instance
+						instanceRef:    PlatformController.instance
 						adopt:          true
 						deletionPolicy: "Orphan"
 					}
@@ -153,7 +153,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 					labels:    Labels
 				}
 				spec: {
-					instanceRef: HolosController.instance
+					instanceRef: PlatformController.instance
 					groupRef: name: Groups.owner.resource
 					members: [for O in Owners {email: O.email}] & [_, ...]
 				}
@@ -174,7 +174,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 			ReferenceGrant: "project-\(NAME)": {
 				apiVersion: "security.holos.run/v1alpha1"
 				metadata: {
-					namespace: HolosController.instance.namespace
+					namespace: PlatformController.instance.namespace
 					labels:    Labels
 					annotations: "argocd.argoproj.io/sync-wave": "-1"
 				}
@@ -187,7 +187,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 					to: [{
 						group: "keycloak.holos.run"
 						kind:  "Instance"
-						name:  HolosController.instance.name
+						name:  PlatformController.instance.name
 					}]
 				}
 			}
@@ -197,7 +197,8 @@ if ProjectName != "" {holos: spec: artifacts: [
 			// organization has (Quay.ownersTeam). In the project's namespace:
 			// holos-controller reads its Quay credential from its own namespace
 			// whatever namespace names it, so the credential is not copied
-			// here. Orphan, as demo is, so removing the claim leaves the
+			// here; credentialsSecretRef names the copy there, as the CRD's
+			// default is the upstream name (Quay.credentials). Orphan, as demo is, so removing the claim leaves the
 			// organization and its images in Quay. Team membership follows the
 			// groups claim at each login, so a person added to a group joins
 			// the team when they next log in to Quay.
@@ -210,6 +211,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 					name:           NAME
 					email:          "quay+\(NAME)@\(Cluster.site.privateDomain)"
 					deletionPolicy: "Orphan"
+					credentialsSecretRef: name: Quay.credentials.controller
 					syncedTeams: [
 						{
 							name:      Quay.ownersTeam

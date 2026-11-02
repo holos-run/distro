@@ -11,4 +11,4 @@ spec:
   to:
   - group: keycloak.holos.run
     kind: Instance
-    name: holos
+    name: default

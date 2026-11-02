@@ -13,7 +13,7 @@ import "encoding/yaml"
 // client.<Cluster.ceph.user>, whose key is in Secret
 // <CephCSINamespace>/<Cluster.ceph.secret>. The repository is public, so the
 // key is never rendered. It is a platform secret of the same name in the
-// management namespace, holos-prj-platform, written there once per cluster
+// management namespace, bank-of-pinky-prj-platform, written there once per cluster
 // at bootstrap from ceph auth get-key (README.md, "Storage"), and an
 // ExternalSecret copies it into the driver's namespace through a
 // per-namespace store (#ScopedSecretStore) that may read that one Secret.
@@ -123,7 +123,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	resources: Namespace: (CephCSINamespace): metadata: labels: "pod-security.kubernetes.io/enforce": "privileged"
 
 	// The key, copied from the management namespace. The store's Role and
-	// RoleBinding are in holos-prj-platform, which management-namespaces,
+	// RoleBinding are in bank-of-pinky-prj-platform, which management-namespaces,
 	// earlier in the registry, makes; external-secrets, earlier still,
 	// brings the CRDs. The keys, userID and userKey, come across as they
 	// are, the names the StorageClass's secret parameters read.

@@ -1,10 +1,11 @@
 package holos
 
-// SecretsManager names the Holos Secrets Manager (interview Q18): the release
-// the secrets-manager component runs, its namespace and URL, its Keycloak
-// client, and the management namespaces it edits, holos-org-platform and
-// holos-prj-platform, the second of which every per-namespace store
-// (#ScopedSecretStore) reads from by default.
+// SecretsManager names the Bank of Pinky Secrets Manager (interview Q18),
+// titled from Brand.name: the release the secrets-manager component runs,
+// its namespace and URL, its Keycloak client, and the management namespaces
+// it edits, bank-of-pinky-org-platform and bank-of-pinky-prj-platform, the
+// second of which every per-namespace store (#ScopedSecretStore) reads from
+// by default.
 SecretsManager: {
 	// version is the holos-run/secrets-manager release, and image its
 	// distroless nonroot image, the tag kept for the reader and the index
@@ -30,8 +31,13 @@ SecretsManager: {
 	// OIDC redirect and of the SPA's post-logout redirect.
 	url: "https://\(IngressGateway.hosts.secrets)"
 
+	// appName is the product's name, its --app-name, which the SPA shows
+	// as the page title and in its sidebar, and the description of its
+	// Keycloak client. The release's default is Holos Secrets Manager.
+	appName: "\(Brand.name) Secrets Manager"
+
 	// clientId is the public client the SPA logs in through, which a
-	// holos-controller Client in the server's namespace creates in the
+	// platform controller Client in the server's namespace creates in the
 	// realm, unlike Keycloak.clients, which the realm import creates. It is
 	// also the aud the server requires of every ID token.
 	clientId: "secrets-manager"
@@ -43,15 +49,23 @@ SecretsManager: {
 
 	// secretsRole is the ClusterRole holding the server's secrets verbs,
 	// which a RoleBinding in each project namespace git renders grants it
-	// there: holos-prj-platform's alone, in management-namespaces. A
+	// there: the management project's alone, in management-namespaces. A
 	// ProjectClaim renders no project here and so no RoleBinding (interview
 	// Q64); that is the tech debt item
 	// secrets-manager-project-for-each-projectclaim.
 	secretsRole: "\(name)-secrets"
 
+	// namespacePrefix is the server's --namespace-prefix, the distribution's
+	// <slug>- in place of the release's default, holos-, in front of its
+	// default org- and prj- prefixes, so every organization and project
+	// namespace it manages, or makes in the UI, is <slug>-org-<name> or
+	// <slug>-prj-<name>.
+	namespacePrefix: "\(Brand.slug)-"
+
 	// platform is the management organization and project (Q54), under the
-	// server's default prefixes, holos- with org- or prj-: holos-org-platform
-	// and holos-prj-platform. The SPA lists projects only within an
+	// server's prefixes, namespacePrefix with org- or prj-:
+	// bank-of-pinky-org-platform and bank-of-pinky-prj-platform. The SPA
+	// lists projects only within an
 	// organization, so the project carries the organization's label and the
 	// organization is a namespace of its own. The server manages only
 	// namespaces carrying its labels, so git renders both with them, with a
@@ -60,8 +74,8 @@ SecretsManager: {
 	// out by per-namespace stores.
 	platform: {
 		organization: "platform"
-		orgNamespace: "holos-org-\(organization)"
+		orgNamespace: "\(namespacePrefix)org-\(organization)"
 		project:      "platform"
-		namespace:    "holos-prj-\(project)"
+		namespace:    "\(namespacePrefix)prj-\(project)"
 	}
 }

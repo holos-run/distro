@@ -7,6 +7,6 @@ metadata:
     namespace: ledger
 spec:
     instanceRef:
-        name: holos
+        name: default
         namespace: keycloak
     path: projects/ledger/roles/viewer

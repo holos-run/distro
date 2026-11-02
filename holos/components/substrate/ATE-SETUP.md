@@ -30,7 +30,7 @@ The stages, in `components/substrate/substrate.cue`:
 
 ## `DeployAteSystem` (`steps/deploy.go:58`)
 
-| # | Step | Source | What it does | Holos |
+| # | Step | Source | What it does | Distro |
 |---|---|---|---|---|
 | 1 | `RequireCanonicalNamespace` | `steps/deploy.go:63`, `steps/env.go:104` | Refuses a namespace other than `ate-system` | Not needed: the render is in `ate-system` (`Substrate.namespace`) |
 | 2 | `Cfg.CredentialProviders` | `steps/deploy.go:68`, `cmd/ate-setup/internal/config/config.go:677`, `:613` | Parses `--credential-provider`, one JSON object or an array of them, each a provider by name; `{"name":"k8s.io"}` is the bundled provider at `k8s-credential-provider.ate-system.svc:50051`. `HasKubernetesProvider` decides whether the bundled provider is deployed or removed (row 20) | CUE: one provider, `CredentialProvider`, `k8s.io` at that address (rows 20 and 21) |
@@ -78,7 +78,7 @@ The stages, in `components/substrate/substrate.cue`:
 
 ## Beyond `deploy ate-system`
 
-| Step | Source | Holos |
+| Step | Source | Distro |
 |---|---|---|
 | atelet without the GKE image credential provider | `manifests/ate-install/kind/atelet/kustomization.yaml` | Patch: the two `--image-credential-provider-*` args (the first two, tested), their two mounts and their two host-path volumes removed. The `cloud.google.com/compute-class` toleration stays: it tolerates a taint no node has |
 | atelet trusting the private root | None upstream: a GKE install pulls from public registries | Patch: the `private-ca` ConfigMap mounted at `/etc/ssl/private-ca` and `SSL_CERT_DIR=/etc/ssl/certs:/etc/ssl/private-ca` on the atelet container, so it pulls actor images from Quay |

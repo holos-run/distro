@@ -64,7 +64,7 @@ spec:
                         - key: kubernetes.io/metadata.name
                           operator: In
                           values:
-                            - holos-authenticator
+                            - bank-of-pinky-authenticator
           hostname: k8s.treasury.bank.internal
           name: k8s
           port: 443

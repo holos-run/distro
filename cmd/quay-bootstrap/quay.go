@@ -187,7 +187,7 @@ func (q *quayClient) mutate(ctx context.Context, method, path string, body, out 
 }
 
 // verifyToken reports who token acts as and whether it carries the scopes
-// holos-controller needs. It probes endpoints rather than reading a flag:
+// the platform controller needs. It probes endpoints rather than reading a flag:
 // GET /api/v1/user/ reports super_user for the account, whatever the token
 // may do. aavis-ops measured on Quay 3.17.3 that a narrower token answers 403
 // on /api/v1/superuser/organizations/ without super:user and on an
@@ -348,7 +348,7 @@ func (q *quayClient) ensureApplication(ctx context.Context, org, name string) (*
 	app := &quayApplication{}
 	if err := q.mutate(ctx, http.MethodPost, path, map[string]string{
 		"name":        name,
-		"description": "holos-controller's Quay credential (cmd/quay-bootstrap in holos-run/distro)",
+		"description": "The platform controller's Quay credential (cmd/quay-bootstrap in holos-run/distro)",
 	}, app); err != nil {
 		return nil, fmt.Errorf("creating application %s/%s: %w", org, name, err)
 	}

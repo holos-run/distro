@@ -6,6 +6,8 @@ metadata:
     name: ledger
     namespace: ledger
 spec:
+    credentialsSecretRef:
+        name: bank-of-pinky-controller-quay-creds
     deletionPolicy: Orphan
     email: quay+ledger@bank.internal
     name: ledger

@@ -6,8 +6,8 @@ data:
         EXTERNAL_TLS_TERMINATION: true
         SETUP_COMPLETE: true
         TESTING: false
-        REGISTRY_TITLE: Holos
-        REGISTRY_TITLE_SHORT: Holos
+        REGISTRY_TITLE: Bank of Pinky
+        REGISTRY_TITLE_SHORT: Bank of Pinky
         DB_URI: __DB_URI__
         SECRET_KEY: __SECRET_KEY__
         DATABASE_SECRET_KEY: __DATABASE_SECRET_KEY__
@@ -35,7 +35,7 @@ data:
         AUTHENTICATION_TYPE: OIDC
         KEYCLOAK_LOGIN_CONFIG:
           SERVICE_NAME: Keycloak
-          OIDC_SERVER: https://keycloak.treasury.bank.internal/realms/holos/
+          OIDC_SERVER: https://keycloak.treasury.bank.internal/realms/default/
           CLIENT_ID: quay
           CLIENT_SECRET: __OIDC_CLIENT_SECRET__
           LOGIN_SCOPES:

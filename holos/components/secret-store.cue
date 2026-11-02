@@ -30,10 +30,10 @@ package holos
 // #GeneratedSecret the copy is not immutable.
 //
 // The source defaults to the platform's management namespace,
-// holos-prj-platform (SecretsManager.platform, interview Q54), where
+// bank-of-pinky-prj-platform (SecretsManager.platform, interview Q54), where
 // platform secrets are made through the Secrets Manager; set source for a
 // Secret a component generated in its own namespace, as keycloak-realm does
-// for holos-controller's credential.
+// for the platform controller's credential.
 //
 // Four resources:
 //
@@ -54,7 +54,7 @@ package holos
 // There is no ClusterSecretStore, and no store a consumer writes for
 // itself: a project Owner with admin in their namespace could otherwise
 // write an ExternalSecret that copies the Keycloak admin credential or
-// holos-controller's Quay token (Q18). The Role is in the source namespace,
+// the platform controller's Quay token (Q18). The Role is in the source namespace,
 // which no consumer controls, so what a store may read is decided where the Secrets
 // are. An ExternalSecret against the store naming any other Secret is
 // refused by the API server, 403, and reports SecretSyncedError. The store

@@ -9,7 +9,7 @@ spec:
         - from:
             - source:
                 requestPrincipals:
-                    - https://keycloak.treasury.bank.internal/realms/holos/*
+                    - https://keycloak.treasury.bank.internal/realms/default/*
           to:
             - operation:
                 hosts:
@@ -22,7 +22,7 @@ spec:
         - from:
             - source:
                 requestPrincipals:
-                    - https://keycloak.treasury.bank.internal/realms/holos/*
+                    - https://keycloak.treasury.bank.internal/realms/default/*
           to:
             - operation:
                 hosts:

@@ -6,39 +6,40 @@ import (
 	"strings"
 )
 
-// keycloak-realm is the platform's realm, holos, at issuer
-// https://keycloak.treasury.bank.internal/realms/holos, in two halves,
-// because holos-controller 0.22.0 has no kind for a realm, a client scope or
-// a protocol mapper, and no field for the device grant (interview Q50):
+// keycloak-realm is the platform's realm, default, at issuer
+// https://keycloak.treasury.bank.internal/realms/default, in two halves,
+// because holos-controller 0.22.0, the platform controller, has no kind for
+// a realm, a client scope or a protocol mapper, and no field for the device
+// grant (interview Q50):
 //
 //   - A KeycloakRealmImport creates the realm with what the controller cannot
 //     reconcile: the groups client scope, the kubectl, argocd and
-//     svc-holos-controller clients, svc-holos-controller's admin roles, the
-//     user jeff and the service user svc-quay-controller. The Keycloak Operator imports it once, when the realm
-//     does not exist, and never again: a change to it here reaches a running
-//     cluster only by deleting the realm and the import (README.md, "The
-//     realm").
-//   - holos-controller's resources, reconciled for as long as they exist: the
-//     Instance every other resource names, the group /platform/owners, and
-//     jeff's membership in it. Later items add their own Clients and Groups
-//     against the same Instance.
+//     svc-bank-of-pinky-controller clients, svc-bank-of-pinky-controller's
+//     admin roles, the user jeff and the service user svc-quay-controller.
+//     The Keycloak Operator imports it once, when the realm does not exist,
+//     and never again: a change to it here reaches a running cluster only by
+//     deleting the realm and the import (README.md, "The realm").
+//   - the platform controller's resources, reconciled for as long as they
+//     exist: the Instance every other resource names, the group
+//     /platform/owners, and jeff's membership in it. Later items add their
+//     own Clients and Groups against the same Instance.
 //
-// It also writes the credential holos-controller calls the admin API with,
-// and the PostSync Job that gives the Instance the private root (Q52).
+// It also writes the credential the platform controller calls the admin API
+// with, and the PostSync Job that gives the Instance the private root (Q52).
 //
 // Three secrets are generated here (#GeneratedSecret), in Keycloak's
 // namespace, because the import's placeholders read Secrets in the import's
 // own namespace alone:
 //
-//   - svc-holos-controller, a login whose username is the client ID and whose
-//     password is the client's secret.
-//   - holos-user-jeff, jeff's login.
+//   - svc-bank-of-pinky-controller, a login whose username is the client ID
+//     and whose password is the client's secret.
+//   - bank-of-pinky-user-jeff, jeff's login.
 //   - svc-quay-controller, the Quay superuser's login, which
-//     cmd/quay-bootstrap reads to mint holos-controller's Quay token.
+//     cmd/quay-bootstrap reads to mint the platform controller's Quay token.
 //
 // The controller reads its credential from its own namespace, so an
-// ExternalSecret copies svc-holos-controller there as
-// holos-controller-keycloak-creds, with the keys the controller reads,
+// ExternalSecret copies svc-bank-of-pinky-controller there as
+// bank-of-pinky-controller-keycloak-creds, with the keys the controller reads,
 // clientId and clientSecret, through a per-namespace store
 // (#ScopedSecretStore), a SecretStore of External Secrets' kubernetes
 // provider allowed to read that one Secret in keycloak and nothing else.
@@ -47,22 +48,23 @@ import (
 // should it ever be rotated, or at once with a forced refresh.
 //
 // Every resource here is in a namespace earlier components made, keycloak or
-// holos-controller, and every kind's CRD comes from an earlier component:
-// KeycloakRealmImport from keycloak-operator, the keycloak.holos.run kinds
-// from holos-controller, ExternalSecret and SecretStore from
-// external-secrets.
+// bank-of-pinky-controller, and every kind's CRD comes from an earlier
+// component: KeycloakRealmImport from keycloak-operator, the
+// keycloak.holos.run kinds from the platform controller, ExternalSecret and
+// SecretStore from external-secrets.
 
 let KC = Keycloak
-let HC = HolosController
+let HC = PlatformController
 let Namespace = KC.namespace
 
 // Clients names the realm's client IDs (components/keycloak.cue).
 let Clients = KC.clients
 
-// ControllerSecret is svc-holos-controller's generated login, and
-// UserSecret jeff's.
+// ControllerSecret is the controller client's generated login,
+// svc-bank-of-pinky-controller, and UserSecret jeff's,
+// bank-of-pinky-user-jeff.
 let ControllerSecret = Clients.controller
-let UserSecret = "holos-user-jeff"
+let UserSecret = "\(Brand.slug)-user-\(User.username)"
 
 // QuayUser is the service user Quay's SUPER_USERS names and
 // cmd/quay-bootstrap logs in to Quay as (components/quay.cue, interview
@@ -74,7 +76,7 @@ let UserSecret = "holos-user-jeff"
 let QuayUser = Quay.controller
 
 // The milestone's user (interview Q6), Keycloak.users.jeff, whose username
-// holos-authenticator's impersonator may impersonate too. Its group
+// the platform authenticator's impersonator may impersonate too. Its group
 // membership is the controller's, below, not the import's.
 let User = KC.users.jeff
 
@@ -101,7 +103,7 @@ _builtinClientScopes: _ @embed(file="client-scopes.json")
 let BuiltinClientScopes = _builtinClientScopes
 
 // The realm's default client scopes, which every client in the realm,
-// including the ones holos-controller creates later, gets unless it names its
+// including the ones the platform controller creates later, gets unless it names its
 // own: Keycloak's defaults, as for master, and groups as a default default
 // scope, so every token carries the groups claim without a mapper of its own.
 let DefaultScopes = ["role_list", "saml_organization", "AuthnContextClassRef", "profile", "email", "roles", "web-origins", "acr", "basic", "groups"]
@@ -110,9 +112,10 @@ let OptionalScopes = ["offline_access", "address", "phone", "microprofile-jwt", 
 // Placeholders are the import's environment variables, which the operator
 // sets on its import Job from the Secrets named, and which Keycloak puts in
 // place of ${NAME} in the realm as it imports it. The values are never in
-// the resource or in git.
+// the resource or in git. An environment variable's name cannot carry the
+// brand's dashes, so the controller client's is brand-neutral.
 let Placeholders = {
-	SVC_HOLOS_CONTROLLER_CLIENT_SECRET: secret: {name: ControllerSecret, key: "password"}
+	SVC_CONTROLLER_CLIENT_SECRET: secret: {name: ControllerSecret, key: "password"}
 	JEFF_PASSWORD: secret: {name: UserSecret, key: "password"}
 	SVC_QUAY_CONTROLLER_PASSWORD: secret: {name: QuayUser.username, key: "password"}
 }
@@ -142,7 +145,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				placeholders:   Placeholders
 				realm: {
 					realm:       KC.realm
-					displayName: "Holos"
+					displayName: Brand.name
 					enabled:     true
 					// TLS ends at the gateway, which sets
 					// X-Forwarded-Proto, so every request arrives as
@@ -262,17 +265,17 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 							}
 						},
 						{
-							// svc-holos-controller: holos-controller's
-							// own login, client credentials alone. Its
+							// svc-bank-of-pinky-controller: the
+							// platform controller's own login, client credentials alone. Its
 							// secret is the generated one, through
 							// the placeholder.
 							clientId:                  Clients.controller
-							name:                      "holos-controller"
+							name:                      PlatformController.name
 							enabled:                   true
 							protocol:                  "openid-connect"
 							publicClient:              false
 							clientAuthenticatorType:   "client-secret"
-							secret:                    "${SVC_HOLOS_CONTROLLER_CLIENT_SECRET}"
+							secret:                    "${SVC_CONTROLLER_CLIENT_SECRET}"
 							standardFlowEnabled:       false
 							implicitFlowEnabled:       false
 							directAccessGrantsEnabled: false
@@ -282,7 +285,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 					users: [
 						{
-							// svc-holos-controller's service account
+							// svc-bank-of-pinky-controller's service account
 							// user, with the realm-management roles
 							// the controller's kinds need: clients
 							// (manage-clients, query-clients),
@@ -383,8 +386,8 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// holos-controller-keycloak-creds, the keys the controller reads
-		// from svc-holos-controller's username and password. Not
+		// bank-of-pinky-controller-keycloak-creds, the keys the controller
+		// reads from svc-bank-of-pinky-controller's username and password. Not
 		// immutable, unlike its source: it is a copy, and follows the
 		// source.
 		ExternalSecret: (HC.credentials): {
@@ -487,11 +490,11 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		}
 	}
 
-	// The copy of svc-holos-controller into the controller's namespace,
+	// The copy of svc-bank-of-pinky-controller into the controller's namespace,
 	// through a per-namespace store (#ScopedSecretStore) whose
 	// ServiceAccount, keycloak-secret-reader, may get that one Secret in
 	// keycloak. The reader keeps the name it had before the definition
-	// existed, rather than the default, holos-controller-keycloak-reader,
+	// existed, rather than the default, bank-of-pinky-controller-keycloak-reader,
 	// so the render and the cluster do not change.
 	resources: (#ScopedSecretStore & {
 		name:      "keycloak"

@@ -13,7 +13,7 @@ spec:
           jsonPointers:
             - /spec/caBundle
           kind: Instance
-          name: holos
+          name: default
           namespace: keycloak
     project: platform
     source:

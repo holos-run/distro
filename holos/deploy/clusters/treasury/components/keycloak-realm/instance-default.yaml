@@ -1,0 +1,10 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Instance
+metadata:
+    name: default
+    namespace: keycloak
+spec:
+    credentialsSecretRef:
+        name: bank-of-pinky-controller-keycloak-creds
+    realm: default
+    url: https://keycloak.treasury.bank.internal

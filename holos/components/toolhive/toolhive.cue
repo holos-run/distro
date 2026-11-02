@@ -115,7 +115,7 @@ _Resources: #Resources & {
 			mcpPort:   S.port
 			proxyPort: S.proxy.port
 
-			// ID tokens of the kubectl client, the audience every Holos
+			// ID tokens of the kubectl client, the audience every platform
 			// service behind a person's token checks (the Substrate shim,
 			// holos-authenticator, interview Q61). resourceUrl is what the
 			// proxy's protected resource metadata names, the public URL.

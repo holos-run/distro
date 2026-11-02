@@ -6,7 +6,7 @@ spec:
     allowed:
         commonName:
             required: true
-            value: Holos treasury root CA
+            value: Bank of Pinky treasury root CA
         isCA: true
         subject:
             organizationalUnits:
@@ -16,7 +16,7 @@ spec:
             organizations:
                 required: true
                 values:
-                    - Holos
+                    - Bank of Pinky
     selector:
         issuerRef:
             group: cert-manager.io

@@ -7,7 +7,7 @@ spec:
     clientId: quay
     description: Quay
     instanceRef:
-        name: holos
+        name: default
         namespace: keycloak
     redirectUris:
         - https://quay.treasury.bank.internal/oauth2/keycloak/callback

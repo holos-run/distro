@@ -7,6 +7,6 @@ metadata:
     namespace: checkout
 spec:
     instanceRef:
-        name: holos
+        name: default
         namespace: keycloak
     path: projects/checkout/roles/editor

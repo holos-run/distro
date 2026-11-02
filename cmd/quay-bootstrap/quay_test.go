@@ -119,7 +119,7 @@ func TestRunTokenRepairsStoredCredential(t *testing.T) {
 	o := &options{
 		quayURL:       srv.URL,
 		username:      "svc-quay-controller",
-		namespace:     "holos-prj-platform",
+		namespace:     "bank-of-pinky-prj-platform",
 		tokenSecret:   "quay-controller-token",
 		automationOrg: "platform-automation",
 	}
@@ -131,7 +131,7 @@ func TestRunTokenRepairsStoredCredential(t *testing.T) {
 	if err := runToken(ctx, k, o, roots); err != nil {
 		t.Fatal(err)
 	}
-	c := k.secrets["holos-prj-platform/quay-controller-token"]
+	c := k.secrets["bank-of-pinky-prj-platform/quay-controller-token"]
 	if string(c.data["url"]) != srv.URL || string(c.data["username"]) != "svc-quay-controller" || string(c.data["token"]) != "good" {
 		t.Errorf("stored credential not repaired: %q", c.data)
 	}

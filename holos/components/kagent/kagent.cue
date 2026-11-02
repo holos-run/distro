@@ -80,7 +80,7 @@ let Secrets = {
 	oidc:         "kagent-oidc"
 	anthropic:    "kagent-anthropic"
 	anthropicKey: "ANTHROPIC_API_KEY"
-	// platform is the platform secret, in holos-prj-platform, written by
+	// platform is the platform secret, in bank-of-pinky-prj-platform, written by
 	// hand through the Secrets Manager.
 	platform: "anthropic-api-key"
 }
@@ -366,7 +366,7 @@ _Resources: #Resources & {
 			clientId:    K.clientId
 			type:        "confidential"
 			description: "kagent"
-			instanceRef: HolosController.instance
+			instanceRef: PlatformController.instance
 			redirectUris: [K.callback]
 			secretRef: K.oidcSecret
 		}
@@ -376,7 +376,7 @@ _Resources: #Resources & {
 	// holos-controller allows only with a ReferenceGrant there.
 	ReferenceGrant: "\(K.release)-clients": {
 		apiVersion: "security.holos.run/v1alpha1"
-		metadata: namespace: HolosController.instance.namespace
+		metadata: namespace: PlatformController.instance.namespace
 		spec: {
 			from: [{
 				group:     "keycloak.holos.run"
@@ -386,7 +386,7 @@ _Resources: #Resources & {
 			to: [{
 				group: "keycloak.holos.run"
 				kind:  "Instance"
-				name:  HolosController.instance.name
+				name:  PlatformController.instance.name
 			}]
 		}
 	}
@@ -700,7 +700,7 @@ _Resources: (#GeneratedSecret & {
 // The stores: users, here, that may get the passwords in Substrate's
 // namespace, for the connection strings; oidc, here, that may get the
 // Client's secret and the cookie secret in this namespace; and platform,
-// that may get the Anthropic key in holos-prj-platform.
+// that may get the Anthropic key in bank-of-pinky-prj-platform.
 _Resources: (#ScopedSecretStore & {
 	name:      Secrets.users
 	namespace: NS

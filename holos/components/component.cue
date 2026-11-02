@@ -39,7 +39,7 @@ holos: core.#BuildPlan & {
 }
 
 // #HelmArtifact renders a Helm chart into OutputDir, one file per resource.
-// The chart is read from the component's vendor/ cache, which Holos fills on
+// The chart is read from the component's vendor/ cache, which holos fills on
 // the first render and which is committed. Helm hooks are not rendered
 // (holos runs helm template --no-hooks). Documents that are not Kubernetes
 // objects, such as the comment-only output of Istio's profile templates, are
@@ -103,13 +103,16 @@ holos: core.#BuildPlan & {
 }
 
 // #KustomizePatch is one entry of a kustomization's patches: a strategic
-// merge or JSON 6902 patch, inline, and the objects it applies to.
+// merge or JSON 6902 patch, inline, and the objects it applies to, by kind
+// and name or by label (labelSelector, a JSON 6902 patch for objects of any
+// kind).
 #KustomizePatch: {
 	target: {
-		group?:   string
-		version?: string
-		kind:     string
-		name?:    string
+		group?:         string
+		version?:       string
+		kind?:          string
+		name?:          string
+		labelSelector?: string
 	}
 	patch: string
 }
