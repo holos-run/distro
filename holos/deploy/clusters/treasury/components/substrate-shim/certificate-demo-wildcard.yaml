@@ -5,7 +5,7 @@ metadata:
     namespace: substrate-shim
 spec:
     dnsNames:
-        - '*.demo.ate.bank.internal'
+        - '*.demo.ate.treasury.bank.internal'
     issuerRef:
         group: cert-manager.io
         kind: ClusterIssuer

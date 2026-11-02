@@ -20,7 +20,7 @@ spec:
             name: keycloak-db
         vendor: postgres
     hostname:
-        hostname: https://keycloak.bank.internal
+        hostname: https://keycloak.treasury.bank.internal
     http:
         httpEnabled: true
         httpPort: 8080

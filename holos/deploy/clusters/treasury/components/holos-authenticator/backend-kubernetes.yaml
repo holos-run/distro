@@ -11,11 +11,11 @@ spec:
     - /projects/ledger/roles/owner
     - /projects/payments/roles/owner
   groupsHeaderSeparator: '|'
-  host: k8s.bank.internal
+  host: k8s.treasury.bank.internal
   oidc:
     clientID: kubectl
     groupsClaim: groups
-    issuerURL: https://keycloak.bank.internal/realms/holos
+    issuerURL: https://keycloak.treasury.bank.internal/realms/holos
     usernameClaim: preferred_username
     usernamePrefix: 'oidc:'
   server:

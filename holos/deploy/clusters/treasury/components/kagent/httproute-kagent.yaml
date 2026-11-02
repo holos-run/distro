@@ -5,7 +5,7 @@ metadata:
   namespace: kagent
 spec:
   hostnames:
-  - kagent.bank.internal
+  - kagent.treasury.bank.internal
   parentRefs:
   - group: gateway.networking.k8s.io
     kind: Gateway

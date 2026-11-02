@@ -5,7 +5,7 @@ metadata:
     namespace: hello
 spec:
     hostnames:
-        - hello.bank.internal
+        - hello.treasury.bank.internal
     parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

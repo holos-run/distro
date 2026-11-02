@@ -5,7 +5,7 @@ metadata:
     namespace: substrate-shim
 spec:
     hostnames:
-        - '*.ate.bank.internal'
+        - '*.ate.treasury.bank.internal'
     parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

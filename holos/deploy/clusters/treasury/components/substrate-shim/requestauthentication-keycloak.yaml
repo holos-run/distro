@@ -11,7 +11,7 @@ spec:
           fromHeaders:
             - name: Authorization
               prefix: 'Bearer '
-          issuer: https://keycloak.bank.internal/realms/holos
+          issuer: https://keycloak.treasury.bank.internal/realms/holos
     targetRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

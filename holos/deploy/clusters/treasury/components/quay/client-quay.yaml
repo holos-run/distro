@@ -10,9 +10,9 @@ spec:
         name: holos
         namespace: keycloak
     redirectUris:
-        - https://quay.bank.internal/oauth2/keycloak/callback
-        - https://quay.bank.internal/oauth2/keycloak/callback/attach
-        - https://quay.bank.internal/oauth2/keycloak/callback/cli
+        - https://quay.treasury.bank.internal/oauth2/keycloak/callback
+        - https://quay.treasury.bank.internal/oauth2/keycloak/callback/attach
+        - https://quay.treasury.bank.internal/oauth2/keycloak/callback/cli
     secretRef:
         key: client-secret
         name: quay-oidc

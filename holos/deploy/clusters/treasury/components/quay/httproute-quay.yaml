@@ -5,7 +5,7 @@ metadata:
     namespace: quay
 spec:
     hostnames:
-        - quay.bank.internal
+        - quay.treasury.bank.internal
     parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

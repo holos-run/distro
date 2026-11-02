@@ -48,6 +48,11 @@ clusters: example: {
 }
 ```
 
+Its names are `<service>.example.bank.internal`, under its own
+`*.example.bank.internal` wildcard, and the router gets a line of its own
+pointing that subdomain at its Gateway, `/example.bank.internal/10.20.0.34`
+(`providers/proxmox/README.md`, "DNS").
+
 The ingress Gateway's address, `loadBalancer.gateway`, the block's first
 unless set, is reserved, so the private zone's wildcard record stays right
 when the Gateway or the cluster is recreated. `cilium-resources` splits the
@@ -75,7 +80,8 @@ exits 0, which is why the render procedure runs `cue vet` first.
 
 To change the gateway's address, set `loadBalancer.gateway` (or the block)
 and render; the Gateway's `spec.addresses` and both pools follow. Then
-change the router's `*.bank.internal` record to match.
+change the cluster's router line, `/<cluster>.bank.internal/<address>`, to
+match.
 
 ## Components
 
@@ -98,25 +104,25 @@ change the router's `*.bank.internal` record to match.
 | `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks; no `Cluster` |
 | `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook; no store, no `ExternalSecret` |
 | `management-namespaces` | The Secrets Manager's management organization `holos-org-platform` and project `holos-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
-| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the `ate` passthrough listener for `*.ate.bank.internal`, and the `k8s` passthrough listener for `k8s.bank.internal` |
-| `hello` | An echo service in the ambient namespace `hello`, at `hello.bank.internal` |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.treasury.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the `ate` passthrough listener for `*.ate.treasury.bank.internal`, and the `k8s` passthrough listener for `k8s.treasury.bank.internal` |
+| `hello` | An echo service in the ambient namespace `hello`, at `hello.treasury.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
 | `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `substrate` and `quay` buckets and users |
 | `keycloak-operator` | The Keycloak Operator 26.8.1 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
-| `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
+| `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.treasury.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `holos-controller` | holos-controller 0.22.0 from aavis-ops' manifests, vendored, in the ambient namespace `holos-controller`, with its eight CRDs and the private root in its trust; no resources of its kinds |
 | `keycloak-realm` | The realm `holos`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, holos-controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
-| `holos-authenticator` | holos-authenticator 0.21.0 in the ambient namespace `holos-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
-| `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
+| `holos-authenticator` | holos-authenticator 0.21.0 in the ambient namespace `holos-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.treasury.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
+| `secrets-manager` | The Holos Secrets Manager v0.19.0 in the ambient namespace `secrets-manager`, at `secrets.treasury.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
 | `toolhive-crds` | ToolHive 0.59.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
 | `toolhive-operator` | The ToolHive operator 0.59.0 from its `toolhive-operator` OCI chart, images by digest, in `toolhive-system`, watching only the `toolhive` namespace, which it renders too (both restricted, not in the mesh) |
-| `toolhive` | The MCP server `everything` in `toolhive`, at `toolhive.bank.internal/mcp`: its `MCPServer`, the `MCPOIDCConfig` that checks the realm's `kubectl` ID tokens, the `MCPAuthzConfig` with its Cedar policies, the `HTTPRoute` to the proxy runner and the NetworkPolicies that make the proxy the only way to the server (ToolHive, below) |
+| `toolhive` | The MCP server `everything` in `toolhive`, at `toolhive.treasury.bank.internal/mcp`: its `MCPServer`, the `MCPOIDCConfig` that checks the realm's `kubectl` ID tokens, the `MCPAuthzConfig` with its Cedar policies, the `HTTPRoute` to the proxy runner and the NetworkPolicies that make the proxy the only way to the server (ToolHive, below) |
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
-| `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
+| `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
-| `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
-| `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and holos-controller's Quay credential |
+| `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
+| `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and holos-controller's Quay credential |
 | `project-<name>` | One per ProjectClaim in `projects/`, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, and its `AppProject` and `Application`; none today |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
@@ -344,9 +350,9 @@ tries again with a new request after a back-off.
 cert-manager's own approver approves every request for any issuer, so anyone
 who may create a `Certificate` anywhere, such as a project owner with `admin`
 in the project's namespace, could have `private-ca` sign
-`keycloak.bank.internal`, or a CA, which laptops, pods, holos-controller and
-the Talos nodes all trust. That approver is off (`disableAutoApproval` in
-`components/cert-manager`), and approver-policy
+`keycloak.treasury.bank.internal`, or a CA, which laptops, pods,
+holos-controller and the Talos nodes all trust. That approver is off
+(`disableAutoApproval` in `components/cert-manager`), and approver-policy
 (`components/approver-policy`) decides instead, by the
 `CertificateRequestPolicy`s the `private-ca` component renders beside the
 issuers they guard. A policy applies to a request when its `issuerRef`
@@ -376,9 +382,9 @@ The `private-ca-<namespace>` policies are `ate-system`, `cnpg-system`,
 `external-secrets`, `holos-authenticator`, `istio-ingress` and
 `substrate-shim`. A policy's `values` are patterns in which `*` matches any
 string, so a namespace with a wildcard name, `istio-ingress`'s
-`*.bank.internal` or `substrate-shim`'s atespace wildcards, also has a CEL
-rule that each name be one of the listed ones exactly; without it
-`*.bank.internal` would allow `keycloak.bank.internal`.
+`*.treasury.bank.internal` or `substrate-shim`'s atespace wildcards, also has
+a CEL rule that each name be one of the listed ones exactly; without it
+`*.treasury.bank.internal` would allow `keycloak.treasury.bank.internal`.
 
 So the namespace selector keeps out every namespace not listed, a project's
 included: only `deny-all` applies there, and the request is denied. RBAC is
@@ -417,13 +423,13 @@ kubectl get certificaterequests -A -o 'custom-columns=NS:.metadata.namespace,NAM
 ```
 
 A denied `Certificate` is `Ready=False`, and its `Issuing` condition and
-events give the request's message; here one for `keycloak.bank.internal` in
-a namespace outside the list:
+events give the request's message; here one for
+`keycloak.treasury.bank.internal` in a namespace outside the list:
 
 ```text
 $ kubectl -n approver-test describe certificate keycloak
 ...
-    Message:                 The certificate request has failed to complete and will be retried: No policy approved this request: [deny-all: spec.allowed.dnsNames.values: Invalid value: ["keycloak.bank.internal"]]
+    Message:                 The certificate request has failed to complete and will be retried: No policy approved this request: [deny-all: spec.allowed.dnsNames.values: Invalid value: ["keycloak.treasury.bank.internal"]]
     Reason:                  policy.cert-manager.io
     Status:                  False
     Type:                    Issuing
@@ -437,10 +443,10 @@ brackets, each policy that applied and the `allowed` fields it refused: here
 entry in `PrivateCA.requesters`. A platform namespace asking for a name
 outside its list gets its own policy too, with the names it does allow:
 `[private-ca-holos-authenticator: spec.allowed.dnsNames.values: Invalid
-value: ["keycloak.bank.internal"]: k8s.bank.internal]`. The issuers'
-`WaitingForApproval` events on a request are normal. A request pending with
-no condition and an `Unprocessed` event matched no policy, which `deny-all`
-rules out for any request with a user.
+value: ["keycloak.treasury.bank.internal"]: k8s.treasury.bank.internal]`. The
+issuers' `WaitingForApproval` events on a request are normal. A request
+pending with no condition and an `Unprocessed` event matched no policy, which
+`deny-all` rules out for any request with a user.
 
 istiod trusts the root when it fetches the JWKS for a RequestAuthentication
 through `/cacerts/extra.pem`, which Istio's chart mounts from ConfigMap
@@ -594,18 +600,19 @@ itself a minute after it finishes.
 
 Login is through Keycloak, realm `holos`, client `argocd`, or as the local
 `admin`, which stays until the milestone's login through Keycloak has passed
-(Logging in, below); Dex is off. Argo CD is at https://argocd.bank.internal, `global.domain`, through the
-ingress gateway, which terminates TLS with the private CA's wildcard and
-sends plain HTTP to the server: `server.insecure` is set, so the server
-serves no TLS of its own, on either of its Service's ports. The `HTTPRoute`
-is rendered by `ingress-gateway`, not by this component, so this component
-still applies by hand before the Gateway API CRDs exist. The `argocd`
-namespace is not in ambient, so the hop from the gateway to the server is
-plain HTTP inside the cluster; enrolling it would put ztunnel in the path
-Argo CD needs to repair the platform. Argo CD runs Deployments and one
-StatefulSet, no DaemonSet, so the control plane's `NoSchedule` taint keeps
-it on the workers. Its pods meet the restricted Pod Security standard, so the
-`argocd` namespace needs no label. The images are pinned by digest.
+(Logging in, below); Dex is off. Argo CD is at
+https://argocd.treasury.bank.internal, `global.domain`, through the ingress
+gateway, which terminates TLS with the private CA's wildcard and sends plain
+HTTP to the server: `server.insecure` is set, so the server serves no TLS of
+its own, on either of its Service's ports. The `HTTPRoute` is rendered by
+`ingress-gateway`, not by this component, so this component still applies by
+hand before the Gateway API CRDs exist. The `argocd` namespace is not in
+ambient, so the hop from the gateway to the server is plain HTTP inside the
+cluster; enrolling it would put ztunnel in the path Argo CD needs to repair
+the platform. Argo CD runs Deployments and one StatefulSet, no DaemonSet, so
+the control plane's `NoSchedule` taint keeps it on the workers. Its pods meet
+the restricted Pod Security standard, so the `argocd` namespace needs no
+label. The images are pinned by digest.
 
 ### Istio
 
@@ -682,36 +689,39 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   `loadBalancer.gateway`, which the cluster's pool reserves for the gateway
   (see Clusters). istiod sets it as the Service's `loadBalancerIP`, LB IPAM
   allocates it from that pool, and one worker answers ARP for it. The private
-  zone's `*.bank.internal` points there. The request is `spec.addresses`, not
-  Cilium's `lbipam.cilium.io/ips` annotation (`io.cilium/lb-ipam-ips` is its
-  older alias): it is the Gateway API's own field and the Gateway reports the
-  address it was given beside it, and Cilium 1.20 reads `loadBalancerIP` and
-  the annotation alike, as one list of requested addresses. Kubernetes
-  deprecated `loadBalancerIP`, but Cilium supports it until it is removed;
-  if istiod or Cilium stops honoring it, the annotation can reach the Service
-  through the Gateway's `spec.infrastructure.annotations`. The pool would
-  hand the gateway the address without any request, since it is the only
-  address its Service can take; the request makes a mismatch show as a
-  Pending Service with a reason rather than a different address.
+  zone's `*.treasury.bank.internal` points there. The request is
+  `spec.addresses`, not Cilium's `lbipam.cilium.io/ips` annotation
+  (`io.cilium/lb-ipam-ips` is its older alias): it is the Gateway API's own
+  field and the Gateway reports the address it was given beside it, and Cilium
+  1.20 reads `loadBalancerIP` and the annotation alike, as one list of
+  requested addresses. Kubernetes deprecated `loadBalancerIP`, but Cilium
+  supports it until it is removed; if istiod or Cilium stops honoring it, the
+  annotation can reach the Service through the Gateway's
+  `spec.infrastructure.annotations`. The pool would hand the gateway the
+  address without any request, since it is the only address its Service can
+  take; the request makes a mismatch show as a Pending Service with a reason
+  rather than a different address.
 - **Hostnames.** Every service is `<service>.<ingressDomain>`, named in
   `IngressGateway.hosts`, one label under the cluster's `ingressDomain`
   (`clusters.cue`), which is `<cluster>.<privateDomain>` unless a cluster
-  pins it (the Cluster_Qualified_Hostnames planning project). Treasury pins
-  it to the bare zone until its rebuild, so its names are still
-  `hello.bank.internal`, `argocd.bank.internal`, `keycloak.bank.internal`,
-  `secrets.bank.internal`; at the rebuild they become
-  `hello.treasury.bank.internal` and so on. Email addresses stay
-  `<user>@<privateDomain>` on every cluster.
-- **Listeners.** `https` on 443 for `*.bank.internal`, terminating TLS with
-  the `wildcard` `Certificate` from `ClusterIssuer` `private-ca` (Secret
-  `istio-ingress/wildcard-tls`), open to routes from every namespace. `http`
-  on 80 takes only the `https-redirect` route, which answers every request
-  with a 301 to the same URL over HTTPS. A route attaches with
+  sets it (the Cluster_Qualified_Hostnames planning project): treasury's
+  are `hello.treasury.bank.internal`, `argocd.treasury.bank.internal` and so
+  on. Email addresses stay `<user>@<privateDomain>` on every cluster. The
+  router answers NXDOMAIN for a name in no cluster's subdomain
+  (`providers/proxmox/README.md`, "DNS"), so `Could not resolve host:
+  <service>.bank.internal` from curl, or the like from docker or a browser,
+  means a name from before the rename, in a kubeconfig, a Docker login or a
+  bookmark.
+- **Listeners.** `https` on 443 for `*.treasury.bank.internal`, terminating
+  TLS with the `wildcard` `Certificate` from `ClusterIssuer` `private-ca`
+  (Secret `istio-ingress/wildcard-tls`), open to routes from every namespace.
+  `http` on 80 takes only the `https-redirect` route, which answers every
+  request with a 301 to the same URL over HTTPS. A route attaches with
   `IngressGateway.parentRef`, which names the `https` listener.
 - **Ate listener.** `ate` on 443 for `*.ate.<ingressDomain>`, protocol `TLS`
   in `Passthrough` mode, beside `https` on the same port: Envoy matches the
-  SNI to the most specific name, so `echo.demo.ate.bank.internal` comes here
-  and every other host under the zone to `https`. It accepts only
+  SNI to the most specific name, so `echo.demo.ate.treasury.bank.internal`
+  comes here and every other host under the zone to `https`. It accepts only
   `TLSRoute`s from `substrate-shim`, whose one route forwards the connection
   to the Substrate shim's own Gateway (The Substrate shim, below). `ingress`
   never terminates those connections, so none of the shim's policy runs on
@@ -1172,8 +1182,8 @@ kubectl -n rustfs delete pod s3-test     # it names rustfs-substrate, so it must
 ### Keycloak
 
 Keycloak is the platform's one identity provider (interview Q11), at
-`https://keycloak.bank.internal`, which is also the issuer every token
-carries: `https://keycloak.bank.internal/realms/<realm>`. Pods and the
+`https://keycloak.treasury.bank.internal`, which is also the issuer every token
+carries: `https://keycloak.treasury.bank.internal/realms/<realm>`. Pods and the
 laptop resolve the name alike, to the gateway, so a client in the cluster
 calls the same URL a browser does. This is the server and its database; the
 realm `holos` is `keycloak-realm`'s (The realm, below), and the master realm
@@ -1207,7 +1217,7 @@ them:
   and forge `X-Forwarded-For`, which affects only the client address
   Keycloak logs, since the hostname is fixed. The operator's own Ingress
   is off, and
-  `HTTPRoute` `keycloak` sends `keycloak.bank.internal` to Service
+  `HTTPRoute` `keycloak` sends `keycloak.treasury.bank.internal` to Service
   `keycloak-service:8080`. Health is on the management port, 9000, which
   the kubelet probes from 169.254.7.127, admitted by `cilium-resources`'
   policy. The server's truststore adds the private root, from the
@@ -1254,7 +1264,7 @@ Both credentials are generated in the cluster with `#GeneratedSecret`
   creates and Keycloak connects as.
 
 Read the admin's credential, to log in at
-`https://keycloak.bank.internal/admin/`:
+`https://keycloak.treasury.bank.internal/admin/`:
 
 ```sh
 kubectl -n keycloak get secret keycloak-admin -o json | jq '.data | map_values(@base64d)'
@@ -1288,11 +1298,11 @@ kubectl -n keycloak get pod keycloak-0 -o jsonpath='{.spec.containers[0].args}' 
 kubectl -n keycloak get secret keycloak-admin keycloak-db \
   -o custom-columns='NAME:.metadata.name,TYPE:.type,IMMUTABLE:.immutable,OWNER:.metadata.ownerReferences'
 kubectl -n keycloak get configmap private-ca -o jsonpath='{.data.ca\.crt}' > root.pem
-curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/.well-known/openid-configuration |
-  jq -r .issuer                                     # https://keycloak.bank.internal/realms/master
+curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/.well-known/openid-configuration |
+  jq -r .issuer                                     # https://keycloak.treasury.bank.internal/realms/master
 u=$(kubectl -n keycloak get secret keycloak-admin -o jsonpath='{.data.username}' | base64 -d)
 p=$(kubectl -n keycloak get secret keycloak-admin -o jsonpath='{.data.password}' | base64 -d)
-curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/protocol/openid-connect/token \
+curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" \
   --data-urlencode "password=$p" | jq 'has("access_token")'   # true
 unset u p
@@ -1301,9 +1311,9 @@ unset u p
 ### The realm
 
 The platform's realm is `holos`, issuer
-`https://keycloak.bank.internal/realms/holos`. holos-controller 0.22.0 has no
-kind for a realm, a client scope or a protocol mapper, nor a field for the
-device grant, so the realm comes in two halves (interview Q50):
+`https://keycloak.treasury.bank.internal/realms/holos`. holos-controller
+0.22.0 has no kind for a realm, a client scope or a protocol mapper, nor a
+field for the device grant, so the realm comes in two halves (interview Q50):
 
 - A `KeycloakRealmImport`, `holos` in `keycloak`, creates the realm with
   what the controller cannot reconcile:
@@ -1319,7 +1329,8 @@ device grant, so the realm comes in two halves (interview Q50):
     Keycloak 26.8.1 then demands a `code_challenge` on the device grant too,
     which not every device-flow client sends.
   - the public client `argocd`, with PKCE S256 required (Q51), redirects
-    `/auth/callback` and `/pkce/verify` on `https://argocd.bank.internal` and
+    `/auth/callback` and `/pkce/verify` on
+    `https://argocd.treasury.bank.internal` and
     `http://localhost:8085/auth/callback` for the CLI.
   - the confidential client `svc-holos-controller`, client credentials only,
     whose service account holds the `realm-management` roles
@@ -1382,9 +1393,9 @@ value is generated once, in one place; the copy is not immutable and follows
 its source hourly, or at once with
 `kubectl -n holos-controller annotate externalsecret holos-controller-keycloak-creds force-sync=$(date +%s) --overwrite`.
 
-The `Instance` names `https://keycloak.bank.internal`, through the gateway,
-whose certificate is the private CA's. The root is minted in the cluster, so
-it is not rendered (Q52): the `PostSync` Job `instance-cabundle`, in
+The `Instance` names `https://keycloak.treasury.bank.internal`, through the
+gateway, whose certificate is the private CA's. The root is minted in the
+cluster, so it is not rendered (Q52): the `PostSync` Job `instance-cabundle`, in
 `keycloak`, base64-encodes `ca.crt` of the namespace's `private-ca`
 ConfigMap into the `Instance`'s `spec.caBundle` with a merge patch, as field
 manager `instance-cabundle`, after every sync of `keycloak-realm`. Its Role
@@ -1413,9 +1424,9 @@ root, `argocd-apps`, which would turn it back on):
 kubectl -n keycloak delete groupmembership,group --all     # and any Client or User in other namespaces
 # 2. The import, then the realm, with the master admin's token.
 kubectl -n keycloak delete keycloakrealmimport holos
-t=$(curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/protocol/openid-connect/token \
+t=$(curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
-curl -s --cacert root.pem -X DELETE -H "Authorization: Bearer $t" https://keycloak.bank.internal/admin/realms/holos -w '%{http_code}\n'  # 204
+curl -s --cacert root.pem -X DELETE -H "Authorization: Bearer $t" https://keycloak.treasury.bank.internal/admin/realms/holos -w '%{http_code}\n'  # 204
 # 3. Turn automation back on; the sync re-creates the import, the groups and
 #    the memberships, and its PostSync Job runs again.
 ```
@@ -1427,8 +1438,8 @@ import Job's completed pod names both Secrets, so rotating either (Generated
 secrets, above) needs that pod gone first, and a re-import after, since the
 realm holds the values it was imported with.
 
-jeff's password, to log in at `https://keycloak.bank.internal/realms/holos/account`
-or to Argo CD:
+jeff's password, to log in at
+`https://keycloak.treasury.bank.internal/realms/holos/account` or to Argo CD:
 
 ```sh
 kubectl -n keycloak get secret holos-user-jeff -o jsonpath='{.data.password}' | base64 -d
@@ -1438,33 +1449,33 @@ Check the realm, the controller and a token, without printing a secret
 (`root.pem`, `u` and `p` as under Keycloak, above):
 
 ```sh
-curl -s --cacert root.pem https://keycloak.bank.internal/realms/holos/.well-known/openid-configuration |
-  jq -r .issuer                                  # https://keycloak.bank.internal/realms/holos
+curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/holos/.well-known/openid-configuration |
+  jq -r .issuer                                  # https://keycloak.treasury.bank.internal/realms/holos
 kubectl -n keycloak get keycloakrealmimport holos \
   -o jsonpath='{.status.conditions[?(@.type=="Done")].status}'   # True
 kubectl -n holos-controller get deploy,externalsecret,secretstore   # 1/1, SecretSynced, Valid
 kubectl -n keycloak get instance,group,groupmembership             # READY True
-t=$(curl -s --cacert root.pem https://keycloak.bank.internal/realms/master/protocol/openid-connect/token \
+t=$(curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/master/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
-a=https://keycloak.bank.internal/admin/realms/holos
+a=https://keycloak.treasury.bank.internal/admin/realms/holos
 uid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/users?email=jeff@bank.internal&exact=true" | jq -r '.[0].id')
 cid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/clients?clientId=kubectl" | jq -r '.[0].id')
 curl -s --cacert root.pem -H "Authorization: Bearer $t" \
   "$a/clients/$cid/evaluate-scopes/generate-example-id-token?userId=$uid&scope=openid" |
   jq -c '{aud, groups}'                          # {"aud":"kubectl","groups":["/platform/owners"]}
-curl -s --cacert root.pem https://keycloak.bank.internal/realms/holos/protocol/openid-connect/auth/device \
+curl -s --cacert root.pem https://keycloak.treasury.bank.internal/realms/holos/protocol/openid-connect/auth/device \
   -d client_id=kubectl -d scope=openid | jq 'has("device_code")'   # true
 ```
 
 ### holos-authenticator
 
-`holos-authenticator` puts the Kubernetes API at `https://k8s.bank.internal`
-behind a Keycloak login (interview Q60 to Q63): a person's kubeconfig
-carries the ID token kubelogin prints for the `kubectl` client, and the API
-server sees the request as an impersonation of them, `oidc:<username>` with
-their groups by full path, so Kubernetes RBAC does the rest.
-`HolosAuthenticator` (`components/holos-authenticator.cue`) has the release,
-the names, and the users and groups that may be impersonated.
+`holos-authenticator` puts the Kubernetes API at
+`https://k8s.treasury.bank.internal` behind a Keycloak login (interview Q60 to
+Q63): a person's kubeconfig carries the ID token kubelogin prints for the
+`kubectl` client, and the API server sees the request as an impersonation of
+them, `oidc:<username>` with their groups by full path, so Kubernetes RBAC
+does the rest. `HolosAuthenticator` (`components/holos-authenticator.cue`) has
+the release, the names, and the users and groups that may be impersonated.
 
 holos-authenticator 0.21.0, from aavis-ops, is an Envoy external
 authorization server, plaintext gRPC on 9000, and a controller of
@@ -1536,7 +1547,7 @@ takes this path:
   the node's own network namespace, which istio-cni lets through unchecked
   for the kubelet's probes: a hostNetwork pod on a manager's node can reach
   port 9000. Only cilium and the ceph-csi node plugin run there today.
-- **The Backend.** `kubernetes`, for host `k8s.bank.internal`, matched
+- **The Backend.** `kubernetes`, for host `k8s.treasury.bank.internal`, matched
   exactly against `:authority`, so a client that sends `:443` in `Host` is
   refused as an unknown host. `oidc.clientID` is `kubectl` (Q61, ADR 0002):
   the audience kubelogin's token already has, so one login serves the API
@@ -1581,12 +1592,12 @@ and kubelogin opens the browser and listens on `localhost:8000`, a redirect
 the `kubectl` client allows.
 
 ```sh
-kubectl config set-cluster treasury-oidc --server=https://k8s.bank.internal \
+kubectl config set-cluster treasury-oidc --server=https://k8s.treasury.bank.internal \
   --certificate-authority="$HOME/treasury-root-ca.pem" --embed-certs
 kubectl config set-credentials oidc --exec-api-version=client.authentication.k8s.io/v1 \
   --exec-interactive-mode=IfAvailable --exec-command=kubectl \
   --exec-arg=oidc-login --exec-arg=get-token \
-  --exec-arg=--oidc-issuer-url=https://keycloak.bank.internal/realms/holos \
+  --exec-arg=--oidc-issuer-url=https://keycloak.treasury.bank.internal/realms/holos \
   --exec-arg=--oidc-client-id=kubectl --exec-arg=--grant-type=device-code
 kubectl config set-context treasury-oidc --cluster=treasury-oidc --user=oidc
 kubectl --context treasury-oidc auth whoami   # oidc:jeff, [/platform/owners system:authenticated]
@@ -1635,13 +1646,13 @@ kubectl -n holos-authenticator exec deploy/k8s-istio -c istio-proxy -- \
   pilot-agent request GET 'config_dump?resource=dynamic_listeners' \
   | jq -r '.. | .http_filters? // empty | [.[].name] | join(" -> ")'
 # With $TOKEN a kubectl ID token for a member of /platform/owners (The Substrate shim):
-kubectl --kubeconfig=/dev/null --server=https://k8s.bank.internal \
+kubectl --kubeconfig=/dev/null --server=https://k8s.treasury.bank.internal \
   --certificate-authority="$HOME/treasury-root-ca.pem" --token="$TOKEN" auth whoami
-curl --cacert ~/treasury-root-ca.pem https://k8s.bank.internal/api                  # 401
+curl --cacert ~/treasury-root-ca.pem https://k8s.treasury.bank.internal/api                  # 401
 curl --cacert ~/treasury-root-ca.pem -H "Authorization: Bearer $TOKEN" \
-  -H 'Impersonate-Group: system:masters' https://k8s.bank.internal/api            # 403
+  -H 'Impersonate-Group: system:masters' https://k8s.treasury.bank.internal/api            # 403
 curl --cacert ~/treasury-root-ca.pem -H "Authorization: Bearer $TOKEN" \
-  -H 'x-impersonate-groups: system:masters' https://k8s.bank.internal/api         # 403
+  -H 'x-impersonate-groups: system:masters' https://k8s.treasury.bank.internal/api         # 403
 # An ID token for another client, such as argocd, gets 401. The impersonator
 # may impersonate only the listed users and groups:
 kubectl create -o jsonpath='{.status.allowed}{"\n"}' -f - <<'YAML'                 # false
@@ -1657,20 +1668,21 @@ YAML
 
 The Holos Secrets Manager (holos-run/secrets-manager) is where platform
 secrets are made (interview Q18): a Go server with a web UI, at
-`https://secrets.bank.internal`, that manages Kubernetes Secrets directly,
-with Keycloak login and grants, so there is no external store. A secret is
-made in the management namespace through the UI, and an `ExternalSecret` in
-the consumer's namespace copies it there through that consumer's own store.
-`SecretsManager` (`components/secrets-manager.cue`) holds the release, the
-names and the URL; the `secrets-manager` component renders the rest.
+`https://secrets.treasury.bank.internal`, that manages Kubernetes Secrets
+directly, with Keycloak login and grants, so there is no external store. A
+secret is made in the management namespace through the UI, and an
+`ExternalSecret` in the consumer's namespace copies it there through that
+consumer's own store. `SecretsManager` (`components/secrets-manager.cue`)
+holds the release, the names and the URL; the `secrets-manager` component
+renders the rest.
 
 - **The server.** One Deployment in the ambient namespace
   `secrets-manager`, the release's distroless nonroot image pinned by
   digest, restricted: non-root, a read-only root, all capabilities dropped.
   It serves plain HTTP on 8080 behind the gateway, which terminates TLS as
   it does for Keycloak (`--plain-http --listen=:8080`), and its public URL
-  is `--origin=https://secrets.bank.internal`. It trusts the private root
-  from the namespace's `private-ca` ConfigMap, mounted and named by
+  is `--origin=https://secrets.treasury.bank.internal`. It trusts the private
+  root from the namespace's `private-ca` ConfigMap, mounted and named by
   `--ca-cert`, for its calls to the issuer. The kubelet probes `/healthz`
   and `/readyz`. It keeps no state beyond Namespaces and Secrets, and acts
   as its own ServiceAccount, `secrets-manager`, impersonating no one.
@@ -1694,13 +1706,13 @@ names and the URL; the `secrets-manager` component renders the rest.
   client `secrets-manager`, which a holos-controller `Client` in
   `secrets-manager` creates, with the `ReferenceGrant`
   `secrets-manager-clients` in `keycloak` allowing it to name the
-  `Instance` there. Its redirect is `https://secrets.bank.internal/pkce/verify`
-  and its web origin the URL; the SPA runs the code flow with PKCE and asks
-  for `openid profile email groups offline_access`. The server verifies the
-  bearer as an ID token whose `aud` is `secrets-manager` (ADR 0002) and
-  reads roles from `groups` (`--roles-claim`), full paths. The `Client` has
-  no field for a post-logout redirect, so logging out ends on Keycloak's
-  page.
+  `Instance` there. Its redirect is
+  `https://secrets.treasury.bank.internal/pkce/verify` and its web origin the
+  URL; the SPA runs the code flow with PKCE and asks for `openid profile email
+  groups offline_access`. The server verifies the bearer as an ID token whose
+  `aud` is `secrets-manager` (ADR 0002) and reads roles from `groups`
+  (`--roles-claim`), full paths. The `Client` has no field for a post-logout
+  redirect, so logging out ends on Keycloak's page.
 - **Organizations.** Only `/platform/owners` may create one
   (`--disable-org-creation --org-creator-roles=/platform/owners`, Q55).
   Never `--enable-insecure-dex`.
@@ -1814,7 +1826,7 @@ it on its first sync (Storage, above).
 
 #### Adding a platform secret
 
-1. Log in at `https://secrets.bank.internal` as a member of
+1. Log in at `https://secrets.treasury.bank.internal` as a member of
    `/platform/owners`, such as `jeff` (Logging in, under Bootstrap Argo
    CD: the same password), choose the `Platform` organization and open
    its `Platform` project.
@@ -1840,8 +1852,8 @@ kubectl -n secrets-manager get httproute secrets-manager \
 kubectl -n keycloak get referencegrants.security.holos.run
 kubectl get ns -L holos.run/resource-type,holos.run/organization -l app.kubernetes.io/managed-by=holos.run
 kubectl -n holos-prj-platform get rolebinding secrets-manager-secrets
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.bank.internal/          # 200
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.bank.internal/metrics   # 500
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.treasury.bank.internal/          # 200
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://secrets.treasury.bank.internal/metrics   # 500
 kubectl -n secrets-manager exec deploy/secrets-manager -- /bin/secrets-manager --version           # the pinned release
 ```
 
@@ -2102,14 +2114,14 @@ digest=sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
 export DOCKER_CONFIG=$(mktemp -d)
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > $DOCKER_CONFIG/root.pem
 tok=$(kubectl -n holos-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d)
-printf '{"auths":{"quay.bank.internal":{"auth":"%s"}}}' \
+printf '{"auths":{"quay.treasury.bank.internal":{"auth":"%s"}}}' \
   "$(printf '%s' "\$oauthtoken:$tok" | base64 -w0)" > $DOCKER_CONFIG/config.json
 unset tok
 SSL_CERT_DIR=$DOCKER_CONFIG docker buildx imagetools create \
-  -t quay.bank.internal/demo/echo:v1.12.0 docker.io/traefik/whoami:v1.12.0@$digest
+  -t quay.treasury.bank.internal/demo/echo:v1.12.0 docker.io/traefik/whoami:v1.12.0@$digest
 rm -rf $DOCKER_CONFIG; unset DOCKER_CONFIG
 
-image=quay.bank.internal/demo/echo@$digest
+image=quay.treasury.bank.internal/demo/echo@$digest
 for a in echo other; do
   kubectl ate create actor-template -f - <<EOF
 metadata: {atespace: demo, name: $a}
@@ -2331,8 +2343,8 @@ The same pod under ServiceAccount `default` fails the handshake with
 ### The Substrate shim
 
 `substrate-shim` is how a person reaches an actor: at
-`https://<actor>.<atespace>.ate.bank.internal`, with a Keycloak ID token
-(interview Q7 to Q9). It is plain Istio, with no controller of its own.
+`https://<actor>.<atespace>.ate.treasury.bank.internal`, with a Keycloak ID
+token (interview Q7 to Q9). It is plain Istio, with no controller of its own.
 `AteGateway` (`components/substrate-shim.cue`) names it, and the substrate
 component reads the same definition for the router's allowed list.
 
@@ -2343,20 +2355,20 @@ component reads the same definition for the router's allowed list.
   argocd CLI. So the shim is the `Gateway` `substrate-shim/ate`, class
   `istio`, annotated `networking.istio.io/service-type: ClusterIP`: istiod
   gives it the Service `ate-istio` and no address. `ingress`'s `ate`
-  listener passes every `*.ate.bank.internal` connection through to that
-  Service, by SNI, with the `TLSRoute` `substrate-shim/ate` (The ingress
+  listener passes every `*.ate.treasury.bank.internal` connection through to
+  that Service, by SNI, with the `TLSRoute` `substrate-shim/ate` (The ingress
   gateway, above). There is no new address and no DNS change: the private
-  zone's `*.bank.internal` already resolves the hosts to 10.20.0.30. Two
-  replicas, preferably on two nodes, as `ingress` has.
+  zone's `*.treasury.bank.internal` already resolves the hosts to 10.20.0.30.
+  Two replicas, preferably on two nodes, as `ingress` has.
 - **Listeners.** One per atespace, named after it, for
-  `*.<atespace>.ate.bank.internal`, terminating TLS with the `Certificate`
-  `<atespace>-wildcard` from the `private-ca` ClusterIssuer: `demo` and
-  `kagent` today. Each admits only `HTTPRoute`s from `ate-system`, where
-  `ate-<atespace>` routes to the router's Service on 443. Being in the
+  `*.<atespace>.ate.treasury.bank.internal`, terminating TLS with the
+  `Certificate` `<atespace>-wildcard` from the `private-ca` ClusterIssuer:
+  `demo` and `kagent` today. Each admits only `HTTPRoute`s from `ate-system`,
+  where `ate-<atespace>` routes to the router's Service on 443. Being in the
   router's namespace, those routes need no `ReferenceGrant`, and no
   `ReferenceGrant` into `ate-system` exists, so no other route can reach the
   router through the gateway. A host under an atespace with no listener,
-  such as `foo.nope.ate.bank.internal`, matches no filter chain and the
+  such as `foo.nope.ate.treasury.bank.internal`, matches no filter chain and the
   connection is reset during the TLS handshake (curl exits 35). The Gateway
   sets `allowedListeners` to its own namespace, so a `ListenerSet` there can
   add an atespace.
@@ -2375,14 +2387,14 @@ component reads the same definition for the router's allowed list.
   client that puts the port in `Host`. Everything else, a request with no
   token included, gets 403 `RBAC: access denied`.
 - **The actor.** `TrafficExtension` `ate-target-actor` is a few lines of
-  Lua. It splits the host, `<actor>.<atespace>.ate.bank.internal`, and
+  Lua. It splits the host, `<actor>.<atespace>.ate.treasury.bank.internal`, and
   replaces `ate-target-actor` with `<atespace>/<actor>`, which drops any
   value the client sent. It has no phase, so istiod puts it after
   `jwt_authn` and `rbac` in the filter chain, and a refused request never
   gets the header. A host of any other shape, such as
-  `a.echo.demo.ate.bank.internal`, gets 400. The router strips the header
-  before the actor sees the request, so the proof of routing is which actor
-  answers.
+  `a.echo.demo.ate.treasury.bank.internal`, gets 400. The router strips the
+  header before the actor sees the request, so the proof of routing is which
+  actor answers.
 - **Mutual TLS to the router.** `DestinationRule` `atenet-router` in
   `substrate-shim`, exported to that namespace only, originates mutual TLS
   to `atenet-router.ate-system.svc.cluster.local`. The client certificate is
@@ -2412,11 +2424,11 @@ member of `/platform/owners`. kubelogin prints the `kubectl` client's ID
 token, which lasts five minutes:
 
 ```sh
-TOKEN=$(kubectl oidc-login get-token --oidc-issuer-url=https://keycloak.bank.internal/realms/holos \
+TOKEN=$(kubectl oidc-login get-token --oidc-issuer-url=https://keycloak.treasury.bank.internal/realms/holos \
   --oidc-client-id=kubectl --grant-type=device-code | jq -r .status.token)
-curl https://echo.demo.ate.bank.internal/                                       # 403 RBAC: access denied
-curl -H "Authorization: Bearer $TOKEN" https://echo.demo.ate.bank.internal/     # Name: echo
-curl -H "Authorization: Bearer $TOKEN" https://other.demo.ate.bank.internal/    # Name: other
+curl https://echo.demo.ate.treasury.bank.internal/                                       # 403 RBAC: access denied
+curl -H "Authorization: Bearer $TOKEN" https://echo.demo.ate.treasury.bank.internal/     # Name: echo
+curl -H "Authorization: Bearer $TOKEN" https://other.demo.ate.treasury.bank.internal/    # Name: other
 ```
 
 The actor wakes on the request, if it was suspended, before it answers.
@@ -2468,25 +2480,25 @@ kubectl -n istio-ingress get gateway ingress \
   -o jsonpath='{range .status.listeners[*]}{.name} {.attachedRoutes}{"\n"}{end}'   # ate 1
 # With $TOKEN as above:
 curl -H "Authorization: Bearer $TOKEN" -H 'ate-target-actor: demo/other' \
-  https://echo.demo.ate.bank.internal/ | head -1                     # still Name: echo
-curl https://foo.nope.ate.bank.internal/                             # exit 35, no listener
+  https://echo.demo.ate.treasury.bank.internal/ | head -1                     # still Name: echo
+curl https://foo.nope.ate.treasury.bank.internal/                             # exit 35, no listener
 # A token for a user outside the atespace's groups, such as
 # svc-quay-controller, gets 403. The router refuses any other identity:
 # Checking Substrate, above, step 2, under ServiceAccount default.
-docker pull quay.bank.internal/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
+docker pull quay.treasury.bank.internal/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
     # ingress still passes Quay's own bearer tokens
 ```
 
 ### kagent
 
 kagent runs agents as Substrate actors (interview Q26), from the holos-run
-fork ([docs/forks.md](../docs/forks.md)), at `https://kagent.bank.internal`
-behind a Keycloak login. `Kagent` (`kagent.cue`, and `components/kagent.cue`
-for the names that need the Gateway or Keycloak) holds the pins and the
-names, and the substrate component reads the same definition for the
-router's allowed list, the bootstrap owners and the credential provider's
-namespace policy. Two components: `kagent-crds`, the CRD chart, and
-`kagent`, the main chart with the CUE-made objects beside it.
+fork ([docs/forks.md](../docs/forks.md)), at
+`https://kagent.treasury.bank.internal` behind a Keycloak login. `Kagent`
+(`kagent.cue`, and `components/kagent.cue` for the names that need the Gateway
+or Keycloak) holds the pins and the names, and the substrate component reads
+the same definition for the router's allowed list, the bootstrap owners and
+the credential provider's namespace policy. Two components: `kagent-crds`, the
+CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
 
 - **Pins.** The charts and the controller and UI images are the fork's, on
   `ghcr.io/holos-run/kagent`, by digest. The fork builds nothing else, so
@@ -2565,9 +2577,9 @@ namespace policy. Two components: `kagent-crds`, the CRD chart, and
   theirs. Agents, Harnesses, ModelConfigs, Secrets and the placeholder pool
   are all in `kagent`. The tool server's subchart is not scoped: its
   read-only role covers the cluster, so agents can read it.
-- **Exposure.** `kagent.bank.internal` is under the Gateway's wildcard. The
-  `HTTPRoute` `kagent` sends every path to oauth2-proxy on 4180, never to
-  the UI or the controller; the chart's own route is off.
+- **Exposure.** `kagent.treasury.bank.internal` is under the Gateway's
+  wildcard. The `HTTPRoute` `kagent` sends every path to oauth2-proxy on 4180,
+  never to the UI or the controller; the chart's own route is off.
 - **The tool server** runs with `--read-only`, which leaves out every tool
   that writes, and binds a read-only `ClusterRole`, get, list and watch
   without Secrets, in place of `cluster-admin`.
@@ -2646,10 +2658,10 @@ kubectl -n ate-system exec substrate-db-1 -c postgres -- psql -d substrate -At \
   -c "select version_id from kagent.schema_migrations" \
   -c "select usename, ssl from pg_stat_activity join pg_stat_ssl using (pid) where usename like 'kagent%'"
     # the migrations; kagent_readwrite_user connections with ssl t
-curl -s --cacert root.pem -o /dev/null -w '%{http_code} %{redirect_url}\n' https://kagent.bank.internal/oauth2/start
-    # 302 to https://keycloak.bank.internal/realms/holos/protocol/openid-connect/auth?...client_id=kagent...
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://kagent.bank.internal/api/   # 403 without a session
-curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-Uri: /login' https://kagent.bank.internal/api/   # 403 too
+curl -s --cacert root.pem -o /dev/null -w '%{http_code} %{redirect_url}\n' https://kagent.treasury.bank.internal/oauth2/start
+    # 302 to https://keycloak.treasury.bank.internal/realms/holos/protocol/openid-connect/auth?...client_id=kagent...
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' https://kagent.treasury.bank.internal/api/   # 403 without a session
+curl -s --cacert root.pem -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-Uri: /login' https://kagent.treasury.bank.internal/api/   # 403 too
 kubectl auth can-i get secrets -n keycloak --as=system:serviceaccount:kagent:kagent-controller   # no
 # From a pod outside kagent, every kagent port times out:
 kubectl -n default run np-test --image=curlimages/curl:8.11.1 --restart=Never --command -- sleep 600
@@ -2660,9 +2672,9 @@ kubectl -n default delete pod np-test
 ### ToolHive
 
 ToolHive is Stacklok's MCP server operator (interview Q3, last and best
-effort), with one MCP server at `https://toolhive.bank.internal/mcp` behind a
-Keycloak ID token and Cedar. `ToolHive` (`components/toolhive.cue`) holds
-the pins and the names. Three components, in registry order:
+effort), with one MCP server at `https://toolhive.treasury.bank.internal/mcp`
+behind a Keycloak ID token and Cedar. `ToolHive` (`components/toolhive.cue`)
+holds the pins and the names. Three components, in registry order:
 `toolhive-crds`, the CRD chart, which Argo CD neither prunes nor deletes;
 `toolhive-operator`, the operator chart in `toolhive-system`, with the
 `toolhive` namespace it manages; and `toolhive`, the MCP server and its
@@ -2688,7 +2700,7 @@ policies.
 - **Tokens.** `MCPOIDCConfig keycloak` is the realm, by its discovery
   document and keys, fetched through the ingress Gateway trusting the
   `private-ca` bundle alone, with `jwksAllowPrivateIP`, since
-  `keycloak.bank.internal` is a private address. The MCPServer sets the
+  `keycloak.treasury.bank.internal` is a private address. The MCPServer sets the
   audience: `kubectl`, ID tokens of the client every Holos service behind a
   person's token checks (ADR 0002, interview Q61). No Keycloak client is
   made. The proxy answers a request without a valid token with 401 and a
@@ -2735,7 +2747,7 @@ From a machine that trusts the private root, `$TOKEN` a member of
 export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
 kubectl -n toolhive get mcpserver,mcpoidcconfig,mcpauthzconfig,pods
     # everything Ready; keycloak and everything VALID True; two pods 1/1
-U=https://toolhive.bank.internal/mcp
+U=https://toolhive.treasury.bank.internal/mcp
 function mcp {
   local t=$1 m=$2 p=$3 h s
   h=$(mktemp)
@@ -2778,9 +2790,9 @@ kubectl -n toolhive exec everything-0 -c mcp -- node -e \
 ### Quay
 
 Quay is the platform's registry (interview Q13, Q56, Q57 and Q59), at
-`https://quay.bank.internal`: the demo actor's image, public. The Substrate
-and kagent images and charts are on `ghcr.io/holos-run`, pulled anonymously
-([docs/forks.md](../docs/forks.md)). `Quay`
+`https://quay.treasury.bank.internal`: the demo actor's image, public. The
+Substrate and kagent images and charts are on `ghcr.io/holos-run`, pulled
+anonymously ([docs/forks.md](../docs/forks.md)). `Quay`
 (`components/quay.cue`) holds the release, the names and the URL; the `quay`
 component renders the rest. It is aavis-ops' Quay component ported, plain
 manifests rather than the Quay Operator, which off OpenShift still expects
@@ -2853,8 +2865,8 @@ OLM and adds nothing once the database is CloudNativePG.
   `FEATURE_SUPERUSERS_FULL_ACCESS`, so they administer organizations they
   did not make. A user's Quay name is their `preferred_username`.
 - **The route.** `HTTPRoute` `quay`, every path to `quay:8080`, plain HTTP
-  behind the gateway, as Keycloak. Pods resolve `quay.bank.internal` to the
-  gateway already, so aavis-ops' ServiceEntries are not ported.
+  behind the gateway, as Keycloak. Pods resolve `quay.treasury.bank.internal`
+  to the gateway already, so aavis-ops' ServiceEntries are not ported.
 - **Organizations.** One holos-controller `Organization` in `quay`, `demo`,
   which holds the public `Repository` `echo` for the demo actor. It syncs
   team `platformowners` from `/platform/owners` as admin, not `owners`, the
@@ -3010,7 +3022,11 @@ kubectl -n quay exec deploy/quay -c quay -- cat /sys/fs/cgroup/memory.current   
 
 From the repository's root on the claude VM, with `root.pem` as above,
 docker trusting the root
-(`sudo install -D root.pem /etc/docker/certs.d/quay.bank.internal/ca.crt`):
+(`sudo install -D root.pem
+/etc/docker/certs.d/quay.treasury.bank.internal/ca.crt`). A machine set up
+before the rename to cluster-qualified names also drops the old directory, the
+old root in it and the old login: `sudo rm -rf
+/etc/docker/certs.d/quay.bank.internal; docker logout quay.bank.internal`.
 
 ```sh
 # 1. Running, migrated, Synced and Healthy.
@@ -3018,7 +3034,7 @@ kubectl -n quay get cluster,deploy,pods                 # quay-db healthy; quay 
 kubectl -n argocd get application quay -o jsonpath='{.status.sync.status} {.status.health.status}{"\n"}'   # Synced Healthy
 kubectl -n quay logs deploy/quay -c quay | grep -i -m3 'migrat'
 
-# 2. By hand, in a browser: log in at https://quay.bank.internal as jeff
+# 2. By hand, in a browser: log in at https://quay.treasury.bank.internal as jeff
 #    through Keycloak, log out, and log in again (no 400 on the code exchange).
 
 # 3. The command converges, and the secret is listed under Platform.
@@ -3030,18 +3046,18 @@ kubectl -n holos-prj-platform get secret -l app.kubernetes.io/managed-by=holos.r
 kubectl -n quay get organization,repository             # READY True
 tok=$(kubectl -n holos-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d)
 curl -s --cacert root.pem -H "Authorization: Bearer $tok" \
-  https://quay.bank.internal/api/v1/organization/demo/team/platformowners/members | jq -c '[.members[].name]'
+  https://quay.treasury.bank.internal/api/v1/organization/demo/team/platformowners/members | jq -c '[.members[].name]'
                                                         # lists jeff, once jeff has logged in
 
 # 5. A multi-layer image, one layer large, pushed to the public repository
 #    with the controller's token, which docker login takes as $oauthtoken,
 #    and its blobs in RustFS.
-printf %s "$tok" | docker login quay.bank.internal -u '$oauthtoken' --password-stdin
+printf %s "$tok" | docker login quay.treasury.bank.internal -u '$oauthtoken' --password-stdin
 d=$(mktemp -d)
 printf 'FROM docker.io/library/busybox:1.37.0\nRUN head -c 300000000 /dev/urandom > /big\nRUN echo one > /one\nRUN echo two > /two\n' > $d/Dockerfile
-docker build -t quay.bank.internal/demo/echo:check $d
-docker push quay.bank.internal/demo/echo:check
-docker logout quay.bank.internal
+docker build -t quay.treasury.bank.internal/demo/echo:check $d
+docker push quay.treasury.bank.internal/demo/echo:check
+docker logout quay.treasury.bank.internal
 kubectl -n quay run s3-test --image=docker.io/rustfs/rc:v0.1.36 --restart=Never \
   --overrides='{"spec":{"containers":[{"name":"s3-test","image":"docker.io/rustfs/rc:v0.1.36",
     "command":["sleep","600"],"env":[
@@ -3055,11 +3071,11 @@ unset tok
 
 # 6. An anonymous pull of the public image, by a worker and from the laptop.
 kubectl create ns quay-test
-kubectl -n quay-test run anonymous --image=quay.bank.internal/demo/echo:check --image-pull-policy=Always \
+kubectl -n quay-test run anonymous --image=quay.treasury.bank.internal/demo/echo:check --image-pull-policy=Always \
   --restart=Never --command -- sleep 600
 kubectl -n quay-test get pods                           # anonymous Running, with no pull secret
 kubectl delete ns quay-test
-#   on the laptop, logged out: docker pull quay.bank.internal/demo/echo:check
+#   on the laptop, logged out: docker pull quay.treasury.bank.internal/demo/echo:check
 
 # 7. A clean render reproduces deploy/ (Render, below).
 ```
@@ -3424,16 +3440,17 @@ up`. Its private root is new (The private CA, above).
 ### Logging in
 
 Through Keycloak, as a member of `/platform/owners`, which the `argocd-rbac-cm`
-policy makes `role:admin`: in a browser at https://argocd.bank.internal,
-**Log in via Keycloak**, or with the CLI, `argocd login argocd.bank.internal
---grpc-web --sso`, which opens a browser and listens on `localhost:8085`.
-Argo CD's `oidc.config` names the realm's issuer, the public client `argocd`
-with PKCE and the scopes `openid profile email groups`, and no secret (The
-realm, above). The server checks Keycloak's certificate against the private
-root without it being in git: it mounts the namespace's `private-ca`
-ConfigMap and adds it to Go's system trust with `SSL_CERT_DIR`, so
-`oidc.config` has no `rootCA`. Groups are matched by full path, leading
-slash included. Nobody else from Keycloak gets a role.
+policy makes `role:admin`: in a browser at
+https://argocd.treasury.bank.internal, **Log in via Keycloak**, or with the
+CLI, `argocd login argocd.treasury.bank.internal --grpc-web --sso`, which
+opens a browser and listens on `localhost:8085`. Argo CD's `oidc.config` names
+the realm's issuer, the public client `argocd` with PKCE and the scopes
+`openid profile email groups`, and no secret (The realm, above). The server
+checks Keycloak's certificate against the private root without it being in
+git: it mounts the namespace's `private-ca` ConfigMap and adds it to Go's
+system trust with `SSL_CERT_DIR`, so `oidc.config` has no `rootCA`. Groups are
+matched by full path, leading slash included. Nobody else from Keycloak gets a
+role.
 
 That member is the realm's one user, `jeff` (`jeff@bank.internal`), imported
 with the realm and put in `/platform/owners` by holos-controller (The realm,
@@ -3453,7 +3470,7 @@ above). The gateway serves HTTP/1.1 to the server, so the CLI needs
 `--grpc-web`; without it the CLI warns and falls back to it.
 
 ```sh
-argocd login argocd.bank.internal --grpc-web --username admin --password \
+argocd login argocd.treasury.bank.internal --grpc-web --username admin --password \
   "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
 argocd app list
 ```
@@ -3563,7 +3580,8 @@ kubectl create ns treasury-test
 kubectl -n treasury-test run dnstest --image=docker.io/nicolaka/netshoot:v0.14 \
   --restart=Never --command -- sleep 3600
 kubectl -n treasury-test exec dnstest -- dig +search kubernetes.default A
-kubectl -n treasury-test exec dnstest -- dig @10.96.0.10 test.bank.internal A
+kubectl -n treasury-test exec dnstest -- dig +short @10.96.0.10 test.treasury.bank.internal A   # 10.20.0.30
+kubectl -n treasury-test exec dnstest -- dig @10.96.0.10 test.bank.internal A | grep status       # NXDOMAIN, in no cluster's subdomain
 kubectl -n treasury-test create deployment echo \
   --image=registry.k8s.io/e2e-test-images/agnhost:2.53 -- /agnhost netexec --http-port=8080
 kubectl -n treasury-test expose deployment echo --type=LoadBalancer --port=80 --target-port=8080
@@ -3593,7 +3611,7 @@ kind: Certificate
 metadata: {name: test}
 spec:
   secretName: test-tls
-  dnsNames: [test.ca-test.bank.internal]
+  dnsNames: [test.ca-test.treasury.bank.internal]
   issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: private-ca}
 EOF
 kubectl -n ca-test wait --for=condition=Ready certificate/test
@@ -3669,9 +3687,9 @@ kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
   -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy,SVC:.webhooks[*].clientConfig.service.name'   # Fail everywhere, every one a Service
 
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > /tmp/root.pem
-curl --resolve hello.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://hello.bank.internal/
-curl -sI --resolve hello.bank.internal:80:10.20.0.30 http://hello.bank.internal/   # 301 to https
-curl -s --resolve argocd.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://argocd.bank.internal/api/version
+curl --resolve hello.treasury.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://hello.treasury.bank.internal/
+curl -sI --resolve hello.treasury.bank.internal:80:10.20.0.30 http://hello.treasury.bank.internal/   # 301 to https
+curl -s --resolve argocd.treasury.bank.internal:443:10.20.0.30 --cacert /tmp/root.pem https://argocd.treasury.bank.internal/api/version
 
 kubectl create ns gw-test
 kubectl label ns gw-test istio.io/dataplane-mode=ambient
@@ -3679,7 +3697,7 @@ kubectl -n gw-test run curl --image=docker.io/curlimages/curl:8.11.1 --restart=N
   --overrides='{"spec":{"containers":[{"name":"curl","image":"docker.io/curlimages/curl:8.11.1","command":["sleep","3600"],"volumeMounts":[{"name":"ca","mountPath":"/ca"}]}],"volumes":[{"name":"ca","configMap":{"name":"private-ca"}}]}}'
 kubectl -n gw-test wait --for=condition=Ready pod/curl
 kubectl -n gw-test exec curl -- curl -s --cacert /ca/ca.crt \
-  --resolve hello.bank.internal:443:10.20.0.30 https://hello.bank.internal/
+  --resolve hello.treasury.bank.internal:443:10.20.0.30 https://hello.treasury.bank.internal/
 kubectl -n gw-test exec curl -- curl -s http://hello.hello/   # pod to pod over HBONE
 kubectl -n istio-system logs ds/ztunnel | grep 'connection complete'   # one ztunnel's; src.identity and dst.identity
 kubectl delete ns gw-test

@@ -110,7 +110,7 @@ func parseOptions(args []string, stderr io.Writer) (*options, error) {
 	fs := flag.NewFlagSet("quay-bootstrap "+cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.context, "context", "", "kubectl context (default: the current one)")
-	fs.StringVar(&o.quayURL, "quay-url", "https://quay.bank.internal", "Quay's URL")
+	fs.StringVar(&o.quayURL, "quay-url", "https://quay.treasury.bank.internal", "Quay's URL, treasury's unless set")
 	fs.StringVar(&o.caFile, "ca-file", "", "PEM file of the private root (default: ConfigMap private-ca from the cluster)")
 	fs.StringVar(&o.caNamespace, "ca-namespace", "default", "namespace of ConfigMap private-ca")
 	fs.StringVar(&o.namespace, "namespace", "holos-prj-platform", "namespace of the platform secrets")

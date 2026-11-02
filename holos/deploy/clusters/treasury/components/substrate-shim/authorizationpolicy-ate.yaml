@@ -9,12 +9,12 @@ spec:
         - from:
             - source:
                 requestPrincipals:
-                    - https://keycloak.bank.internal/realms/holos/*
+                    - https://keycloak.treasury.bank.internal/realms/holos/*
           to:
             - operation:
                 hosts:
-                    - '*.demo.ate.bank.internal'
-                    - '*.demo.ate.bank.internal:443'
+                    - '*.demo.ate.treasury.bank.internal'
+                    - '*.demo.ate.treasury.bank.internal:443'
           when:
             - key: request.auth.claims[groups]
               values:
@@ -22,12 +22,12 @@ spec:
         - from:
             - source:
                 requestPrincipals:
-                    - https://keycloak.bank.internal/realms/holos/*
+                    - https://keycloak.treasury.bank.internal/realms/holos/*
           to:
             - operation:
                 hosts:
-                    - '*.kagent.ate.bank.internal'
-                    - '*.kagent.ate.bank.internal:443'
+                    - '*.kagent.ate.treasury.bank.internal'
+                    - '*.kagent.ate.treasury.bank.internal:443'
           when:
             - key: request.auth.claims[groups]
               values:

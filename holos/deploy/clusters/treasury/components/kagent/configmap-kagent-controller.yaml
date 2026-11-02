@@ -30,7 +30,7 @@ data:
     push:
       allowHttp: false
       allowPrivateNetworks: false
-      issuer: https://kagent.bank.internal
+      issuer: https://kagent.treasury.bank.internal
       maxConcurrency: 10
       recoveryInterval: 60s
       sendTimeout: 5s

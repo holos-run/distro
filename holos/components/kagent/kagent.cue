@@ -3,8 +3,9 @@
 package holos
 
 // kagent is kagent on Agent Substrate (interview Q26), from the holos-run
-// fork's kagent chart (Kagent, kagent.cue), at https://kagent.bank.internal
-// behind a Keycloak login. kagent-crds, before it, holds its CRDs.
+// fork's kagent chart (Kagent, kagent.cue), at
+// https://kagent.treasury.bank.internal behind a Keycloak login. kagent-crds,
+// before it, holds its CRDs.
 //
 // The chart runs the controller, the UI (nginx, which serves the app and
 // proxies the API to the controller), the read-only kagent-tools MCP server

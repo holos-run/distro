@@ -78,9 +78,9 @@ spec:
         - name: KAGENT_OAUTH2_PROXY_SIGNIN_TEMPLATE_CHECKSUM
           value: 41963eed4b6300e97cdc9e3ef7a12c51fcb768fe4eca89fee776252171e8d1fc
         - name: OIDC_ISSUER_URL
-          value: https://keycloak.bank.internal/realms/holos
+          value: https://keycloak.treasury.bank.internal/realms/holos
         - name: OIDC_REDIRECT_URL
-          value: https://kagent.bank.internal/oauth2/callback
+          value: https://kagent.treasury.bank.internal/oauth2/callback
         - name: UPSTREAM_URL
           value: http://kagent-ui:8080
         - name: SSL_CERT_FILE

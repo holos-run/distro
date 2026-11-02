@@ -52,8 +52,7 @@ HolosAuthenticator: {
 
 	// host is the API server's public name, the Backend's spec.host, matched
 	// exactly against :authority, and the gateway's listener hostname:
-	// k8s.<ingressDomain>, so k8s.<cluster>.<privateDomain> unless the
-	// cluster pins its ingress domain, as treasury does until its rebuild
+	// k8s.<ingressDomain>, so k8s.<cluster>.<privateDomain> by default
 	// (the Cluster_Qualified_Hostnames planning project). The private zone's
 	// *.<ingressDomain> record resolves it to the ingress Gateway.
 	host: "k8s.\(IngressGateway.domain)"

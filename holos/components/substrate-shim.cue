@@ -37,8 +37,7 @@ AteGateway: {
 	// hostname is in, <actor>.<atespace>.<domain> (interview Q9): two labels,
 	// the router's atespace slash actor. With the ingress domain's default,
 	// that is <actor>.<atespace>.ate.<cluster>.<privateDomain> (the
-	// Cluster_Qualified_Hostnames planning project); treasury pins its
-	// ingress domain to the bare zone until its rebuild. The private zone's
+	// Cluster_Qualified_Hostnames planning project). The private zone's
 	// *.<ingressDomain> record already resolves it to the ingress Gateway's
 	// address.
 	domain:   "ate.\(IngressGateway.domain)"

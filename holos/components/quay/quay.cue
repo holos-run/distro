@@ -8,9 +8,9 @@ import (
 )
 
 // quay is the platform's registry (interview Q13, Q56, Q57 and Q59), at
-// https://quay.bank.internal: Quay 3.17.6 as one plain Deployment, ported
-// from aavis-ops' quay component, with no Quay Operator, no Clair, no mirror
-// worker and no config editor. Its database is its own one-instance
+// https://quay.treasury.bank.internal: Quay 3.17.6 as one plain Deployment,
+// ported from aavis-ops' quay component, with no Quay Operator, no Clair, no
+// mirror worker and no config editor. Its database is its own one-instance
 // CloudNativePG cluster, its blobs are in RustFS's bucket quay, and its
 // build-log and event queues are in an ephemeral Redis beside it. It holds
 // the demo actor's image, public; the Substrate and kagent images are on
