@@ -10,7 +10,7 @@ spec:
     name: holos
     namespace: keycloak
   redirectUris:
-  - https://kagent.bank.internal/oauth2/callback
+  - https://kagent.treasury.bank.internal/oauth2/callback
   secretRef:
     key: client-secret
     name: kagent-oidc-client

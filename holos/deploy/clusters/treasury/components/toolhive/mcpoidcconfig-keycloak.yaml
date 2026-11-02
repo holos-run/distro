@@ -9,6 +9,6 @@ spec:
             configMapRef:
                 key: ca.crt
                 name: private-ca
-        issuer: https://keycloak.bank.internal/realms/holos
+        issuer: https://keycloak.treasury.bank.internal/realms/holos
         jwksAllowPrivateIP: true
     type: inline

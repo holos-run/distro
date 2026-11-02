@@ -5,7 +5,7 @@ metadata:
     namespace: substrate-shim
 spec:
     dnsNames:
-        - '*.kagent.ate.bank.internal'
+        - '*.kagent.ate.treasury.bank.internal'
     issuerRef:
         group: cert-manager.io
         kind: ClusterIssuer

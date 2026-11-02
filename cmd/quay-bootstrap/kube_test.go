@@ -141,7 +141,7 @@ func TestOrgEmail(t *testing.T) {
 		want string
 	}{
 		{[]string{"token", "-quay-url", "https://quay.treasury.bank.internal"}, "svc-quay-controller+platform-automation@bank.internal"},
-		{[]string{"token", "-quay-url", "https://quay.bank.internal"}, "svc-quay-controller+platform-automation@bank.internal"},
+		{[]string{"token"}, "svc-quay-controller+platform-automation@bank.internal"},
 		{[]string{"token", "-quay-url", "https://quay.payments.example.internal", "--email-domain", "example.internal"}, "svc-quay-controller+platform-automation@example.internal"},
 	} {
 		o, err := parseOptions(tc.args, io.Discard)

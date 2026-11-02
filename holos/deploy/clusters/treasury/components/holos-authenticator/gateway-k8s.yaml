@@ -20,7 +20,7 @@ spec:
         kind: HTTPRoute
       namespaces:
         from: Same
-    hostname: k8s.bank.internal
+    hostname: k8s.treasury.bank.internal
     name: https
     port: 443
     protocol: HTTPS

@@ -5,7 +5,7 @@ metadata:
     namespace: toolhive
 spec:
     hostnames:
-        - toolhive.bank.internal
+        - toolhive.treasury.bank.internal
     parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

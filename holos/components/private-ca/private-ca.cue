@@ -65,9 +65,9 @@ let TrustManager = {name: "trust-manager", namespace: PrivateCA.namespace}
 
 // Exactly is an allowed string list of approver-policy's that permits
 // exactly the names given. values are patterns, in which * matches any
-// string, so *.bank.internal would also allow keycloak.bank.internal; where
-// a name has a *, a CEL rule also requires each value to be one of the
-// names as written.
+// string, so *.treasury.bank.internal would also allow
+// keycloak.treasury.bank.internal; where a name has a *, a CEL rule also
+// requires each value to be one of the names as written.
 #Exactly: {
 	names: [...string]
 	out: {

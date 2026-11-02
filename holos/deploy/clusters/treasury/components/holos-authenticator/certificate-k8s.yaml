@@ -5,7 +5,7 @@ metadata:
   namespace: holos-authenticator
 spec:
   dnsNames:
-  - k8s.bank.internal
+  - k8s.treasury.bank.internal
   issuerRef:
     group: cert-manager.io
     kind: ClusterIssuer

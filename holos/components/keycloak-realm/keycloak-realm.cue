@@ -7,9 +7,9 @@ import (
 )
 
 // keycloak-realm is the platform's realm, holos, at issuer
-// https://keycloak.bank.internal/realms/holos, in two halves, because
-// holos-controller 0.22.0 has no kind for a realm, a client scope or a
-// protocol mapper, and no field for the device grant (interview Q50):
+// https://keycloak.treasury.bank.internal/realms/holos, in two halves,
+// because holos-controller 0.22.0 has no kind for a realm, a client scope or
+// a protocol mapper, and no field for the device grant (interview Q50):
 //
 //   - A KeycloakRealmImport creates the realm with what the controller cannot
 //     reconcile: the groups client scope, the kubectl, argocd and

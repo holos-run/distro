@@ -5,7 +5,7 @@ metadata:
     namespace: argocd
 spec:
     hostnames:
-        - argocd.bank.internal
+        - argocd.treasury.bank.internal
     parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

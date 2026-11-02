@@ -17,8 +17,9 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   `~/.config/holos/talos/treasury/kubeconfig` on the machine that built it.
 
 **bank.internal**
-: The garage's private DNS zone. Every service is `<svc>.bank.internal` and answers on the ingress
-  gateway, 10.20.0.30.
+: The garage's private DNS zone. Each cluster has a subdomain of it, so every service is
+  `<svc>.<cluster>.bank.internal`, such as `keycloak.treasury.bank.internal`, and answers on its
+  cluster's ingress gateway, 10.20.0.30 for treasury. Email addresses stay `<user>@bank.internal`.
 
 **talosvm**
 : The program that makes, resizes and restarts the cluster's Proxmox VMs,
@@ -28,7 +29,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 **private root**, **private CA**
 : The cluster's own certificate authority, `Holos treasury root CA`. The `private-ca` ClusterIssuer
   issues from it, and every namespace has it as ConfigMap `private-ca`, key `ca.crt`. A laptop
-  trusts it to reach `*.bank.internal` ([The private CA](../holos/README.md#the-private-ca)).
+  trusts it to reach `*.treasury.bank.internal`
+  ([The private CA](../holos/README.md#the-private-ca)).
 
 ## Holos
 
@@ -55,8 +57,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   it in an immutable Secret ([External Secrets](../holos/README.md#external-secrets)).
 
 **Secrets Manager**
-: The Holos Secrets Manager, holos-run/secrets-manager, at `https://secrets.bank.internal`: the web
-  UI where platform secrets are made.
+: The Holos Secrets Manager, holos-run/secrets-manager, at
+  `https://secrets.treasury.bank.internal`: the web UI where platform secrets are made.
 
 **holos-controller**
 : The controller that manages Keycloak for Holos, such as each service's confidential client, from
@@ -185,8 +187,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 **Substrate shim**, **shim**
 : Component `substrate-shim`, the Istio Gateway `substrate-shim/ate` that is how a person reaches
-  an actor, at `https://<actor>.<atespace>.ate.bank.internal`. It checks the caller's ID token and
-  groups, sets `ate-target-actor`, and connects to the router with mutual TLS
+  an actor, at `https://<actor>.<atespace>.ate.treasury.bank.internal`. It checks the caller's ID
+  token and groups, sets `ate-target-actor`, and connects to the router with mutual TLS
   ([The Substrate shim](../holos/README.md#the-substrate-shim)).
 
 **`ate-gateway`**, **`AteGateway`**

@@ -5,7 +5,7 @@ metadata:
   namespace: holos-authenticator
 spec:
   hostnames:
-  - k8s.bank.internal
+  - k8s.treasury.bank.internal
   parentRefs:
   - group: gateway.networking.k8s.io
     kind: Gateway

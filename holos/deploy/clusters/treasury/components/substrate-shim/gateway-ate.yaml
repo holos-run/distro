@@ -29,7 +29,7 @@ spec:
                           operator: In
                           values:
                             - ate-system
-          hostname: '*.demo.ate.bank.internal'
+          hostname: '*.demo.ate.treasury.bank.internal'
           name: demo
           port: 443
           protocol: HTTPS
@@ -50,7 +50,7 @@ spec:
                           operator: In
                           values:
                             - ate-system
-          hostname: '*.kagent.ate.bank.internal'
+          hostname: '*.kagent.ate.treasury.bank.internal'
           name: kagent
           port: 443
           protocol: HTTPS

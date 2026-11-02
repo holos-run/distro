@@ -7,10 +7,10 @@ spec:
         dnsNames:
             required: true
             validations:
-                - message: 'must be one of these exactly, * included: *.bank.internal'
-                  rule: self in ["*.bank.internal"]
+                - message: 'must be one of these exactly, * included: *.treasury.bank.internal'
+                  rule: self in ["*.treasury.bank.internal"]
             values:
-                - '*.bank.internal'
+                - '*.treasury.bank.internal'
         isCA: false
     selector:
         issuerRef:

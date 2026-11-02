@@ -540,7 +540,7 @@ spec:
               standardFlowEnabled: true
             - attributes:
                 pkce.code.challenge.method: S256
-                post.logout.redirect.uris: https://argocd.bank.internal/applications
+                post.logout.redirect.uris: https://argocd.treasury.bank.internal/applications
               baseUrl: /applications
               clientId: argocd
               directAccessGrantsEnabled: false
@@ -550,14 +550,14 @@ spec:
               protocol: openid-connect
               publicClient: true
               redirectUris:
-                - https://argocd.bank.internal/auth/callback
-                - https://argocd.bank.internal/pkce/verify
+                - https://argocd.treasury.bank.internal/auth/callback
+                - https://argocd.treasury.bank.internal/pkce/verify
                 - http://localhost:8085/auth/callback
-              rootUrl: https://argocd.bank.internal
+              rootUrl: https://argocd.treasury.bank.internal
               serviceAccountsEnabled: false
               standardFlowEnabled: true
               webOrigins:
-                - https://argocd.bank.internal
+                - https://argocd.treasury.bank.internal
             - clientAuthenticatorType: client-secret
               clientId: svc-holos-controller
               directAccessGrantsEnabled: false

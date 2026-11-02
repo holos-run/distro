@@ -7,11 +7,11 @@ spec:
         dnsNames:
             required: true
             validations:
-                - message: 'must be one of these exactly, * included: *.demo.ate.bank.internal, *.kagent.ate.bank.internal'
-                  rule: self in ["*.demo.ate.bank.internal","*.kagent.ate.bank.internal"]
+                - message: 'must be one of these exactly, * included: *.demo.ate.treasury.bank.internal, *.kagent.ate.treasury.bank.internal'
+                  rule: self in ["*.demo.ate.treasury.bank.internal","*.kagent.ate.treasury.bank.internal"]
             values:
-                - '*.demo.ate.bank.internal'
-                - '*.kagent.ate.bank.internal'
+                - '*.demo.ate.treasury.bank.internal'
+                - '*.kagent.ate.treasury.bank.internal'
         isCA: false
     selector:
         issuerRef:

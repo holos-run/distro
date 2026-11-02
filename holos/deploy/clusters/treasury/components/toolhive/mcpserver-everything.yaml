@@ -18,7 +18,7 @@ spec:
     oidcConfigRef:
         audience: kubectl
         name: keycloak
-        resourceUrl: https://toolhive.bank.internal/mcp
+        resourceUrl: https://toolhive.treasury.bank.internal/mcp
         scopes:
             - openid
             - profile

@@ -1,7 +1,7 @@
 apiVersion: v1
 data:
     config.yaml: |
-        SERVER_HOSTNAME: quay.bank.internal
+        SERVER_HOSTNAME: quay.treasury.bank.internal
         PREFERRED_URL_SCHEME: https
         EXTERNAL_TLS_TERMINATION: true
         SETUP_COMPLETE: true
@@ -35,7 +35,7 @@ data:
         AUTHENTICATION_TYPE: OIDC
         KEYCLOAK_LOGIN_CONFIG:
           SERVICE_NAME: Keycloak
-          OIDC_SERVER: https://keycloak.bank.internal/realms/holos/
+          OIDC_SERVER: https://keycloak.treasury.bank.internal/realms/holos/
           CLIENT_ID: quay
           CLIENT_SECRET: __OIDC_CLIENT_SECRET__
           LOGIN_SCOPES:

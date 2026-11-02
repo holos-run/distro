@@ -5,9 +5,10 @@ Status: accepted, 2026-10-27; amended 2026-10-29 (holos-authenticator's audience
 ## Context
 
 Every person on the platform logs in through Keycloak, the realm `holos` at
-`https://keycloak.bank.internal/realms/holos`, and then presents a token to
-the service they use: Argo CD, the Kubernetes API through `kubectl`, the
-Secrets Manager, and later Substrate's shim, holos-authenticator and kagent.
+`https://keycloak.treasury.bank.internal/realms/holos`, and then presents a
+token to the service they use: Argo CD, the Kubernetes API through
+`kubectl`, the Secrets Manager, and later Substrate's shim,
+holos-authenticator and kagent.
 Each service has to decide which of the tokens Keycloak issues it accepts.
 
 The Secrets Manager (holos-run/secrets-manager v0.19.0) showed the cost of
@@ -86,12 +87,13 @@ The consequence above first said holos-authenticator would check `aud`
 against a client ID of its own. It checks `kubectl` instead (interview Q61).
 
 holos-authenticator stands in front of the Kubernetes API at
-`k8s.bank.internal`, and the program that calls it is kubectl, through
-kubelogin, logging in to the realm's `kubectl` client. The ID token kubelogin
-caches for that client already has `aud` `kubectl`, and the Substrate shim
-accepts that token for the same reason. With its own client, a person would
-log in twice, once per audience, and keep two kubelogin caches, and the
-realm would need one more public client with the device grant for no gain.
+`k8s.treasury.bank.internal`, and the program that calls it is kubectl,
+through kubelogin, logging in to the realm's `kubectl` client. The ID token
+kubelogin caches for that client already has `aud` `kubectl`, and the
+Substrate shim accepts that token for the same reason. With its own client,
+a person would log in twice, once per audience, and keep two kubelogin
+caches, and the realm would need one more public client with the device
+grant for no gain.
 
 The rule this decision states still holds: a service accepts an ID token
 only where its `aud` is meant to be accepted. holos-authenticator and the

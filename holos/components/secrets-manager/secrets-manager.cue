@@ -1,13 +1,13 @@
 package holos
 
 // secrets-manager is the Holos Secrets Manager (interview Q18), at
-// https://secrets.bank.internal: a Go server with a web UI that manages
-// Kubernetes Secrets directly, with Keycloak login and project grants, so
-// there is no external store. A platform secret is made here, in the
-// management namespace holos-prj-platform (Q54), which management-namespaces
-// renders, early in the registry, and copied into each consumer's namespace
-// by an ExternalSecret through that consumer's per-namespace store
-// (#ScopedSecretStore).
+// https://secrets.treasury.bank.internal: a Go server with a web UI that
+// manages Kubernetes Secrets directly, with Keycloak login and project
+// grants, so there is no external store. A platform secret is made here, in
+// the management namespace holos-prj-platform (Q54), which
+// management-namespaces renders, early in the registry, and copied into each
+// consumer's namespace by an ExternalSecret through that consumer's
+// per-namespace store (#ScopedSecretStore).
 //
 // SecretsManager (components/secrets-manager.cue) holds the release, the
 // names and the URL. The server is one Deployment of the release's

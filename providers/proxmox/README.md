@@ -428,10 +428,52 @@ The garage as of 2026-10-23.
 
 ### DNS
 
-The platform's private domain is `bank.internal`. Jeff manages the LAN
-resolver, 192.168.2.1, by hand and points the wildcard `*.bank.internal` at
-the cluster's ingress Gateway address, from the reserved range above. The
-platform needs no DNS automation; a new cluster's ingress address is a record
-to add there. With more than one cluster up at once, only one can hold the
-wildcard; the others need names of their own under `bank.internal`, which is a
-decision for the item that brings up the second cluster.
+The platform's private domain is `bank.internal`, and each cluster has a
+subdomain of it named after the cluster: every service is
+`<service>.<cluster>.bank.internal`, such as `keycloak.treasury.bank.internal`.
+Jeff manages the LAN resolver, 192.168.2.1, the OpenWRT router's dnsmasq, by
+hand. The platform needs no DNS automation. The rule is one `address` line
+per cluster, `/<cluster>.bank.internal/<its Gateway address>`, from the
+reserved range above, which answers the subdomain and every name under it,
+and one `local=/bank.internal/` for the zone, so a name in no cluster's
+subdomain, such as a bare `<service>.bank.internal` from before the rename,
+gets NXDOMAIN at the router instead of going to the upstream resolver.
+dnsmasq answers from the most specific domain that matches, so the cluster
+lines win over the zone's.
+
+On the router (`ssh root@192.168.2.1`), treasury's line replaces the bare
+zone's `/bank.internal/10.20.0.30`, which pointed every name at treasury
+before the names carried the cluster. Make this change when treasury is
+rebuilt with the new names, after `talosvm destroy -yes` and before the
+bootstrap: run against a cluster that still serves the bare names, it makes
+every one of them NXDOMAIN.
+
+```sh
+uci del_list dhcp.@dnsmasq[0].address='/bank.internal/10.20.0.30'
+uci add_list dhcp.@dnsmasq[0].address='/treasury.bank.internal/10.20.0.30'
+uci add_list dhcp.@dnsmasq[0].server='/bank.internal/'
+uci commit dhcp
+/etc/init.d/dnsmasq restart
+uci show dhcp.@dnsmasq[0].address   # ...='/treasury.bank.internal/10.20.0.30', no '/bank.internal/...'
+uci show dhcp.@dnsmasq[0].server    # includes '/bank.internal/'
+```
+
+`del_list` does nothing, silently, when the old line was entered with a
+different string, such as through LuCI, so check that `uci show` no longer
+lists `/bank.internal/10.20.0.30` and remove it by hand if it does.
+
+The zone's line is dnsmasq's `local=/bank.internal/`, set through the
+`server` list, of which `local` is a synonym: OpenWRT's `local` option holds
+one value and already holds `/lan/`. In LuCI the two are Network, DHCP and
+DNS, General tab, Addresses and DNS forwardings. A new cluster adds its own
+line, such as `/example.bank.internal/10.20.0.34`, and touches no other.
+
+From the laptop, the cluster's names answer and a bare name does not:
+
+```sh
+dig +short @192.168.2.1 keycloak.treasury.bank.internal   # 10.20.0.30
+dig @192.168.2.1 keycloak.bank.internal | grep status     # NXDOMAIN, a name from before the rename
+```
+
+CoreDNS in each cluster forwards the whole zone to the router (CoreDNS in
+`holos/README.md`), so pods see the same answers.

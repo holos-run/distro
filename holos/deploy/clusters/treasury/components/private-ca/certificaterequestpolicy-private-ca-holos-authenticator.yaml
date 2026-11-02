@@ -7,7 +7,7 @@ spec:
         dnsNames:
             required: true
             values:
-                - k8s.bank.internal
+                - k8s.treasury.bank.internal
         isCA: false
     selector:
         issuerRef:

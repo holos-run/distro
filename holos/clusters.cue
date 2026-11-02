@@ -35,11 +35,11 @@ import "net"
 	site: #Site
 
 	// ingressDomain is the zone the cluster's hostnames are in: every
-	// service is <service>.<ingressDomain>, <service>.<cluster>.<privateDomain>
-	// unless a cluster pins it (the Cluster_Qualified_Hostnames planning
-	// project), so two clusters on one site never claim the same name once no
-	// cluster is pinned to the bare zone. The ingress Gateway's wildcard
-	// certificate is *.<ingressDomain> (components/ingress.cue).
+	// service is <service>.<ingressDomain>, by default
+	// <service>.<cluster>.<privateDomain> (the Cluster_Qualified_Hostnames
+	// planning project), so two clusters on one site never claim the same
+	// name. The ingress Gateway's wildcard certificate is *.<ingressDomain>
+	// (components/ingress.cue).
 	ingressDomain: string | *"\(name).\(site.privateDomain)"
 
 	// kubernetesVersion is the version Talos runs, pinned in
@@ -154,11 +154,6 @@ sites: garage: {
 // four addresses of the ingress range.
 clusters: treasury: {
 	site: sites.garage
-	// ingressDomain is pinned to the bare zone, bank.internal, the names
-	// treasury was built with, until its rebuild: a later change,
-	// the-flip-held-for-the-rebuild, removes the pin, and treasury's names
-	// move to <service>.treasury.bank.internal with the rest of the rule.
-	ingressDomain: "bank.internal"
 	loadBalancer: {
 		start: "10.20.0.30"
 		stop:  "10.20.0.33"

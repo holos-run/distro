@@ -5,7 +5,7 @@ metadata:
     namespace: keycloak
 spec:
     hostnames:
-        - keycloak.bank.internal
+        - keycloak.treasury.bank.internal
     parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

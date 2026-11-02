@@ -7,7 +7,7 @@ data:
   exec.enabled: "false"
   oidc.config: |
     name: Keycloak
-    issuer: https://keycloak.bank.internal/realms/holos
+    issuer: https://keycloak.treasury.bank.internal/realms/holos
     clientID: argocd
     enablePKCEAuthentication: true
     requestedScopes:
@@ -253,7 +253,7 @@ data:
   timeout.hard.reconciliation: 0s
   timeout.reconciliation: 30s
   timeout.reconciliation.jitter: 0s
-  url: https://argocd.bank.internal
+  url: https://argocd.treasury.bank.internal
 kind: ConfigMap
 metadata:
   labels:

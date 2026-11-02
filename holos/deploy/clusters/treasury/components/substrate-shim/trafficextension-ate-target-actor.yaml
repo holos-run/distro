@@ -6,8 +6,8 @@ metadata:
 spec:
     lua:
         inlineCode: |-
-            -- <actor>.<atespace>.ate.bank.internal to ate-target-actor: <atespace>/<actor>.
-            local suffix = ".ate.bank.internal"
+            -- <actor>.<atespace>.ate.treasury.bank.internal to ate-target-actor: <atespace>/<actor>.
+            local suffix = ".ate.treasury.bank.internal"
 
             function envoy_on_request(request_handle)
               local headers = request_handle:headers()
@@ -18,7 +18,7 @@ spec:
                 actor, atespace = string.match(string.sub(host, 1, -#suffix - 1), "^([a-z0-9-]+)%.([a-z0-9-]+)$")
               end
               if actor == nil then
-                request_handle:respond({[":status"] = "400"}, "host is not <actor>.<atespace>.ate.bank.internal\n")
+                request_handle:respond({[":status"] = "400"}, "host is not <actor>.<atespace>.ate.treasury.bank.internal\n")
                 return
               end
               headers:replace("ate-target-actor", atespace .. "/" .. actor)
