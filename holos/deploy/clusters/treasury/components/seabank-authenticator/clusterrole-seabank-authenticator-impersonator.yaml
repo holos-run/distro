@@ -11,6 +11,7 @@ rules:
   - oidc:bob
   - oidc:carol
   - oidc:dave
+  - oidc:erin
   resources:
   - users
   verbs:
@@ -19,6 +20,7 @@ rules:
   - ""
   resourceNames:
   - /platform/owners
+  - /projects/cards/roles/owner
   - /projects/checkout/roles/owner
   - /projects/ledger/roles/owner
   - /projects/lending/roles/owner

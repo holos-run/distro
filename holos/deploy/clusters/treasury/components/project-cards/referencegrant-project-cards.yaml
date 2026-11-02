@@ -1,0 +1,24 @@
+apiVersion: security.holos.run/v1alpha1
+kind: ReferenceGrant
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: cards
+    name: project-cards
+    namespace: keycloak
+spec:
+    from:
+        - group: keycloak.holos.run
+          kind: Group
+          namespace: cards
+        - group: keycloak.holos.run
+          kind: User
+          namespace: cards
+        - group: keycloak.holos.run
+          kind: GroupMembership
+          namespace: cards
+    to:
+        - group: keycloak.holos.run
+          kind: Instance
+          name: default

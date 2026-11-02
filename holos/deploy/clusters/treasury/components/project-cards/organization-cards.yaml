@@ -1,0 +1,28 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    labels:
+        holos.run/project: cards
+    name: cards
+    namespace: cards
+spec:
+    credentialsSecretRef:
+        name: bank-of-pinky-controller-quay-creds
+    deletionPolicy: Orphan
+    email: quay+cards@bank.internal
+    name: cards
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin
+        - name: projectowners
+          oidcGroup: /projects/cards/roles/owner
+          role: admin
+        - name: projecteditors
+          oidcGroup: /projects/cards/roles/editor
+          repositoryPermission: write
+          role: creator
+        - name: projectviewers
+          oidcGroup: /projects/cards/roles/viewer
+          repositoryPermission: read
+          role: member

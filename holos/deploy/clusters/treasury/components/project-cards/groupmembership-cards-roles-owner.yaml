@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: GroupMembership
+metadata:
+    labels:
+        holos.run/project: cards
+    name: cards-roles-owner
+    namespace: cards
+spec:
+    groupRef:
+        name: cards-roles-owner
+    instanceRef:
+        name: default
+        namespace: keycloak
+    members:
+        - email: erin@bank.internal

@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    labels:
+        holos.run/project: cards
+    name: erin
+    namespace: cards
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: erin@bank.internal
+    instanceRef:
+        name: default
+        namespace: keycloak
+    username: erin
