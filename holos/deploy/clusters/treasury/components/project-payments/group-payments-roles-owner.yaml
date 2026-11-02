@@ -1,0 +1,12 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Group
+metadata:
+    labels:
+        holos.run/project: payments
+    name: payments-roles-owner
+    namespace: payments
+spec:
+    instanceRef:
+        name: holos
+        namespace: keycloak
+    path: projects/payments/roles/owner
