@@ -208,7 +208,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 				}
 				spec: {
 					name:           NAME
-					email:          "quay+\(NAME)@\(IngressGateway.domain)"
+					email:          "quay+\(NAME)@\(Cluster.site.privateDomain)"
 					deletionPolicy: "Orphan"
 					syncedTeams: [
 						{

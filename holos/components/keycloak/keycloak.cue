@@ -3,7 +3,7 @@ package holos
 // keycloak is the platform's one identity provider (interview Q11): Keycloak
 // 26.8.1, run by the Keycloak Operator (the keycloak-operator component) from
 // the Keycloak resource here, with its own one-instance CloudNativePG cluster,
-// behind the ingress gateway at keycloak.<privateDomain>. That URL is the
+// behind the ingress gateway at keycloak.<ingressDomain>. That URL is the
 // issuer every token carries, https://keycloak.bank.internal/realms/<realm>,
 // and pods and the laptop resolve it alike, to the gateway. The realm, holos,
 // is keycloak-realm's, imported once and then reconciled in part by

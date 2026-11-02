@@ -33,10 +33,14 @@ AteGateway: {
 	// names, whose deployment key adds the pod certificate to the gateway.
 	parameters: "ate-gateway"
 
-	// domain is the zone under the private domain every actor's hostname is
-	// in, <actor>.<atespace>.<domain> (interview Q9): two labels, the
-	// router's atespace slash actor. The private zone's *.<privateDomain>
-	// already resolves it to the ingress Gateway's address.
+	// domain is the zone under the cluster's ingress domain every actor's
+	// hostname is in, <actor>.<atespace>.<domain> (interview Q9): two labels,
+	// the router's atespace slash actor. With the ingress domain's default,
+	// that is <actor>.<atespace>.ate.<cluster>.<privateDomain> (the
+	// Cluster_Qualified_Hostnames planning project); treasury pins its
+	// ingress domain to the bare zone until its rebuild. The private zone's
+	// *.<ingressDomain> record already resolves it to the ingress Gateway's
+	// address.
 	domain:   "ate.\(IngressGateway.domain)"
 	wildcard: "*.\(domain)"
 

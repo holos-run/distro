@@ -32,7 +32,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -58,6 +57,7 @@ type options struct {
 	caFile      string
 	caNamespace string
 	namespace   string
+	emailDomain string
 
 	// token
 	username          string
@@ -81,37 +81,10 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stderr io.Writer) error {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fmt.Fprint(stderr, usage)
-		return errors.New("no command")
-	}
-	cmd, args := args[0], args[1:]
-	o := &options{}
-	fs := flag.NewFlagSet("quay-bootstrap "+cmd, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.StringVar(&o.context, "context", "", "kubectl context (default: the current one)")
-	fs.StringVar(&o.quayURL, "quay-url", "https://quay.bank.internal", "Quay's URL")
-	fs.StringVar(&o.caFile, "ca-file", "", "PEM file of the private root (default: ConfigMap private-ca from the cluster)")
-	fs.StringVar(&o.caNamespace, "ca-namespace", "default", "namespace of ConfigMap private-ca")
-	fs.StringVar(&o.namespace, "namespace", "holos-prj-platform", "namespace of the platform secrets")
-	fs.StringVar(&o.tokenSecret, "token-secret", "quay-controller-token", "platform secret holding holos-controller's token")
-	fs.StringVar(&o.automationOrg, "automation-org", "platform-automation", "organization holding the OAuth Application")
-	switch cmd {
-	case "token":
-		fs.StringVar(&o.username, "username", "svc-quay-controller", "realm user to log in as; a Quay superuser")
-		fs.StringVar(&o.passwordNamespace, "password-namespace", "keycloak", "namespace of the user's password Secret, named after the user")
-		fs.StringVar(&o.application, "application", "holos-controller", "OAuth Application name")
-	default:
-		fmt.Fprint(stderr, usage)
-		return fmt.Errorf("unknown command %q", cmd)
-	}
-	if err := fs.Parse(args); err != nil {
+	o, err := parseOptions(args, stderr)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
-	}
-	o.quayURL = strings.TrimRight(o.quayURL, "/")
 
 	k := &kubectl{context: o.context}
 	name, err := k.currentContext(ctx)
@@ -124,6 +97,43 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		return err
 	}
 	return runToken(ctx, k, o, roots)
+}
+
+// parseOptions reads the command and its flags.
+func parseOptions(args []string, stderr io.Writer) (*options, error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprint(stderr, usage)
+		return nil, errors.New("no command")
+	}
+	cmd, args := args[0], args[1:]
+	o := &options{}
+	fs := flag.NewFlagSet("quay-bootstrap "+cmd, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&o.context, "context", "", "kubectl context (default: the current one)")
+	fs.StringVar(&o.quayURL, "quay-url", "https://quay.bank.internal", "Quay's URL")
+	fs.StringVar(&o.caFile, "ca-file", "", "PEM file of the private root (default: ConfigMap private-ca from the cluster)")
+	fs.StringVar(&o.caNamespace, "ca-namespace", "default", "namespace of ConfigMap private-ca")
+	fs.StringVar(&o.namespace, "namespace", "holos-prj-platform", "namespace of the platform secrets")
+	fs.StringVar(&o.tokenSecret, "token-secret", "quay-controller-token", "platform secret holding holos-controller's token")
+	fs.StringVar(&o.automationOrg, "automation-org", "platform-automation", "organization holding the OAuth Application")
+	fs.StringVar(&o.emailDomain, "email-domain", "bank.internal", "domain of the organization's email: the site's private zone, not Quay's host's")
+	switch cmd {
+	case "token":
+		fs.StringVar(&o.username, "username", "svc-quay-controller", "realm user to log in as; a Quay superuser")
+		fs.StringVar(&o.passwordNamespace, "password-namespace", "keycloak", "namespace of the user's password Secret, named after the user")
+		fs.StringVar(&o.application, "application", "holos-controller", "OAuth Application name")
+	default:
+		fmt.Fprint(stderr, usage)
+		return nil, fmt.Errorf("unknown command %q", cmd)
+	}
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	if fs.NArg() > 0 {
+		return nil, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	o.quayURL = strings.TrimRight(o.quayURL, "/")
+	return o, nil
 }
 
 // privateRoot returns the PEM the Quay client trusts beside the system's:
@@ -209,7 +219,7 @@ func runToken(ctx context.Context, k kube, o *options, roots []byte) error {
 	if err := q.login(ctx, o.username, string(pw.data["password"])); err != nil {
 		return err
 	}
-	if _, err := q.ensureOrganization(ctx, o.automationOrg, orgEmail(o.quayURL, o.username, o.automationOrg)); err != nil {
+	if _, err := q.ensureOrganization(ctx, o.automationOrg, orgEmail(o.emailDomain, o.username, o.automationOrg)); err != nil {
 		return err
 	}
 	app, err := q.ensureApplication(ctx, o.automationOrg, o.application)
@@ -235,14 +245,12 @@ func runToken(ctx context.Context, k kube, o *options, roots []byte) error {
 }
 
 // orgEmail is the automation organization's email: Quay wants one unique to
-// each namespace, so not the user's own.
-func orgEmail(quayURL, username, org string) string {
-	domain := "localhost"
-	if u, err := url.Parse(quayURL); err == nil {
-		if _, d, ok := strings.Cut(u.Hostname(), "."); ok {
-			domain = d
-		}
-	}
+// each namespace, so not the user's own. Its domain is -email-domain, the
+// site's private zone, as every platform email is (components/quay.cue), not
+// Quay's host's: hostnames are <service>.<cluster>.<privateDomain> (the
+// Cluster_Qualified_Hostnames planning project), while emails are identities
+// and stay <user>@<privateDomain>.
+func orgEmail(domain, username, org string) string {
 	return fmt.Sprintf("%s+%s@%s", username, org, domain)
 }
 

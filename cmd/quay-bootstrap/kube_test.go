@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"testing"
 )
 
@@ -131,8 +132,24 @@ func TestEncodeDecodeSecret(t *testing.T) {
 	}
 }
 
+// TestOrgEmail checks that the organization's email stays on the site's
+// zone when Quay's host is cluster-qualified: hostnames carry the cluster,
+// emails do not.
 func TestOrgEmail(t *testing.T) {
-	if got := orgEmail("https://quay.bank.internal", "svc-quay-controller", "platform-automation"); got != "svc-quay-controller+platform-automation@bank.internal" {
-		t.Errorf("got %q", got)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"token", "-quay-url", "https://quay.treasury.bank.internal"}, "svc-quay-controller+platform-automation@bank.internal"},
+		{[]string{"token", "-quay-url", "https://quay.bank.internal"}, "svc-quay-controller+platform-automation@bank.internal"},
+		{[]string{"token", "-quay-url", "https://quay.payments.example.internal", "--email-domain", "example.internal"}, "svc-quay-controller+platform-automation@example.internal"},
+	} {
+		o, err := parseOptions(tc.args, io.Discard)
+		if err != nil {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+		if got := orgEmail(o.emailDomain, o.username, o.automationOrg); got != tc.want {
+			t.Errorf("%v: got %q, want %q", tc.args, got, tc.want)
+		}
 	}
 }
