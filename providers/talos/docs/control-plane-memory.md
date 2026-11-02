@@ -127,7 +127,7 @@ On a control plane with this workload (one node, 25 Applications, 50 pods):
 
 | Reading | Normal | Look into it |
 | --- | --- | --- |
-| `talosctl memory` USED | 2.2 to 2.6 GiB, level | More than 2.8 GiB (where the sizing rule below stops holding), or climbing over days |
+| `talosctl memory` USED | 2.2 to 2.6 GiB, level | More than 2.8 GiB on a 6 GiB VM or 3.9 GiB on an 8 GiB VM (where the sizing rule below stops holding), or climbing over days |
 | AVAILABLE | 2.9 to 3.2 GiB (about 50%) | Under 1.5 GiB (25%) |
 | Page cache | about 3 GiB | Falling toward 0 with AVAILABLE low: the cache is being squeezed |
 | API server anonymous | 1.5 to 1.8 GiB, sawtooth | A floor that rises hour over hour, or over 3 GiB |
@@ -181,6 +181,35 @@ The reasoning, and what would change it:
 - A bigger VM does not reduce CPU use. The cores are 17 to 50% busy because
   the API server spends them on the same churn; adding memory would not change
   that.
+
+### The Cilium agent and envoy on the control plane
+
+Measured on 2026-11-01, before the agent and envoy joined `treasury-cp-1`
+(Talos_Upstream_Control_Plane), on the three treasury workers, where the same
+Cilium values run (16 GiB each), read from each pod's `memory.stat`:
+
+| Pod | Anonymous | Kernel | File cache | `memory.current` | `memory.peak` |
+| --- | --- | --- | --- | --- | --- |
+| `cilium` (agent) | 139 to 146 MiB | 110 to 121 MiB | 252 to 253 MiB | 503 to 522 MiB | 557 to 562 MiB |
+| `cilium-envoy` | 12 MiB | 1 MiB | 42 to 43 MiB | 56 to 57 MiB | 57 to 58 MiB |
+
+The agent's kernel memory is mostly BPF maps (`vmalloc` 105 MiB on
+`treasury-general-1`), which the kernel cannot reclaim, so it counts toward
+USED with the anonymous memory; the file cache is the binaries and is given
+back. Together the two pods add about 280 MiB to USED. The agent sizes its
+maps from the node's memory (`bpf-map-dynamic-size-ratio` 0.0025), so on the
+control plane's 8 GiB they should be about half the workers', and 280 MiB is
+an upper bound; that is inferred, not measured.
+
+The control plane at the same time, ten readings 30 seconds apart:
+`talosctl memory` USED 2498 to 2810 MiB and AVAILABLE 4602 to 4914 MiB of
+7856; the API server's anonymous memory 2152 MiB (one reading), up from 1.5
+to 1.8 GiB in October as Substrate, kagent and ToolHive added watches; PSI
+`some` 0.00, no `oom_kill`, no swap. With the agent and envoy, peak USED is
+about 3090 MiB: 2 x 3090 + 304 = 6484 MiB, so 7 GiB, and the 8 GiB VM is
+still enough, with about 850 MiB of USED to spare before the rule's 3.9 GiB.
+The window is five minutes, not the hour behind the rest of this page, so
+re-read USED with the agent on the node before relying on that margin.
 
 ### Resizing a running control plane
 

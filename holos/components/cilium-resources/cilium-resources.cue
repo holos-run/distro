@@ -62,13 +62,15 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		}
 
 		// Answer ARP for LoadBalancer addresses on the node uplink, from
-		// one elected node per Service. Nodes off the pod network run no
-		// Cilium agent and could not announce anyway; the selector says so.
+		// one elected node per Service. The control plane runs a Cilium
+		// agent but is never elected, so the node that holds the cluster's
+		// secrets does not carry the Gateway's address: the selector leaves
+		// out node.kubernetes.io/exclude-from-external-load-balancers, which
+		// Talos's generated control plane config sets for this purpose.
 		CiliumL2AnnouncementPolicy: "load-balancer-ips": spec: {
 			nodeSelector: matchExpressions: [{
-				key:      "holos.run/pod-network"
-				operator: "NotIn"
-				values: ["none"]
+				key:      "node.kubernetes.io/exclude-from-external-load-balancers"
+				operator: "DoesNotExist"
 			}]
 			interfaces: ["^\(Cluster.network.nodeInterface)$"]
 			loadBalancerIPs: true

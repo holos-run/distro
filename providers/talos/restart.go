@@ -45,10 +45,6 @@ const (
 	// server that is down, as it is while the only control plane restarts,
 	// fails and is tried again instead of hanging.
 	kubectlTimeout = "--request-timeout=30s"
-	// controlPlaneLabel marks a control plane node. The garage's control
-	// planes are kept off the pod network (Q33), so they read NotReady for
-	// good, and restart accepts that of them alone.
-	controlPlaneLabel = "node-role.kubernetes.io/control-plane"
 	// cordonAnnotation marks a node restart cordoned, set before the cordon
 	// and removed after the uncordon. A node cordoned with it is one a
 	// failed run left cordoned, which a rerun uncordons; without it the
@@ -297,11 +293,6 @@ func hasCondition(cs []condition, typ string) bool {
 
 func nodeReady(n kubeNode) bool { return hasCondition(n.Status.Conditions, "Ready") }
 
-func isControlPlane(n kubeNode) bool {
-	_, ok := n.Metadata.Labels[controlPlaneLabel]
-	return ok
-}
-
 // controller returns the owner reference that controls an object.
 func controller(m objectMeta) (ownerReference, bool) {
 	for _, o := range m.OwnerReferences {
@@ -405,7 +396,6 @@ type restartNode struct {
 	address string // the Talos API address
 
 	// From the snapshot taken just before the node's restart.
-	wasReady    bool
 	wasCordoned bool
 	bootID      string
 	// daemonSets had a Ready pod on the node; step 3 waits for each to
@@ -491,8 +481,8 @@ func (x *restarter) podsOn(ctx context.Context, node string) ([]kubePod, error) 
 	return l.Items, err
 }
 
-// checkNodes refuses while any node is not Ready, except a control plane,
-// which the garage keeps off the pod network and so reads NotReady for good.
+// checkNodes refuses while any node is not Ready. The control plane is no
+// exception: it runs the Cilium agent like every node, so it is Ready too.
 func (x *restarter) checkNodes(ctx context.Context) (map[string]kubeNode, error) {
 	l, err := kubeGet[kubeList[kubeNode]](ctx, x, "nodes", "-o", "json")
 	if err != nil {
@@ -502,13 +492,13 @@ func (x *restarter) checkNodes(ctx context.Context) (map[string]kubeNode, error)
 	var notReady []string
 	for _, n := range l.Items {
 		nodes[n.Metadata.Name] = n
-		if !nodeReady(n) && !isControlPlane(n) {
+		if !nodeReady(n) {
 			notReady = append(notReady, n.Metadata.Name)
 		}
 	}
 	if len(notReady) > 0 {
 		slices.Sort(notReady)
-		return nil, fmt.Errorf("refusing to restart while nodes are not Ready: %s (only a control plane may be NotReady)", strings.Join(notReady, ", "))
+		return nil, fmt.Errorf("refusing to restart while nodes are not Ready: %s", strings.Join(notReady, ", "))
 	}
 	return nodes, nil
 }
@@ -588,7 +578,7 @@ func (x *restarter) snapshot(ctx context.Context, t *restartNode) error {
 	// A node restart cordoned itself, and left so after a failure, is
 	// uncordoned by the rerun; one cordoned by someone else stays so.
 	_, ours := n.Metadata.Annotations[cordonAnnotation]
-	t.wasReady, t.wasCordoned, t.bootID = nodeReady(n), n.Spec.Unschedulable && !ours, n.Status.NodeInfo.BootID
+	t.wasCordoned, t.bootID = n.Spec.Unschedulable && !ours, n.Status.NodeInfo.BootID
 	if t.bootID == "" {
 		return fmt.Errorf("node %s reports no boot ID, so a restart could not tell when it has rebooted", t.name())
 	}
@@ -787,12 +777,7 @@ func (x *restarter) steps(t *restartNode) []restartStep {
 	// 3. Wait for it to be back: a new boot ID, which tells a node that
 	// has rebooted from one that has not gone down yet, then Ready, then
 	// a Ready pod of each DaemonSet that had one there.
-	ready := "Ready"
-	if !t.wasReady {
-		// A control plane kept off the pod network stays NotReady.
-		ready = "its NotReady state, as before"
-	}
-	wait := fmt.Sprintf("wait for %s to boot again (a new boot ID) and reach %s", name, ready)
+	wait := fmt.Sprintf("wait for %s to boot again (a new boot ID) and reach Ready", name)
 	if len(t.daemonSets) > 0 {
 		wait += ", then for a Ready pod, with new containers, of each DaemonSet " + strings.Join(t.daemonSets, ", ") + " on it"
 	}
@@ -846,7 +831,7 @@ func (x *restarter) waitBack(ctx context.Context, t *restartNode) error {
 		switch {
 		case n.Status.NodeInfo.BootID == t.bootID:
 			return false, name + " has not rebooted yet", nil
-		case t.wasReady && !nodeReady(n):
+		case !nodeReady(n):
 			return false, name + " has rebooted, not Ready yet", nil
 		}
 		return true, "", nil
@@ -966,9 +951,9 @@ func (x *restarter) waitWorkloads(ctx context.Context, want []string) error {
 //
 // Before anything changes it checks compute's credentials, that every
 // target is a running VM of the cluster with a Kubernetes node of the same
-// name and a Talos address, that every node is Ready except a control plane,
-// which may be NotReady by design, and that each worker has a Ready pod of
-// every required DaemonSet. The node check runs again before each node.
+// name and a Talos address, that every node is Ready, the control plane
+// included, and that each worker has a Ready pod of every required
+// DaemonSet. The node check runs again before each node.
 //
 // A dry run does those reads and prints the steps of every node, and changes
 // nothing. A failure, or the timeout of one node, stops the run there and

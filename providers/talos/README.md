@@ -225,9 +225,8 @@ snippet, or the node's `InternalIP` when the snippets mount is not there.
 Before it changes anything it checks the token's privileges and refuses
 unless:
 
-- every node is `Ready`, except a control plane: `treasury-cp-1` is kept off
-  the pod network (Q33) and reads `NotReady` for good. The check runs again
-  before each node;
+- every node is `Ready`, the control plane included, since it runs the
+  Cilium agent like every node. The check runs again before each node;
 - every target is a running VM of the cluster with a Kubernetes node of the
   same name, and the VM's address and the node's `InternalIP` agree, which
   also catches a `KUBECONFIG` of another cluster;
@@ -236,7 +235,7 @@ unless:
 
 The control plane is restarted only when `-nodes` names it. With one control
 plane the Kubernetes API is down while it restarts; `restart` waits through
-that for its new boot ID, not for `Ready`.
+that for its new boot ID, then for `Ready` and its Cilium agent and envoy.
 
 `-timeout` (15m) bounds one node, from cordon to its workloads being
 available. A failure or a timeout stops the run at that node and does not go
@@ -315,18 +314,21 @@ no program: `cluster.sh` is a thin wrapper that reads the node inventory from
 
 The result is one control plane node and the workers, bootstrapped, with no
 CNI and no kube-proxy. Every node stays `NotReady` until Cilium is installed,
-and the control plane stays `NotReady` after that too: it is kept off the pod
-network, as on GKE and EKS, and the API server reaches webhooks through the
-ingress Gateway's LoadBalancer address on the LAN. Webhooks start permissive
-and are switched to enforcing by a CUE flag once each answers through the
-Gateway. ADR 0001 has the reasoning and the two provisioning steps.
+the control plane included: the Cilium agent and envoy run there, as upstream
+Talos runs its CNI, so the API server reaches Services in the cluster, and
+Talos's default `node-role.kubernetes.io/control-plane:NoSchedule` taint
+keeps every other pod off it (ADR 0003). The API server still reaches
+webhooks through the ingress Gateway's LoadBalancer address on the LAN.
+Webhooks start permissive and are switched to enforcing by a CUE flag once
+each answers through the Gateway. ADR 0001 has the reasoning and the two
+provisioning steps.
 
 ### Patches
 
 | File | Applies to | Sets |
 | --- | --- | --- |
 | [`patches/all.yaml`](patches/all.yaml) | every node | KubePrism on `127.0.0.1:7445`; sysctls for sandbox density and user namespaces |
-| [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled, Talos's CoreDNS disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true`; node label `holos.run/pod-network: none` |
+| [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled, Talos's CoreDNS disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true` |
 | [`clusters/<cluster>/controlplane.yaml`](clusters/treasury/controlplane.yaml) (rendered, committed) | the cluster's control plane | `StaticHostConfig`: every admission webhook hostname at the ingress Gateway's address |
 | `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and `holos.run/nodepool` on workers |
 

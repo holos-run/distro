@@ -2,8 +2,9 @@
 # components that exist only in the control plane's machine config.
 #
 # No CNI and no kube-proxy: Cilium replaces both, so nodes stay NotReady
-# until it is installed. This is the Talos 1.14 form: delete the Flannel
-# document, disable kube-proxy.
+# until it is installed, the control plane included, as upstream Talos runs
+# its CNI there. This is the Talos 1.14 form: delete the Flannel document,
+# disable kube-proxy.
 apiVersion: v1alpha1
 kind: KubeFlannelCNIConfig
 $patch: delete
@@ -16,10 +17,14 @@ enabled: false
 # certificates.k8s.io/v1 by default. Substrate's pod certificate controller
 # and kagent's chart still ask for v1beta1, so serve it as well.
 #
-# The control plane is not on the pod network (see the KubeNodeConfig below),
-# so it reaches neither Service ClusterIPs nor Pod IPs in the VXLAN overlay.
-# Admission webhooks name a URL on the ingress Gateway's LoadBalancer address,
-# which the control plane reaches on the LAN (the host entries are in
+# The control plane runs a Cilium agent like every node, so the API server, a
+# host-network static pod, reaches Services in the VXLAN overlay.
+# Aggregator routing makes it dial a Service's endpoints rather than its
+# ClusterIP, as GKE and EKS do, so a Service that works only by ClusterIP
+# fails here first (ADR 0003).
+#
+# Admission webhooks still name a URL on the ingress Gateway's LoadBalancer
+# address, which the control plane reaches on the LAN (the host entries are in
 # clusters/<cluster>/controlplane.yaml). An APIService can only name a
 # Service, so aggregator routing makes the API server dial the Service's
 # endpoints instead of its ClusterIP; a selectorless Service whose
@@ -29,15 +34,6 @@ kind: KubeAPIServerConfig
 extraArgs:
   runtime-config: certificates.k8s.io/v1beta1=true
   enable-aggregator-routing: "true"
----
-# The control plane is not on the pod network, as in GKE and EKS, where the
-# control plane is not a node: no CNI agent runs here and the node stays
-# NotReady by design. Every CNI and pod network DaemonSet keeps off nodes
-# with this label.
-apiVersion: v1alpha1
-kind: KubeNodeConfig
-labels:
-  holos.run/pod-network: none
 ---
 # Talos does not deploy CoreDNS. The platform's coredns component
 # (holos/components/coredns) deploys it instead, because the Corefile is

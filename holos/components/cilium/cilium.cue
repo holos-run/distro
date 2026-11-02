@@ -14,12 +14,15 @@ CiliumVersion: "1.20.4"
 // namespace label.
 CiliumNamespace: "kube-system"
 
-// offPodNetwork keeps a pod off nodes labeled holos.run/pod-network=none,
-// the control plane (ADR 0001). The node stays NotReady by design.
-let offPodNetwork = {
-	key:      "holos.run/pod-network"
-	operator: "NotIn"
-	values: ["none"]
+// offControlPlane keeps a pod off nodes labeled
+// node-role.kubernetes.io/control-plane, which Talos sets on every control
+// plane. Only the operator carries it: the agent and envoy run on the
+// control plane, as upstream Talos runs its CNI there, so it turns Ready and
+// the API server reaches Services (ADR 0003). Talos's default NoSchedule
+// taint keeps everything else off.
+let offControlPlane = {
+	key:      "node-role.kubernetes.io/control-plane"
+	operator: "DoesNotExist"
 }
 
 holos: spec: artifacts: [(#HelmArtifact & {
@@ -51,8 +54,9 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			hostRoot: "/sys/fs/cgroup"
 		}
 
-		// A VXLAN overlay, as ADR 0001 decided: the control plane is not on
-		// the pod network and reaches webhooks through the ingress Gateway.
+		// A VXLAN overlay, as ADR 0001 decided. The control plane is a member
+		// of it: its agent gives the API server, a host-network static pod,
+		// the routes and Service translation every other node has.
 		routingMode:    "tunnel"
 		tunnelProtocol: "vxlan"
 
@@ -62,7 +66,11 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		// /etc/cni/net.d.
 		cni: exclusive: false
 		// Socket load balancing in pod namespaces would resolve a Service to
-		// a backend before ztunnel sees the connection.
+		// a backend before ztunnel sees the connection. Host-network
+		// processes, the API server among them, keep it: the kube-proxy
+		// replacement turns it on although the rendered bpf-lb-sock reads
+		// false (cilium-dbg status --verbose: Socket LB Enabled, coverage
+		// Hostns-only).
 		socketLB: hostNamespaceOnly: true
 		// BPF masquerading is unsupported under ambient; Cilium's iptables
 		// masquerading (the default) stays on.
@@ -83,23 +91,29 @@ holos: spec: artifacts: [(#HelmArtifact & {
 			burst: 40
 		}
 
+		// CIDR rules match node addresses too, so a NetworkPolicy's ipBlock
+		// on the control plane's address, which carries a node identity once
+		// its agent runs, still admits egress to the API server
+		// (Cluster.apiServer, toolhive's proxy runner).
+		policyCIDRMatchMode: ["nodes"]
+
 		// Hubble's certificates come from the in-cluster certgen Job rather
 		// than helm template, which would put a fresh key in deploy/ on every
 		// render.
 		hubble: tls: auto: method: "cronJob"
 
-		// Every Cilium pod keeps off the control plane.
-		affinity: nodeAffinity: requiredDuringSchedulingIgnoredDuringExecution: nodeSelectorTerms: [{
-			matchExpressions: [offPodNetwork]
-		}]
+		// The agent and envoy DaemonSets tolerate every taint and run on
+		// every node, the control plane included. Envoy keeps the chart's
+		// cilium.io/no-schedule term, stated since the list replaces the
+		// chart's. The operator, a Deployment whose chart tolerations
+		// include the control plane's taint, keeps off it.
 		envoy: affinity: nodeAffinity: requiredDuringSchedulingIgnoredDuringExecution: nodeSelectorTerms: [{
 			matchExpressions: [
 				{key: "cilium.io/no-schedule", operator: "NotIn", values: ["true"]},
-				offPodNetwork,
 			]
 		}]
 		operator: affinity: nodeAffinity: requiredDuringSchedulingIgnoredDuringExecution: nodeSelectorTerms: [{
-			matchExpressions: [offPodNetwork]
+			matchExpressions: [offControlPlane]
 		}]
 	}
 }).artifact]

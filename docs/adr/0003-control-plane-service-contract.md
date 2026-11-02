@@ -1,7 +1,7 @@
 # 0003. Control plane to pod network Service contract
 
 Status: accepted, 2026-10-31; amended 2026-11-01 (no admission policy in
-the cluster)
+the cluster); amended 2026-11-01 (treasury joins Cilium in place)
 
 ## Context
 
@@ -348,3 +348,62 @@ What stands: the three rules, the exception annotation, and
 ValidatingAdmissionPolicy remains the first choice for admission logic the
 distro writes for its own resources, under "Distribution-written
 admission"; this amendment is about enforcing the contract, not about that.
+
+## Amendment, 2026-11-01: treasury joins Cilium in place
+
+Talos_Upstream_Control_Plane replaces Talos_Kubernetes_Layer as the project
+that brings the garage under this record, with upstream Talos as the
+reference design. It changes three things.
+
+**Treasury follows in place, not at a rebuild.** There is no second cluster
+(Talos_Upstream_Control_Plane Q2, reversing Control_Plane_Service_Contract
+Q18). Treasury's control plane joins Cilium in a staged rollout, its live
+machine config changed with `talosctl patch mc` and the committed patches
+changed to match, so a later rebuild produces the same node. Where this
+record says treasury keeps ADR 0001's form "until its rebuild", and that
+"the rebuild of treasury on the new layer" deletes `#WebhookPatch` and the
+exception annotations, read Talos_Upstream_Control_Plane's
+retire-the-gateway-webhook-path item instead, which follows once the control
+plane is Ready on Cilium.
+
+**This project settles the two untried facts, not the payments cluster.**
+They are settled on treasury (reversing Control_Plane_Service_Contract Q2,
+"publish now, prove on payments later"). On a treasury worker, where the
+same Cilium values already ran, `cilium-dbg status --verbose` reports the
+socket load balancer enabled with `Hostns-only` coverage, so host-namespace
+processes get ClusterIP translation although the rendered `bpf-lb-sock`
+reads `false`: the kube-proxy replacement turns it on. The agent and envoy
+there hold about 280 MiB that the kernel cannot reclaim, anonymous memory
+plus kernel memory, most of it BPF maps, which leaves the control plane's
+8 GiB within the sizing rule in
+`providers/talos/docs/control-plane-memory.md`. That the API server reaches
+a stock `service:` webhook with the agent on its node is tried by
+Talos_Upstream_Control_Plane's first milestone, with a test webhook naming
+cert-manager's Service.
+
+**The `holos.run/pod-network` label goes.** The label is deleted from
+`providers/talos/patches/controlplane.yaml` and from treasury's node
+(Talos_Upstream_Control_Plane Q3). The sentence under Providers that names
+it, and its "decision per consumer", now read: the Cilium agent and envoy
+lose the exclusion and run on the control plane through their own
+tolerations; every other consumer stays off the node, keyed on a label Talos
+sets itself. The Cilium operator (Talos_Upstream_Control_Plane Q10,
+overruling the recommendation to leave it to the chart), istio-cni, ztunnel,
+local-path and ceph-csi-rbd require `node-role.kubernetes.io/control-plane`
+not to exist, and the L2 announcement policy requires
+`node.kubernetes.io/exclude-from-external-load-balancers` not to exist, the
+label Talos's generated control plane configs carry for that purpose. The
+restart command's acceptance of a NotReady control plane goes with it: every
+node must be Ready. Cilium runs with `policyCIDRMatchMode: nodes`, so a
+NetworkPolicy egress `ipBlock` to the control plane's address, toolhive's
+rule to the API server, still matches once the address carries a node
+identity (Talos_Upstream_Control_Plane Q8). That covers calls to the API
+server only. Calls from it, the ingress peers `Cluster.apiServer.from`
+names, leave the node from `cilium_host` in tunnel mode rather than from
+its address, so the garage's value for that field is still untried, as
+above.
+
+What stands: the contract, `--enable-aggregator-routing`
+(Talos_Upstream_Control_Plane Q9), the default control plane taint and no
+workload pods on the node, and the Gateway webhook path with its eleven
+exceptions until retire-the-gateway-webhook-path removes it.

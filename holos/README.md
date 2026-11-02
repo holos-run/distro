@@ -144,10 +144,18 @@ Cilium 1.20's tested Kubernetes versions stop at 1.36; 1.37 is first tested
 by 1.21, which is still a pre-release. 1.20.4, the latest stable release, runs
 on 1.37 here; move to 1.21 once it is released.
 
-Every Cilium pod, the agent and Envoy DaemonSets and the operator, has a
-required node affinity `holos.run/pod-network NotIn [none]`, so nothing runs
-on the control plane and it stays `NotReady` by design. Cilium registers no
-admission webhook and no APIService.
+The agent and Envoy DaemonSets tolerate every taint and run on every node,
+the control plane included, as upstream Talos runs its CNI there: the
+control plane turns `Ready`, and the API server, a host-network static pod,
+reaches Services in the cluster (ADR 0003). The operator has a required node
+affinity `node-role.kubernetes.io/control-plane DoesNotExist` and stays on the
+workers. `policyCIDRMatchMode` is `nodes`, so a NetworkPolicy's `ipBlock` on
+the control plane's address still matches once the address carries a node
+identity (ToolHive, below). The socket load balancer serves host-namespace
+processes, the API server's among them: the kube-proxy replacement turns it
+on although the rendered `bpf-lb-sock` reads `false`, and `cilium-dbg status
+--verbose` reports `Socket LB: Enabled`, coverage `Hostns-only`. Cilium
+registers no admission webhook and no APIService.
 
 Cilium is in `kube-system`, which Talos exempts from its baseline Pod
 Security enforcement, so no namespace label is needed. The chart also creates
@@ -174,11 +182,11 @@ private zone does not depend on how the nodes' resolvers are set.
 
 ### Admission webhooks
 
-The control plane is off the pod network (ADR 0001), so the API server
-reaches an admission webhook as a client outside the cluster would: through a
-URL on the ingress Gateway's address, 10.20.0.30, where the `webhooks`
-listener on port 9443 passes TLS through to the webhook's Service, routed on
-SNI by one `TLSRoute` per webhook (The ingress gateway, below). The control
+The API server reaches an admission webhook by ADR 0001's path, built while
+the control plane was off the pod network, as a client outside the cluster
+would: through a URL on the ingress Gateway's address, 10.20.0.30, where the
+`webhooks` listener on port 9443 passes TLS through to the webhook's Service,
+routed on SNI by one `TLSRoute` per webhook (The ingress gateway, below). The control
 plane is on the same LAN as the address, so nothing listens on the control
 plane and no proxy is in between.
 
@@ -740,10 +748,10 @@ digest, and the trust domain, `cluster.local`. A workload's mesh identity is
 - `istio-system` is labeled `pod-security.kubernetes.io/enforce=privileged`:
   istio-cni and ztunnel run privileged pods on every node, which Talos's
   baseline enforcement refuses.
-- istio-cni and ztunnel tolerate every taint, so both carry Cilium's
-  affinity, `holos.run/pod-network NotIn [none]`, and stay off the control
-  plane, where they could never start. istiod is a Deployment and the
-  control plane's taint keeps it off.
+- istio-cni and ztunnel tolerate every taint, so both carry the affinity
+  `node-role.kubernetes.io/control-plane DoesNotExist` and stay off the
+  control plane, where istio-cni would rewrite the API server's host-network
+  sockets. istiod is a Deployment and the control plane's taint keeps it off.
 - istio-cni's default paths are Talos's (`/opt/cni/bin`, `/etc/cni/net.d`,
   `/var/run/netns`) and it chains after `05-cilium.conflist`; the Cilium
   values carry what Istio needs (see Cilium above) and
@@ -919,9 +927,11 @@ which the chart always renders, is patched out until CNPG backups need it.
 - The node plugin runs privileged with host networking and kubelet's plugin
   paths, so the component labels `ceph-csi-rbd`
   `pod-security.kubernetes.io/enforce=privileged`. The node plugin's
-  DaemonSet and the provisioner carry Cilium's affinity,
-  `holos.run/pod-network NotIn [none]`; the provisioner's three replicas take
-  one worker each, by the chart's required pod anti-affinity.
+  DaemonSet and the provisioner carry the affinity
+  `node-role.kubernetes.io/control-plane DoesNotExist`, since storage has
+  nothing to mount on the node that holds the cluster's secrets; the
+  provisioner's three replicas take one worker each, by the chart's required
+  pod anti-affinity.
 - ceph-csi registers no admission webhook and no APIService.
 
 The Ceph user's key is never in git, since the repository is public. Ceph
@@ -2875,9 +2885,11 @@ policies.
   proxy, at 3001, and may send nothing. The proxy admits only the ingress
   Gateway's pods, and may send only to the cluster's DNS, the MCP server,
   the ingress Gateway's pods at 443 (Keycloak) and the API server, which it
-  reaches by address (`Cluster.apiServer`), because the control plane runs
-  no Cilium agent. Both namespaces are outside the mesh, so the policies
-  hold at the application ports, and Pod Security restricted.
+  reaches by address (`Cluster.apiServer`), because the API server is a
+  host-network static pod; Cilium's `policyCIDRMatchMode: nodes` lets the
+  `ipBlock` match the control plane's node address. Both namespaces are
+  outside the mesh, so the policies hold at the application ports, and Pod
+  Security restricted.
 - **Health.** Argo CD's check for `MCPServer` (components/argocd) is Healthy
   once the operator reports the current generation Ready, so the root
   waits for the proxy runner, not for the object.
@@ -3491,8 +3503,8 @@ kubectl -n argocd get applications -w
 ```
 
 The `Application`s appear one at a time in registry order, and each reaches
-`Synced` and `Healthy` within a few minutes. The workers turn `Ready` once
-the Cilium agents are up; the control plane stays `NotReady`. Once
+`Synced` and `Healthy` within a few minutes. Every node, the control plane
+included, turns `Ready` once its Cilium agent is up. Once
 `private-ca-bundle` is `Healthy`, restart the server so it reads the private
 root, which it needs to log in through Keycloak (Logging in, below): its
 `private-ca` mount is optional because the server starts before
@@ -3846,12 +3858,11 @@ it as a fault.
 
 ## The control plane's mirror pods
 
-Once the workers are `Ready`, the node lifecycle controller treats the
-`NotReady` control plane as a failed node: it adds the
-`node.kubernetes.io/not-ready:NoExecute` taint and, after the default
-300-second toleration, evicts the mirror pods of kube-apiserver,
-kube-controller-manager and kube-scheduler. The static pods keep running;
-the kubelet recreates the mirror pods, so `kubectl get pods` shows them
-`Terminating` and then young again, about every five minutes. While every
-node was `NotReady` the controller held back, as it does for a full
-disruption, which is why this starts only once Cilium is up.
+While the control plane was `NotReady`, before its Cilium agent ran, the node
+lifecycle controller treated it as a failed node once the workers were
+`Ready`: it added the `node.kubernetes.io/not-ready:NoExecute` taint and,
+after the default 300-second toleration, evicted the mirror pods of
+kube-apiserver, kube-controller-manager and kube-scheduler, which the kubelet
+recreated about every five minutes. With the agent on the control plane the
+node is `Ready` and the mirror pods stay. If they cycle `Terminating` again,
+the control plane has gone `NotReady`: check its `cilium` pod first.

@@ -185,8 +185,9 @@ _Resources: #Resources & {
 	// keycloak.<privateDomain> resolves to and which Cilium translates to
 	// the gateway's pods before it applies the policy; and the API server,
 	// where it creates and watches the MCP server's StatefulSet and
-	// Services. The API server is on the control plane node, which runs no
-	// Cilium agent (interview Q33), so it is matched by its address.
+	// Services. The API server is a host-network static pod on the control
+	// plane, so it is matched by its address, a node's, which Cilium admits
+	// to an ipBlock under policyCIDRMatchMode nodes (components/cilium).
 	NetworkPolicy: "\(S.name)-proxy": {
 		metadata: namespace: NS
 		spec: {

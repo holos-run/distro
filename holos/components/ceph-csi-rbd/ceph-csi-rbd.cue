@@ -37,14 +37,15 @@ CephCSIVersion: "3.17.1"
 // the component labels its namespace privileged (ADR 0001).
 CephCSINamespace: "ceph-csi-rbd"
 
-// offPodNetwork keeps a pod off nodes labeled holos.run/pod-network=none,
-// the control plane (ADR 0001), as Cilium's pods are kept off it.
-let offPodNetwork = {
+// offControlPlane keeps a pod off nodes labeled
+// node-role.kubernetes.io/control-plane, which Talos sets on every control
+// plane: storage has nothing to mount on the node that holds the cluster's
+// secrets.
+let offControlPlane = {
 	nodeAffinity: requiredDuringSchedulingIgnoredDuringExecution: nodeSelectorTerms: [{
 		matchExpressions: [{
-			key:      "holos.run/pod-network"
-			operator: "NotIn"
-			values: ["none"]
+			key:      "node-role.kubernetes.io/control-plane"
+			operator: "DoesNotExist"
 		}]
 	}]
 }
@@ -108,14 +109,14 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		// The node plugin and the provisioner keep off the control plane.
 		// The DaemonSet tolerates no taint, so the control plane's
 		// NoSchedule taint would keep it off anyway; the affinity states it
-		// the way Cilium's DaemonSets do.
-		nodeplugin: affinity: offPodNetwork
+		// the way istio-cni's and ztunnel's do.
+		nodeplugin: affinity: offControlPlane
 		// Three replicas, the chart's default. With more than one the chart
 		// adds a required pod anti-affinity on the hostname, so they land
 		// on the three workers, one each; this affinity sits beside it.
 		provisioner: {
 			replicaCount: 3
-			affinity:     offPodNetwork
+			affinity:     offControlPlane
 		}
 	}
 
