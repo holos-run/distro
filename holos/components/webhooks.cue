@@ -50,7 +50,7 @@ import "encoding/yaml"
 			kind:       Kind
 			metadata: {
 				name: Name
-				annotations: "holos.run/contract-exception": "ADR 0001's Gateway webhook path, kept on treasury until its rebuild; see ADR 0003 and Talos_Control_Plane_Ready/rebuild-treasury-on-the-new-layer"
+				annotations: "holos.run/contract-exception": "ADR 0001's Gateway webhook path, kept on treasury until its rebuild; see ADR 0003 and Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer"
 			}
 			"webhooks": [for N, W in webhooks {
 				"name":         N

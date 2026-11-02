@@ -40,9 +40,9 @@ unreachable until the Gateway came up, provisioning became two steps,
 `Ignore` then `Fail`, switched by the per-cluster `webhooks.enforcing` flag
 (Agent_Substrate_Day_MVP Q35, Q43 and Q44).
 
-The Talos_Control_Plane_Ready project set out to replace that path with
+The Talos_Kubernetes_Layer project set out to replace that path with
 Konnectivity, on the premise that EKS, GKE and the garage all use it
-(Talos_Control_Plane_Ready Q2). The research behind this record found the
+(Talos_Kubernetes_Layer Q2). The research behind this record found the
 premise false. EKS gives no way to set the API server's egress selector:
 the request for the control plane to reach a single, un-chained Cilium
 overlay has been open on AWS's roadmap since 2023 with no answer
@@ -72,7 +72,7 @@ that interface, stated here as a contract between the base and the
 Kubernetes layer.
 
 This record is published as accepted on the research alone. The payments
-cluster in Talos_Control_Plane_Ready is its first proof
+cluster in Talos_Kubernetes_Layer is its first proof
 (Control_Plane_Service_Contract Q2, overruling the recommendation of a
 throwaway cluster first), so the record says, where it matters, which of
 its facts are documented and which are inferred or untried.
@@ -205,7 +205,7 @@ metadata:
     holos.run/contract-exception: >-
       ADR 0001's Gateway webhook path, kept on treasury until its rebuild;
       see ADR 0003 and
-      Talos_Control_Plane_Ready/rebuild-treasury-on-the-new-layer
+      Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer
 ```
 
 The rebuild of treasury on the new layer deletes the patch and removes the
@@ -241,7 +241,7 @@ Two facts are untried, not documented: that a Talos API server reaches a
 stock `service:` webhook with the agent on its node, which rests on the
 socket load balancer and a correct `cgroup.hostRoot`; and what the agent
 and envoy cost the control plane node in memory. The payments cluster in
-Talos_Control_Plane_Ready settles both.
+Talos_Kubernetes_Layer settles both.
 
 **GKE.** Managed Konnectivity is the mechanism this record infers for
 GKE. Google's troubleshooting page says that proxied traffic from the
@@ -282,7 +282,7 @@ states it.
 
 ## Consequences
 
-Once the garage follows, all of this goes, in Talos_Control_Plane_Ready:
+Once the garage follows, all of this goes, in Talos_Kubernetes_Layer:
 `holos/webhooks.cue` and its registry of webhook Services; `#WebhookPatch`
 and its eleven call sites; the Gateway's two webhooks listeners and the
 TLSRoute per entry; the extra hostnames on each serving certificate
@@ -314,9 +314,9 @@ closes. Every default-deny ingress policy on a webhook pod will need
 
 The policy reverses the off-the-pod-network half of Agent_Substrate_Day_MVP
 Q33, the webhook path of Q34 revisited and Q68, the two-step procedure of
-Q35, Q43 and Q44, and the Konnectivity half of Talos_Control_Plane_Ready
+Q35, Q43 and Q44, and the Konnectivity half of Talos_Kubernetes_Layer
 Q2. ADR 0001 is amended with a dated section pointing here. The Kubernetes
-layer contract that Talos_Control_Plane_Ready planned as ADR 0003 becomes
+layer contract that Talos_Kubernetes_Layer planned as ADR 0003 becomes
 ADR 0004 and cites this record for its reachability guarantee.
 
 ## Open for ADR 0004
