@@ -9,7 +9,5 @@ spec:
     loadBalancerIPs: true
     nodeSelector:
         matchExpressions:
-            - key: holos.run/pod-network
-              operator: NotIn
-              values:
-                - none
+            - key: node.kubernetes.io/exclude-from-external-load-balancers
+              operator: DoesNotExist

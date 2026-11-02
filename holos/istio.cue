@@ -46,15 +46,15 @@ Istio: {
 	// ztunnel carries their traffic over HBONE (port 15008) with mutual TLS.
 	ambient: "istio.io/dataplane-mode": "ambient"
 
-	// podNetwork is the node affinity Cilium's pods carry: nodes labeled
-	// holos.run/pod-network=none, the control plane, have no pod network.
-	// istio-cni and ztunnel tolerate every taint, so without it their pods
-	// land on the control plane and never start.
-	podNetwork: nodeAffinity: requiredDuringSchedulingIgnoredDuringExecution: nodeSelectorTerms: [{
+	// offControlPlane is the node affinity istio-cni and ztunnel carry: nodes
+	// labeled node-role.kubernetes.io/control-plane, which Talos sets on
+	// every control plane, are left out. Both tolerate every taint, so
+	// without it their pods land on the control plane, where istio-cni
+	// would rewrite the API server's host-network sockets.
+	offControlPlane: nodeAffinity: requiredDuringSchedulingIgnoredDuringExecution: nodeSelectorTerms: [{
 		matchExpressions: [{
-			key:      "holos.run/pod-network"
-			operator: "NotIn"
-			values: ["none"]
+			key:      "node-role.kubernetes.io/control-plane"
+			operator: "DoesNotExist"
 		}]
 	}]
 }

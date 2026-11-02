@@ -29,10 +29,8 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: holos.run/pod-network
-                operator: NotIn
-                values:
-                - none
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
       - args:
         - --nodeid=$(NODE_ID)

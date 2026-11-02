@@ -141,10 +141,6 @@ spec:
                 operator: NotIn
                 values:
                 - "true"
-              - key: holos.run/pod-network
-                operator: NotIn
-                values:
-                - none
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:

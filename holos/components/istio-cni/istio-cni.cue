@@ -19,6 +19,6 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	values: {
 		profile:  "ambient"
 		image:    Istio.images["install-cni"]
-		affinity: Istio.podNetwork
+		affinity: Istio.offControlPlane
 	}
 }).artifact]

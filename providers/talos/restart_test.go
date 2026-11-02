@@ -42,8 +42,8 @@ type fakeNode struct {
 }
 
 // fakeCluster is kubectl and talosctl against a small treasury cluster:
-// the control plane, NotReady by design, three workers with Cilium and
-// ztunnel, and a few workloads. A restart of a node does what a real one
+// the control plane with the Cilium agent and envoy, three workers with
+// Cilium and ztunnel, and a few workloads. A restart of a node does what a real one
 // does to it: the pods its graceful shutdown kills fail Terminated, one
 // refused pod fails NodeShutdown, one container is lost, the boot ID changes
 // only once it is back, it reads NotReady and its DaemonSet pods unready for
@@ -118,6 +118,9 @@ var treasuryWorkers = []string{"treasury-general-1", "treasury-general-2", "trea
 func newFakeCluster(t *testing.T) *fakeCluster {
 	c := &fakeCluster{t: t, nodes: map[string]*fakeNode{}, unavailable: map[string]int{}}
 	c.nodes["treasury-cp-1"] = &fakeNode{name: "treasury-cp-1", addr: "10.20.0.50", cp: true}
+	c.pods = append(c.pods,
+		runningPod("kube-system", "cilium-treasury-cp-1", "treasury-cp-1", owned("DaemonSet", "cilium")),
+		runningPod("kube-system", "cilium-envoy-treasury-cp-1", "treasury-cp-1", owned("DaemonSet", "cilium-envoy")))
 	for i, n := range treasuryWorkers {
 		c.nodes[n] = &fakeNode{name: n, addr: fmt.Sprintf("10.20.0.%d", 51+i)}
 		c.pods = append(c.pods,
@@ -151,7 +154,7 @@ func newFakeCluster(t *testing.T) *fakeCluster {
 func (c *fakeCluster) record(s string) { c.log = append(c.log, s) }
 
 func (c *fakeCluster) nodeJSON(n *fakeNode, poll bool) kubeNode {
-	ready := !n.cp && !n.broken && !n.down && n.notReady == 0
+	ready := !n.broken && !n.down && n.notReady == 0
 	if poll && !n.down && n.notReady > 0 {
 		n.notReady--
 	}
@@ -169,7 +172,7 @@ func (c *fakeCluster) nodeJSON(n *fakeNode, poll bool) kubeNode {
 		},
 	}
 	if n.cp {
-		k.Metadata.Labels[controlPlaneLabel] = ""
+		k.Metadata.Labels["node-role.kubernetes.io/control-plane"] = ""
 	}
 	return k
 }
@@ -217,9 +220,7 @@ func (c *fakeCluster) bootUp(n *fakeNode) {
 		n.notReady = 1 << 30
 	}
 	if n.cp {
-		// Never Ready, and has no DaemonSet pods, but its API server
-		// takes a moment.
-		n.notReady, n.dsStale, n.dsUnready = 0, 0, 0
+		// Its API server takes a moment too.
 		c.apiDown = 3
 	}
 }
@@ -742,11 +743,10 @@ func TestRestartPowerCycleFailure(t *testing.T) {
 	}
 }
 
-// Before anything changes, restart refuses a NotReady worker, a name that
-// is not one of the cluster's VMs, a worker without Cilium or ztunnel, an
-// address the VM and the node disagree on, a stopped VM, and a VM without a
-// node. A control plane reading NotReady, as treasury-cp-1 always does, is
-// no reason to refuse; every other test runs with it.
+// Before anything changes, restart refuses a NotReady worker or control
+// plane, a name that is not one of the cluster's VMs, a worker without
+// Cilium or ztunnel, an address the VM and the node disagree on, a stopped
+// VM, and a VM without a node.
 func TestRestartRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -755,7 +755,9 @@ func TestRestartRefuses(t *testing.T) {
 		want  string
 	}{
 		{"worker NotReady", nil, func(_ *fakeCompute, c *fakeCluster) { c.nodes["treasury-general-3"].broken = true },
-			"refusing to restart while nodes are not Ready: treasury-general-3 (only a control plane may be NotReady)"},
+			"refusing to restart while nodes are not Ready: treasury-general-3"},
+		{"control plane NotReady", nil, func(_ *fakeCompute, c *fakeCluster) { c.nodes["treasury-cp-1"].broken = true },
+			"refusing to restart while nodes are not Ready: treasury-cp-1"},
 		{"unknown node", []string{"treasury-general-1", "treasury-general-9"}, nil, "not VMs of cluster treasury: treasury-general-9"},
 		{"tenant VM", []string{"jeffsbox"}, nil, "not VMs of cluster treasury: jeffsbox"},
 		{"no ztunnel", nil, func(_ *fakeCompute, c *fakeCluster) {
@@ -788,10 +790,10 @@ func TestRestartRefuses(t *testing.T) {
 	}
 }
 
-// The control plane is restarted only when named. It reads NotReady before
-// and after, so the wait is for its new boot ID, through the API server
-// refusing connections while it comes back. That prints kubectl's last line
-// once, without klog's headers, however many polls fail.
+// The control plane is restarted only when named. The wait is for its new
+// boot ID, through the API server refusing connections while it comes back,
+// then for Ready and for its Cilium agent and envoy. The refusals print
+// kubectl's last line once, without klog's headers, however many polls fail.
 func TestRestartControlPlane(t *testing.T) {
 	r, out, _, kc := restartFixture(t)
 	o := restartOpts(kc, ModePowerCycle)
@@ -807,7 +809,10 @@ func TestRestartControlPlane(t *testing.T) {
 			t.Errorf("restarted %s, which was not named", n)
 		}
 	}
-	for _, w := range []string{"reach its NotReady state, as before", "no Deployment or StatefulSet had a pod on treasury-cp-1"} {
+	for _, w := range []string{
+		"reach Ready, then for a Ready pod, with new containers, of each DaemonSet kube-system/cilium, kube-system/cilium-envoy on it",
+		"no Deployment or StatefulSet had a pod on treasury-cp-1",
+	} {
 		if !strings.Contains(out.String(), w) {
 			t.Errorf("output lacks %q:\n%s", w, out)
 		}

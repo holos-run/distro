@@ -2,7 +2,8 @@
 
 Status: accepted, 2026-10-23; amended 2026-10-26 (webhooks reach the
 ingress Gateway's address, not an HAProxy load balancer); amended
-2026-10-31 (the control plane joins the pod network)
+2026-10-31 (the control plane joins the pod network); amended 2026-11-01
+(the pod network label goes)
 
 ## Context
 
@@ -282,3 +283,18 @@ Talos_Kubernetes_Layer/rebuild-treasury-on-the-new-layer rebuilds it on
 the new layer. Until then, from the day 0003's render check lands, its
 render carries the `holos.run/contract-exception` annotation on each of its
 eleven webhook configurations, naming this record and that item.
+
+## Amendment, 2026-11-01: the pod network label goes
+
+This reverses the part of the 2026-10-31 amendment that keeps the label:
+"The label stays on the node and is read by each consumer on its own terms".
+`holos.run/pod-network: none` is deleted from `patches/controlplane.yaml` and
+from treasury's node (Talos_Upstream_Control_Plane Q3). The consumers that
+kept off the control plane still do, keyed on labels Talos sets itself:
+`node-role.kubernetes.io/control-plane` for the Cilium operator, istio-cni,
+ztunnel, local-path and ceph-csi-rbd, and
+`node.kubernetes.io/exclude-from-external-load-balancers` for the L2
+announcement policy. The Cilium agent and envoy run on the node. The
+amendment's last paragraph, that treasury keeps the prior form until its
+rebuild, is reversed too: treasury joins Cilium in place. ADR 0003's
+amendment of the same date has both.

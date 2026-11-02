@@ -32,14 +32,15 @@ LocalPathNamespace: "local-path-storage"
 // the kubelet does see, is read-only there.
 LocalPathDir: "/var/local-path-provisioner"
 
-// offPodNetwork keeps a pod off nodes labeled holos.run/pod-network=none,
-// the control plane (ADR 0001), as Cilium's pods are kept off it.
-let offPodNetwork = {
+// offControlPlane keeps a pod off nodes labeled
+// node-role.kubernetes.io/control-plane, which Talos sets on every control
+// plane: storage has nothing to mount on the node that holds the cluster's
+// secrets.
+let offControlPlane = {
 	nodeAffinity: requiredDuringSchedulingIgnoredDuringExecution: nodeSelectorTerms: [{
 		matchExpressions: [{
-			key:      "holos.run/pod-network"
-			operator: "NotIn"
-			values: ["none"]
+			key:      "node-role.kubernetes.io/control-plane"
+			operator: "DoesNotExist"
 		}]
 	}]
 }
@@ -88,7 +89,7 @@ holos: spec: artifacts: [(#FileArtifact & {
 					name:      "local-path-provisioner"
 					namespace: LocalPathNamespace
 				}
-				spec: template: spec: affinity: offPodNetwork
+				spec: template: spec: affinity: offControlPlane
 			})
 		},
 	]

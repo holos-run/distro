@@ -76,8 +76,8 @@ let GatewayRef = {
 
 // APIServer is the kubernetes Service in default, the API server as pods
 // reach it, and host its name in Istio's registry. Its endpoint is the
-// control plane's address on 6443, off the pod network (ADR 0001), which
-// pods reach as they always do.
+// control plane's address on 6443, a host-network static pod, which pods
+// reach as they always do.
 let APIServer = {
 	namespace: "default"
 	name:      "kubernetes"

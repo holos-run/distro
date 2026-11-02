@@ -48,9 +48,11 @@ import "net"
 
 	// apiServer is the address and port the API server listens on, the
 	// endpoints of the default/kubernetes Service, which a NetworkPolicy
-	// admitting a pod's egress to the API server names: the control plane
-	// runs no Cilium agent (interview Q33), so no selector reaches it.
-	// Recorded, not chosen, as serviceAccountIssuer is.
+	// admitting a pod's egress to the API server names: the API server is a
+	// host-network static pod, so no pod selector reaches it, and Cilium
+	// matches its node's address against an ipBlock under
+	// policyCIDRMatchMode nodes (components/cilium). Recorded, not chosen,
+	// as serviceAccountIssuer is.
 	apiServer: {
 		address: string
 		port:    int | *6443
@@ -115,11 +117,11 @@ import "net"
 	}
 
 	// webhooks is how the API server reaches this cluster's admission
-	// webhooks. The control plane is off the pod network (ADR 0001), so every
-	// webhook's clientConfig is a URL on the ingress Gateway's address
-	// (loadBalancer.gateway), whose webhooks listener passes TLS through to
-	// the webhook's Pods, routed on SNI. webhooks.cue has the hostname scheme
-	// and the registry of webhook Services.
+	// webhooks, by ADR 0001's path, built while the control plane was off
+	// the pod network: every webhook's clientConfig is a URL on the ingress
+	// Gateway's address (loadBalancer.gateway), whose webhooks listener
+	// passes TLS through to the webhook's Pods, routed on SNI. webhooks.cue
+	// has the hostname scheme and the registry of webhook Services.
 	webhooks: {
 		// enforcing is ADR 0001's provisioning flag, one value for every
 		// webhook in the cluster. false while the cluster bootstraps: every

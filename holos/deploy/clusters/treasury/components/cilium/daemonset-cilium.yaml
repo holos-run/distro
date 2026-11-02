@@ -380,14 +380,6 @@ spec:
       hostUsers: true
       
       affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: holos.run/pod-network
-                operator: NotIn
-                values:
-                - none
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
