@@ -1,6 +1,7 @@
 # 0003. Control plane to pod network Service contract
 
-Status: accepted, 2026-10-31
+Status: accepted, 2026-10-31; amended 2026-11-01 (no admission policy in
+the cluster)
 
 ## Context
 
@@ -323,3 +324,27 @@ ADR 0004 and cites this record for its reachability guarantee.
 Whether the CNI is a Kubernetes-layer fact rather than a base component,
 given that GKE does not allow replacing its CNI, is left open for ADR 0004
 (Control_Plane_Service_Contract Q12).
+
+## Amendment, 2026-11-01: no admission policy in the cluster
+
+The contract is enforced on the render alone. The planned cluster-side
+complement, the admission-policy-denying-url-webhooks-in-the-cluster item
+of Control_Plane_Service_Contract, is retired: a policy in the cluster
+would refuse a `url:` webhook from anyone installing software on the
+cluster, not only from the base, and the distro does not block end users
+that way. Two passages under Consequences assumed it:
+
+- That the item "is the cluster-side complement to the render check". A
+  `url:` or an APIService pointed at an internal Service by anyone who can
+  write webhook configurations stays possible; it needs cluster-admin
+  level access, and the risk is accepted.
+- That a controller registering its webhook configuration at runtime
+  "bypasses it, which the admission policy above closes". Nothing closes
+  it. Such a controller is outside what the contract checks, and the base
+  names a Service only for what it renders.
+
+What stands: the three rules, the exception annotation, and
+`cmd/contract-check` in CI's render job as the contract's only enforcement.
+ValidatingAdmissionPolicy remains the first choice for admission logic the
+distro writes for its own resources, under "Distribution-written
+admission"; this amendment is about enforcing the contract, not about that.
