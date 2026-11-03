@@ -7,8 +7,6 @@ spec:
         dnsNames:
             required: true
             values:
-                - substrate-db-rw
-                - substrate-db-rw.ate-system
                 - substrate-db-rw.ate-system.svc
                 - substrate-db-rw.ate-system.svc.cluster.local
         isCA: false

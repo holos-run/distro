@@ -129,6 +129,45 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					kind:  "Issuer"
 					name:  PrivateCA.bootstrapIssuer
 				}
+
+				// The root's name constraints, so the laptop, the claude VM and
+				// every pod that trusts it accept a certificate it signed only for
+				// this cluster's names: a leaked root key or a mis-issued
+				// certificate cannot pass for another cluster's host, or for
+				// one outside the garage.
+				//
+				// Permitted are the DNS subtrees in PrivateCA.permittedDNSDomains
+				// (components/private-ca.cue): the cluster's ingressDomain, svc
+				// and svc.<dnsDomain>. Every name in PrivateCA.requesters is
+				// checked to be within one at render. Every IP address, v4 and
+				// v6, is excluded: no certificate the issuer signs has an IP
+				// SAN, and a name constraint with no IP subtree would leave IPs
+				// unconstrained. A certificate with an email or URI SAN is
+				// unconstrained by these, but approver-policy denies any request
+				// carrying one, since no policy lists them. Critical, so a
+				// client that processes the extension but cannot enforce it
+				// refuses the root's certificates rather than trust them
+				// unconstrained. Some verifiers ignore a trust anchor's own
+				// extensions (RFC 5937); Go, OpenSSL and BoringSSL enforce
+				// them.
+				//
+				// approver-policy cannot pin these: its allowed fields have no
+				// name constraints, and it does not look at the extension, so
+				// private-ca-root approves the root's request whatever it asks
+				// for here. Only this Certificate, from git, sets them.
+				//
+				// cert-manager does not reissue a certificate whose only change
+				// is its name constraints, so a change here reaches a running
+				// cluster only with a manual renew (cmctl renew), which, with
+				// the key kept, makes a new root certificate the laptop and the
+				// claude VM must trust in place of the old one (README.md, "The
+				// private CA"). A new cluster's first root has them from the
+				// start.
+				nameConstraints: {
+					critical: true
+					permitted: dnsDomains: PrivateCA.permittedDNSDomains
+					excluded: ipRanges: ["0.0.0.0/0", "::/0"]
+				}
 			}
 		}
 
