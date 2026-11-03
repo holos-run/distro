@@ -1,5 +1,10 @@
 package holos
 
+import (
+	"regexp"
+	"strings"
+)
+
 // PrivateCA names the cluster's private certificate authority and the trust
 // bundle that distributes its root, so components that issue from it or
 // trust it refer to these names rather than repeating them.
@@ -36,12 +41,34 @@ PrivateCA: {
 	// private CA"). Each Certificate takes these fields from its own entry,
 	// so the names are written once.
 	//
+	// Every DNS name, and the common name, is within one of
+	// permittedDNSDomains, the root's permitted subtrees, so a Certificate
+	// outside them fails here, at render, rather than at its first TLS
+	// handshake, where a client that enforces the root's constraints
+	// refuses it. (Go ignores a common name; OpenSSL checks one that looks
+	// like a host name when there is no DNS name.)
+	//
 	// The entries are in components/private-ca.cue, beside the other
 	// components' shared names, which they are made from; only a component
 	// knows the cluster it renders for.
 	requesters: [Namespace=string]: [Certificate=string]: {
-		dnsNames: [string, ...string]
+		dnsNames: [Within, ...Within]
 		usages?: [string, ...string]
-		commonName?: string
+		commonName?: Within
 	}
+
+	// permittedDNSDomains are the DNS subtrees the root's name constraints
+	// permit (components/private-ca), and so the only names a certificate
+	// it signs may carry: each is the domain itself and every name under
+	// it, as RFC 5280 matches a dNSName constraint. They are set in
+	// components/private-ca.cue, from the cluster's domains; optional here,
+	// outside any component, where there is no cluster to make them from.
+	permittedDNSDomains?: [string, ...string]
+
+	// Within is a DNS name in one of permittedDNSDomains: equal to one, or
+	// ending in a dot and one, which allows a leading *. label as well. The
+	// match is by whole labels, as the root's is: with svc.cluster.local
+	// permitted, foo.svc.cluster.local is within it, but foo.cluster.local
+	// and xsvc are not.
+	let Within = =~"^(.+\\.)?(\(strings.Join([for D in permittedDNSDomains {regexp.QuoteMeta(D)}], "|")))$"
 }

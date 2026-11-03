@@ -365,15 +365,37 @@ from it. trust-manager writes the root to ConfigMap `private-ca`, key
 `ca.crt`, in every namespace, including ones created later. The root's key
 is only in Secret `cert-manager/private-ca-root`; cert-manager and
 trust-manager, whose trust namespace is `cert-manager`, can both read it. Its
-`rotationPolicy` is `Never`, so a reissue keeps the same root.
+`rotationPolicy` is `Never`, so a reissue keeps the root's key, though not
+its certificate (Renewing the root in place, below).
+
+The root carries name constraints, marked critical. It may sign DNS names
+only within three subtrees, `PrivateCA.permittedDNSDomains` in
+`components/private-ca.cue`: the cluster's `ingressDomain`, `$domain`, and
+the in-cluster Service names under `svc` and `svc.cluster.local`. Every IP
+address, v4 and v6, is excluded. So a machine that trusts it, the laptop,
+the claude VM or a pod, refuses a certificate it signed for another
+cluster's host, such as `keycloak.other.bank.internal`, for a host outside
+the garage, or for an IP address, even if the root's key leaked or a
+request was approved that should not have been. The names the issuer signs
+are each a Service's, `<service>.<namespace>.svc` or the same under
+`svc.cluster.local`, or one in `$domain`; a short name such as
+`substrate-db-rw` or `substrate-db-rw.ate-system` is in no subtree, so the
+database's certificate carries only the two long ones, which every client
+dials. The render checks
+that every name in `PrivateCA.requesters` is within a subtree, and fails on
+one that is not. approver-policy cannot check the constraints: it approves
+the root's request whatever constraints it carries, so only the root's
+`Certificate` in git sets them.
 
 A recreated cluster has a new root. Export it for the laptop, and for the
-kubectl plugin, from any namespace's ConfigMap:
+kubectl plugin, from any namespace's ConfigMap, and check it carries the
+name constraints:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > "$root_ca"
 openssl x509 -in "$root_ca" -noout -subject -dates -fingerprint -sha256
+openssl x509 -in "$root_ca" -noout -text | grep -A7 'Name Constraints'
 # macOS: trust it for TLS
 sudo security add-trusted-cert -d -r trustRoot \
   -k /Library/Keychains/System.keychain "$root_ca"
@@ -382,9 +404,82 @@ sudo cp "$root_ca" "/usr/local/share/ca-certificates/$cluster-root-ca.crt"
 sudo update-ca-certificates
 ```
 
+On treasury, the constraints read:
+
+```text
+        X509v3 Name Constraints: critical
+            Permitted:
+              DNS:treasury.bank.internal
+              DNS:svc
+              DNS:svc.cluster.local
+            Excluded:
+              IP:0.0.0.0/0.0.0.0
+              IP:0:0:0:0:0:0:0:0/0:0:0:0:0:0:0:0
+```
+
 Before replacing a trusted root, remove the old one: macOS's Keychain Access
-lists it as `Bank of Pinky $cluster root CA`. curl takes it without installing it,
-`--cacert "$root_ca"`.
+lists it as `Bank of Pinky $cluster root CA`, and from a shell:
+
+```sh
+security find-certificate -a -c "Bank of Pinky $cluster root CA" -Z /Library/Keychains/System.keychain | grep SHA-1
+sudo security delete-certificate -Z <sha1> /Library/Keychains/System.keychain   # for each old one
+```
+
+On Debian or Ubuntu the `cp` above overwrites the old file. curl takes the
+root without installing it, `--cacert "$root_ca"`.
+
+#### Renewing the root in place
+
+A rebuild with a new root needs none of this beyond the steps above for a
+recreated cluster. cert-manager does not reissue a certificate whose only
+change is its name constraints, so a change to them reaches a running
+cluster only when the root is renewed by hand. With `rotationPolicy` `Never`
+the renew keeps the key and subject, so every certificate already issued
+still verifies, but it makes a new root certificate. Never delete Secret
+`private-ca-root` to force a reissue: that mints a new key, and every
+existing certificate stops verifying.
+
+Renew only once every `Certificate`'s names are within the new subtrees,
+since a client that enforces them refuses one that is not. Renew the root
+with cmctl, cert-manager's CLI (v2.6.2 is built against cert-manager
+v1.21.3; the kubectl plugin form is `kubectl cert-manager renew`), wait for
+the new revision and for trust-manager to copy it to the ConfigMap, check
+what it carries, then renew every leaf the issuer signed, so each leaf
+Secret's `ca.crt` is the new root too:
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+cmctl() { go run github.com/cert-manager/cmctl/v2@v2.6.2 "$@"; }
+fp() { kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' | openssl x509 -noout -fingerprint -sha256; }
+old=$(fp)
+rev=$(kubectl -n cert-manager get certificate private-ca-root -o jsonpath='{.status.revision}')
+cmctl renew -n cert-manager private-ca-root
+kubectl -n cert-manager wait certificate/private-ca-root \
+  --for=jsonpath='{.status.revision}'=$((rev + 1)) --timeout=5m
+until [ "$(fp)" != "$old" ]; do sleep 5; done
+kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' \
+  | openssl x509 -noout -text | grep -A7 'Name Constraints'
+kubectl get certificates -A -o jsonpath='{range .items[?(@.spec.issuerRef.name=="private-ca")]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do cmctl renew -n "$ns" "$name"; done
+```
+
+The leaves are renewed by name, not with `renew --all -A`, which would
+renew the root a second time and leave the export a revision behind. Each
+leaf's `ca.crt` feeds CloudNativePG's `serverCASecret` for `substrate-db`,
+the cnpg and External Secrets webhooks' `caBundle`s (cert-manager's
+`inject-ca-from`) and Keycloak's `caBundle`. istiod reads the root once, at
+start, so restart it (below), and give the workers the new root (Trusting
+the root on the workers, below).
+
+Off the cluster, every copy of the old root certificate stays trusted until
+replaced, and with both trusted a client may build its path through the old
+one, since both have the same subject and key, and enforce only its
+constraints, or none. Replace each: export and trust `$root_ca` as above,
+removing the old one first; re-run `kubectl config set-cluster
+$cluster-oidc ... --embed-certs` (Logging in with kubectl, below); on the
+claude VM, `/etc/docker/certs.d/quay.$domain/ca.crt` (Checking Quay, below);
+`$DOCKER_CONFIG/root.pem` (Bringing Substrate up, below); and any `root.pem`
+the curl checks use (Keycloak, below).
 
 #### Approval
 

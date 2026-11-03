@@ -13,6 +13,17 @@ spec:
         group: cert-manager.io
         kind: Issuer
         name: private-ca-bootstrap
+    nameConstraints:
+        critical: true
+        excluded:
+            ipRanges:
+                - 0.0.0.0/0
+                - ::/0
+        permitted:
+            dnsDomains:
+                - treasury.bank.internal
+                - svc
+                - svc.cluster.local
     privateKey:
         algorithm: ECDSA
         rotationPolicy: Never

@@ -1,10 +1,13 @@
 package holos
 
-// The private CA's requesters (PrivateCA.requesters, private-ca.cue): every
-// Certificate in the cluster that the private-ca ClusterIssuer signs, by
-// namespace and name, with what it asks for. The private-ca component turns
-// each namespace into a CertificateRequestPolicy, and each Certificate
-// below takes its fields from its entry. A component that adds a Certificate
+// The private CA's permitted subtrees and its requesters
+// (PrivateCA.permittedDNSDomains and PrivateCA.requesters, private-ca.cue):
+// the domains the root may sign names in, and every Certificate in the
+// cluster that the private-ca ClusterIssuer signs, by namespace and name,
+// with what it asks for. The private-ca component puts the subtrees in the
+// root's name constraints and turns each namespace into a
+// CertificateRequestPolicy, and each Certificate below takes its fields
+// from its entry. A component that adds a Certificate
 // from the ClusterIssuer adds its entry here; without one its first request
 // is denied, by deny-all, the first time it syncs.
 //
@@ -20,14 +23,33 @@ let DB = Substrate.database
 let CNPG = {name: "cnpg-webhook-service", namespace: "cnpg-system"}
 let ESO = {name: "external-secrets-webhook", namespace: "external-secrets"}
 
+// The root's permitted DNS subtrees (PrivateCA.permittedDNSDomains), which
+// every name below must be within:
+//
+//   - the cluster's ingressDomain, which every published name is under:
+//     the Gateways' wildcards and the Kubernetes API's host.
+//   - svc, the Service names <service>.<namespace>.svc, which the API
+//     server dials a webhook by (ADR 0003) and clients the database by.
+//   - svc.<dnsDomain>, the same names fully qualified.
+//
+// Not the bare dnsDomain: only Services are named by the private CA, never
+// a pod's name under it. A short name, <service> or <service>.<namespace>,
+// is in none of them, so no certificate carries one.
+PrivateCA: permittedDNSDomains: [
+	Cluster.ingressDomain,
+	"svc",
+	"svc.\(Cluster.network.dnsDomain)",
+]
+
 PrivateCA: requesters: {
 	// The Substrate database's server certificate (components/substrate),
-	// for the names a client in the cluster reaches the -rw Service by. It
-	// asks for server auth alone.
+	// for the -rw Service's cluster name, which every client dials
+	// (Substrate.database.host), and that name fully qualified. Not the
+	// short names, which are outside the root's permitted subtrees and
+	// which no client uses; CloudNativePG's operator dials the pods by IP
+	// and checks no name. It asks for server auth alone.
 	(Substrate.namespace): "\(DB.cluster)-server": {
 		dnsNames: [
-			"\(DB.cluster)-rw",
-			"\(DB.cluster)-rw.\(Substrate.namespace)",
 			DB.host,
 			"\(DB.host).\(Cluster.network.dnsDomain)",
 		]
