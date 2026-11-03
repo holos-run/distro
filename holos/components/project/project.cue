@@ -1,6 +1,9 @@
 package holos
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // project renders one ProjectClaim, projects.<project> (projects/), as the
 // component project-<project>: the registry adds one per claim, each from
@@ -16,7 +19,10 @@ import "strings"
 //   - the RoleBinding that gives the owner group ownerAccess, admin by
 //     default, in the namespace, and nowhere else;
 //   - its Argo CD AppProject, confined to the namespace, and its
-//     Application, which syncs the project's own directory in deploy/.
+//     Application, which syncs the project's own directory in deploy/;
+//   - its Substrate atespace, named for it, and the atespace's route
+//     through the Substrate shim, https://<actor>.<project>.ate.<domain>
+//     (Atespace, below).
 //
 // The owner group's claim and the owners' usernames reach
 // holos-authenticator's allowlist from collections.cue, so the same
@@ -31,10 +37,12 @@ import "strings"
 //
 // Every kind's CRD comes from an earlier component: Group, User,
 // GroupMembership, Organization and the security.holos.run ReferenceGrant
-// from holos-controller, AppProject and Application from argocd. The
-// Instance the Keycloak resources name is keycloak-realm's, and the Quay
-// credential the Organization is reconciled with is quay's copy in the
-// platform controller's namespace, which the Organization names.
+// from holos-controller, AppProject and Application from argocd, Certificate
+// from cert-manager, CertificateRequestPolicy from approver-policy,
+// ListenerSet and HTTPRoute from gateway-api, AuthorizationPolicy from
+// istio-base. The Instance the Keycloak resources name is keycloak-realm's,
+// and the Quay credential the Organization is reconciled with is quay's copy
+// in the platform controller's namespace, which the Organization names.
 
 // ProjectName is the claim this instance renders, the project parameter
 // its registry entry passes (#ProjectRegistrations). Projects.#Unreserved
@@ -79,6 +87,81 @@ let Owners = {
 	}
 }
 
+// Atespace is the claim's atespace on the Substrate shim (AteGateway.claimed).
+// An atespace is an object in Substrate's API, not in Kubernetes, so it
+// cannot be declared here; the Job below makes it. What can be is rendered
+// beside the claim's other objects: the shim's half of the atespace, in
+// substrate-shim and ate-system, stays in this component's Application.
+// Between Applications that already exist, each syncing on its own, a broken
+// claim holds back only its own (interview Q66). During a root sync, which
+// walks the waves, it holds back the wave after it too, as any component does.
+//
+// No pool is named anywhere: an actor runs on the platform's gVisor pool
+// (Substrate.workerPool) unless its template says otherwise, so the claim
+// needs no reference to it, and a project cannot have a pool of its own,
+// since a pool's workers need the privileged Pod Security level.
+let Atespace = AteGateway.claimed[NAME]
+let S = Substrate
+let AG = AteGateway
+
+// ProjectClient is the ServiceAccount the claim makes in its namespace, the
+// one principal of the atespace's access policy. A token for it owns this
+// atespace and nothing else, so an owner of the project, who may mint one,
+// gets no more than the claim gave them.
+let ProjectClient = "system:serviceaccount:\(NAME):\(S.client.serviceAccount)"
+
+// SetupLabels mark the Job's pod as the claim's, and as what the substrate
+// component's NetworkPolicy admits to the API server.
+let SetupLabels = Labels & S.atespaceSetup.labels
+
+// SetupDir is where the Job's pod has its credential: a projected token for
+// the API server, and the trust bundle of the signer of the server's
+// certificate, the live one, as the shim projects it.
+let SetupDir = "/var/run/ate/api"
+
+// SetupScript calls the two RPCs kubectl ate create atespace and kubectl ate
+// create access-policy do. grpcurl exits with 64 plus a call's gRPC status
+// code, so 70 is AlreadyExists: each call succeeds once, and on every later
+// sync of the claim changes nothing. That is also why a policy changed through
+// the API, by the atespace's owner or the platform's, stays as it was, and why
+// a claim on the name of an atespace Substrate already has inherits it, with
+// its actors and whatever policy it has, which may not bind ProjectClient
+// (README.md, Projects). Anything else fails the Job, and with it the sync.
+let SetupScript = """
+	set -eu
+	ATE_TOKEN=$(cat \(SetupDir)/token)
+	export ATE_TOKEN
+
+	call() {
+	  status=0
+	  grpcurl -cacert \(SetupDir)/ca.pem -max-time 30 \\
+	    -expand-headers -H 'authorization: Bearer ${ATE_TOKEN}' \\
+	    -d "$2" \(S.api.host):\(S.api.port) \(S.api.service)/"$1" || status=$?
+	  case "$status" in
+	  0) echo "$1: created" ;;
+	  70) echo "$1: already exists" ;;
+	  *) exit "$status" ;;
+	  esac
+	}
+
+	call CreateAtespace '\(json.Marshal({atespace: metadata: name: NAME}))'
+	call CreateAtespaceAccessPolicy '\(json.Marshal(SetupPolicy))'
+	"""
+
+// SetupPolicy is the CreateAtespaceAccessPolicy request: a policy's name is
+// always default, and its members are principals as kubectl ate's manifests
+// write them, with the user: prefix.
+let SetupPolicy = {
+	atespace: name: NAME
+	accessPolicy: {
+		metadata: name: "default"
+		bindings: [{
+			role: "owner"
+			members: ["user:\(ProjectClient)"]
+		}]
+	}
+}
+
 // Directory is the project's own directory in deploy/, which its
 // Application syncs: the second artifact, outside
 // deploy/clusters/<cluster>/components, where only the platform's
@@ -94,8 +177,19 @@ if ProjectName != "" {holos: spec: artifacts: [
 		resources: {
 			// The namespace, named for the project, which is its one namespace.
 			// In the mesh, as hello's is: the project's workloads talk to each
-			// other and to the gateway over ztunnel's mutual TLS.
-			Namespace: (NAME): metadata: labels: Istio.ambient & Labels
+			// other and to the gateway over ztunnel's mutual TLS. Its pods may
+			// reach Substrate's API, whose NetworkPolicy reads the label; what
+			// they may do there is the atespace's access policy.
+			Namespace: (NAME): metadata: labels: Istio.ambient & Labels & S.api.access
+
+			// The principal of the atespace's access policy (ProjectClient).
+			// This is not the ate-client ksa, the one in ate-system, which is a
+			// global owner: only the name is the same, and kubectl ate's
+			// default is what the name is for.
+			ServiceAccount: (S.client.serviceAccount): metadata: {
+				namespace: NAME
+				labels:    Labels
+			}
 
 			// The owner, editor and viewer groups, at
 			// /projects/<project>/roles/<role>. holos-controller makes the
@@ -255,6 +349,231 @@ if ProjectName != "" {holos: spec: artifacts: [
 					kind:     "Group"
 					name:     Groups.owner.claim
 				}]
+			}
+
+			// The atespace and its access policy, made through Substrate's API.
+			//
+			// In ate-system, under the ate-client ksa, not in the project's
+			// namespace. can_create_atespace is global owner's alone (Substrate's
+			// model.fga has no narrower role), and the claim's owner is admin in
+			// the project's namespace, who reads every Secret there and may run
+			// a pod under any ServiceAccount there: a token the Job held in that
+			// namespace would hand each project's owner the whole install. A
+			// claim's owner has no access to ate-system, and nothing is stored:
+			// the token is the pod's own, projected, for the API's audience, for
+			// the ten minutes that are the shortest the API server issues.
+			//
+			// An Argo CD Sync hook, so it runs on every sync of the claim,
+			// deleted and re-created each time (BeforeHookCreation), since a
+			// Job's template cannot change in place. Unlike substrate-db's role
+			// Job, it holds no password, so the finished Job stays, for its log.
+			// It runs alongside the claim's other objects and depends on none:
+			// the ServiceAccount in the policy need not exist yet.
+			//
+			// A failure fails this Application's sync, after those objects are
+			// applied, and Argo CD retries the sync (components/argocd-apps), each
+			// time with a new Job, up to its limit, and then stops. Nothing
+			// reports it after that: a hook is outside an Application's health
+			// and its comparison, so the Application reads Synced and Healthy
+			// with operationState.phase Failed, the root's health check passes
+			// it, and an automated sync does not run it again. So the limits
+			// here are short, as the API server is up by this wave, and the check
+			// and the recovery, a sync by hand, are in README.md, Checking a
+			// project.
+			Job: "atespace-\(NAME)": {
+				metadata: {
+					namespace: S.namespace
+					labels:    SetupLabels
+					annotations: {
+						"argocd.argoproj.io/hook":               "Sync"
+						"argocd.argoproj.io/hook-delete-policy": "BeforeHookCreation"
+					}
+				}
+				spec: {
+					// A failing call is retried with the kubelet's back-off, as
+					// when the claim's first sync beats substrate's to the
+					// NetworkPolicy, on the limits above.
+					backoffLimit:          3
+					activeDeadlineSeconds: 300
+					template: {
+						metadata: labels: SetupLabels
+						spec: {
+							restartPolicy:                "OnFailure"
+							serviceAccountName:           S.client.serviceAccount
+							automountServiceAccountToken: false
+							// The image's grpcurl user, by number, which
+							// runAsNonRoot can check.
+							securityContext: {
+								runAsNonRoot: true
+								runAsUser:    100
+								runAsGroup:   101
+								seccompProfile: type: "RuntimeDefault"
+							}
+							containers: [{
+								name:  "setup"
+								image: S.atespaceSetup.image
+								command: ["/bin/sh", "-c", SetupScript]
+								volumeMounts: [{name: "api", mountPath: SetupDir, readOnly: true}]
+								resources: {
+									requests: {cpu: "10m", memory: "32Mi"}
+									limits: memory: "64Mi"
+								}
+								securityContext: {
+									allowPrivilegeEscalation: false
+									readOnlyRootFilesystem:   true
+									capabilities: drop: ["ALL"]
+								}
+							}]
+							volumes: [{
+								name: "api"
+								projected: sources: [
+									{
+										serviceAccountToken: {
+											audience:          S.api.audience
+											expirationSeconds: 600
+											path:              "token"
+										}
+									},
+									{
+										clusterTrustBundle: {
+											signerName: S.signers.serviceDNS
+											labelSelector: matchLabels: "podcert.ate.dev/canarying": "live"
+											path: "ca.pem"
+										}
+									},
+								]
+							}]
+						}
+					}
+				}
+			}
+
+			// The claim's own approval for its wildcard, this one name from the
+			// private CA, in the shim's namespace, and no CA. Not an entry in
+			// PrivateCA.requesters: that would reach the cluster on private-ca's
+			// sync, which nothing orders against this one, and a request denied
+			// first waits on cert-manager's back-off. Wave -1, and Argo CD's
+			// health check for the kind holds the next wave until
+			// approver-policy reports it Ready (components/argocd), so the policy
+			// is in place before the Certificate is.
+			//
+			// One policy that applies and allows a request is enough, so
+			// private-ca-substrate-shim, which does not list the name, and
+			// deny-all do not stand in its way. The name is checked to be within
+			// the root's subtrees, as an entry in PrivateCA.requesters is.
+			CertificateRequestPolicy: "project-\(NAME)": {
+				metadata: {
+					labels: Labels
+					annotations: "argocd.argoproj.io/sync-wave": "-1"
+				}
+				spec: {
+					allowed: {
+						dnsNames: (#Exactly & {names: [Atespace.hostname & PrivateCA.#Within]}).out
+						isCA: false
+					}
+					selector: {
+						issuerRef: PrivateCA.issuerRef
+						namespace: matchNames: [AG.namespace]
+					}
+				}
+			}
+
+			// cert-manager's controller may use that one policy, as it may the
+			// platform's (components/private-ca). Without this the policy does
+			// not apply to the request, and deny-all denies it.
+			ClusterRole: "approver-policy:project-\(NAME)": {
+				metadata: {
+					labels: Labels
+					annotations: "argocd.argoproj.io/sync-wave": "-1"
+				}
+				rules: [{
+					apiGroups: ["policy.cert-manager.io"]
+					resources: ["certificaterequestpolicies"]
+					verbs: ["use"]
+					resourceNames: ["project-\(NAME)"]
+				}]
+			}
+			ClusterRoleBinding: "approver-policy:project-\(NAME)": {
+				metadata: {
+					labels: Labels
+					annotations: "argocd.argoproj.io/sync-wave": "-1"
+				}
+				roleRef: {
+					apiGroup: "rbac.authorization.k8s.io"
+					kind:     "ClusterRole"
+					name:     "approver-policy:project-\(NAME)"
+				}
+				subjects: [{
+					kind:      "ServiceAccount"
+					name:      PrivateCA.certManager.name
+					namespace: PrivateCA.certManager.namespace
+				}]
+			}
+
+			// The atespace's wildcard, in the shim's namespace.
+			Certificate: "\(Atespace.name)-wildcard": {
+				metadata: {
+					namespace: AG.namespace
+					labels:    Labels
+				}
+				spec: Atespace.certificate & {dnsNames: [Atespace.hostname]}
+			}
+
+			// The atespace's listener on the shim's Gateway, which allows
+			// ListenerSets from its own namespace.
+			ListenerSet: "project-\(NAME)": {
+				metadata: {
+					namespace: AG.namespace
+					labels:    Labels
+				}
+				spec: {
+					parentRef: {
+						group: "gateway.networking.k8s.io"
+						kind:  "Gateway"
+						name:  AG.name
+					}
+					listeners: [Atespace.listener]
+				}
+			}
+
+			// The route to the router on that listener, in the router's
+			// namespace, as the platform's atespaces' are, so it needs no
+			// ReferenceGrant.
+			HTTPRoute: "\(AG.name)-\(NAME)": {
+				metadata: {
+					namespace: S.namespace
+					labels:    Labels
+				}
+				spec: {
+					parentRefs: [{
+						group:       "gateway.networking.k8s.io"
+						kind:        "ListenerSet"
+						namespace:   AG.namespace
+						name:        "project-\(NAME)"
+						sectionName: Atespace.listener.name
+					}]
+					rules: [{backendRefs: [{name: S.router.name, port: S.router.port}]}]
+				}
+			}
+
+			// The atespace's rule, on the shim's Gateway. A policy of its own
+			// rather than a rule in the Gateway's ate, so that the claim stays
+			// in this Application: ALLOW policies on a Gateway add up, and no
+			// other claim's rule, or the platform's, reads this one.
+			AuthorizationPolicy: "project-\(NAME)": {
+				metadata: {
+					namespace: AG.namespace
+					labels:    Labels
+				}
+				spec: {
+					targetRefs: [{
+						group: "gateway.networking.k8s.io"
+						kind:  "Gateway"
+						name:  AG.name
+					}]
+					action: "ALLOW"
+					rules: [Atespace.rule]
+				}
 			}
 
 			// The project's AppProject. Its Application may sync only from

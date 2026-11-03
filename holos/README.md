@@ -140,7 +140,7 @@ match.
 | `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
 | `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook, and its own approver off |
 | `approver-policy` | approver-policy v0.29.0 from Jetstack's OCI chart, in `cert-manager`, with its `CertificateRequestPolicy` CRD and its webhook |
-| `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate`, the `private-ca` `ClusterIssuer`, and the `CertificateRequestPolicy`s and RBAC every certificate request is approved by |
+| `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate`, the `private-ca` `ClusterIssuer`, and the `CertificateRequestPolicy`s and RBAC that approve every certificate request but a claim's wildcard, which renders its own |
 | `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
 | `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
@@ -164,12 +164,12 @@ match.
 | `toolhive-crds` | ToolHive 0.59.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
 | `toolhive-operator` | The ToolHive operator 0.59.0 from its `toolhive-operator` OCI chart, images by digest, in `toolhive-system`, watching only the `toolhive` namespace, which it renders too (both restricted, not in the mesh) |
 | `toolhive` | The MCP server `everything` in `toolhive`, at `toolhive.treasury.bank.internal/mcp`: its `MCPServer`, the `MCPOIDCConfig` that checks the realm's `kubectl` ID tokens, the `MCPAuthzConfig` with its Cedar policies, the `HTTPRoute` to the proxy runner and the NetworkPolicies that make the proxy the only way to the server (ToolHive, below) |
-| `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, and the gVisor `WorkerPool` `gvisor` in `ate-workers` |
-| `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace (`demo`, `kagent`), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
+| `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, the gVisor `WorkerPool` `gvisor` in `ate-workers`, and the `NetworkPolicy` that admits the claims' atespace Jobs to the API server |
+| `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace of the platform's (`demo`, `kagent`; a claim brings its own), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and the platform controller's Quay credential |
-| `project-<name>` | One per ProjectClaim in `projects/`, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, and its `AppProject` and `Application`; none today |
+| `project-<name>` | One per ProjectClaim in `projects/`, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and its Substrate atespace with its route through the shim |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -522,6 +522,7 @@ was approved by policy `private-ca-root`.
 | `private-ca-root` | `Issuer` `private-ca-bootstrap` | `cert-manager` | the root's common name and subject, a CA | cert-manager's controller |
 | `trust-manager-webhook` | `Issuer` `trust-manager` | `cert-manager` | trust-manager's webhook's DNS name and common name | cert-manager's controller |
 | `private-ca-<namespace>` | `ClusterIssuer` `private-ca` | that namespace | exactly the DNS names, usages and common name its `Certificate`s list, no CA | cert-manager's controller |
+| `project-<name>` | `ClusterIssuer` `private-ca` | `substrate-shim` | exactly the claim's `*.<name>.ate.treasury.bank.internal`, no CA | cert-manager's controller |
 | `deny-all` | any | any | nothing: it requires a DNS name from an empty list | `system:authenticated` |
 
 The `private-ca-<namespace>` policies are `ate-system`, `cnpg-system`,
@@ -531,6 +532,16 @@ string, so a namespace with a wildcard name, `istio-ingress`'s
 `*.treasury.bank.internal` or `substrate-shim`'s atespace wildcards, also has
 a CEL rule that each name be one of the listed ones exactly; without it
 `*.treasury.bank.internal` would allow `keycloak.treasury.bank.internal`.
+
+A ProjectClaim's wildcard is the one `Certificate` from `private-ca` with no
+entry in `PrivateCA.requesters`. The claim renders the policy `project-<name>`
+itself, with the `ClusterRole` and `ClusterRoleBinding`
+`approver-policy:project-<name>` that let cert-manager's controller use it, at
+sync wave -1, and Argo CD holds the wave until the policy is `Ready`. An entry
+in `PrivateCA.requesters` would reach the cluster on `private-ca`'s own sync,
+which nothing orders against the claim's, and a request denied first would
+wait on cert-manager's back-off. `private-ca-substrate-shim` does not list the
+claim's name, and need not: one policy that allows a request is enough.
 
 So the namespace selector keeps out every namespace not listed, a project's
 included: only `deny-all` applies there, and the request is denied. RBAC is
@@ -2564,7 +2575,7 @@ component reads the same definition for the router's allowed list.
   such as `foo.nope.ate.treasury.bank.internal`, matches no filter chain and the
   connection is reset during the TLS handshake (curl exits 35). The Gateway
   sets `allowedListeners` to its own namespace, so a `ListenerSet` there can
-  add an atespace.
+  add an atespace, as each ProjectClaim does (Adding an atespace, below).
 - **Authentication.** `RequestAuthentication` `keycloak` accepts an ID token
   from the realm's issuer for the `kubectl` client (ADR 0002), the token
   `kubectl oidc-login get-token` prints; any other bearer token gets 401.
@@ -2575,10 +2586,12 @@ component reads the same definition for the router's allowed list.
   the host is under an atespace with a rule, a token from the realm was
   verified, and the token's `groups` claim holds one of the atespace's
   `groups` (`AteGateway.atespaces`), `/platform/owners` for both today
-  (`Keycloak.groups.owners`). Istio matches `hosts` as a plain suffix of
-  `:authority`, so each rule lists the host with and without `:443`, for a
-  client that puts the port in `Host`. Everything else, a request with no
-  token included, gets 403 `RBAC: access denied`.
+  (`Keycloak.groups.owners`). A claimed atespace has an `AuthorizationPolicy`
+  `project-<name>` of its own, with the same rule, and a request is allowed
+  if any `ALLOW` policy on the Gateway allows it. Istio matches `hosts` as a
+  plain suffix of `:authority`, so each rule lists the host with and without
+  `:443`, for a client that puts the port in `Host`. Everything else, a
+  request with no token included, gets 403 `RBAC: access denied`.
 - **The actor.** `TrafficExtension` `ate-target-actor` is a few lines of
   Lua. It splits the host, `<actor>.<atespace>.ate.treasury.bank.internal`, and
   replaces `ate-target-actor` with `<atespace>/<actor>`, which drops any
@@ -2638,9 +2651,20 @@ The actor wakes on the request, if it was suspended, before it answers.
    `HTTPRoute` and its `AuthorizationPolicy` rule. Neither the router's
    allowed list nor DNS changes.
 
-An atespace claimed through a project is meant to arrive as a `ListenerSet`
-in `substrate-shim`, with its certificate and its rule, from the project's
-claim (atespace-from-the-projectclaim); the Gateway already allows it.
+A project's atespace takes none of these steps: its claim makes the atespace
+and brings the shim's half with it, in the claim's own `Application` (Projects,
+below). Between `Application`s that already exist, a broken claim holds back
+only its own. A root sync, as at a bootstrap, walks the waves, and waits on a
+broken claim as on any component, so it holds back the ones after it. In
+`substrate-shim` that half is the `ListenerSet` `project-<name>`, which the
+Gateway's `allowedListeners` admits, the `Certificate` `<name>-wildcard` and
+the `AuthorizationPolicy` `project-<name>`; in `ate-system`, the `HTTPRoute`
+`ate-<name>`, whose parent is the `ListenerSet`. The certificate has its own
+`CertificateRequestPolicy` `project-<name>` (Approval, in The private CA,
+above). The listener, the certificate and the rule are the same as a listed
+atespace's, from `AteGateway.#Atespace`, and `AteGateway.claimed` lists them.
+A claim may not take the name of an atespace listed in `AteGateway.atespaces`
+(`Projects.reserved`).
 
 #### Rotation
 
@@ -2667,8 +2691,9 @@ claim (atespace-from-the-projectclaim); the Gateway already allows it.
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
-kubectl -n substrate-shim get gateway,certificate,pods -o wide
-    # ate PROGRAMMED True; both wildcards Ready; two ate-istio pods on two nodes
+kubectl -n substrate-shim get gateway,listenerset,certificate,pods -o wide
+    # ate PROGRAMMED True; a ListenerSet per claim, ACCEPTED and PROGRAMMED True;
+    # every wildcard Ready; two ate-istio pods on two nodes
 kubectl -n istio-ingress get gateway ingress \
   -o jsonpath='{range .status.listeners[*]}{.name} {.attachedRoutes}{"\n"}{end}'   # ate 1
 # With $TOKEN as above:
@@ -3342,9 +3367,39 @@ its own in the `platform` `AppProject` (interview Q66):
   the group and may impersonate the owners. The `RoleBinding`'s subject and
   the allowlist entry are the same definition, `#ProjectRoleGroupPath`, so
   `grep -r /projects/<name>/roles/owner deploy/` finds both.
+- **Substrate**: the atespace `<name>`, reached at
+  `https://<actor>.<name>.ate.treasury.bank.internal` by the project's owner
+  group and `/platform/owners`. An atespace is an object in Substrate's API,
+  not in Kubernetes, so a Job makes it: `atespace-<name>`, an Argo CD Sync
+  hook, which calls `CreateAtespace`, then `CreateAtespaceAccessPolicy`
+  binding `owner` to `system:serviceaccount:<name>:ate-client`, each with
+  `grpcurl` over the server's gRPC reflection, since no published image has
+  `kubectl ate`. Each treats `AlreadyExists` as success, so a sync changes
+  nothing once they have been made, and a policy changed through the API
+  stays as it was. It goes by name alone: a claim on the name of an atespace
+  Substrate already has, one made by hand or left by a removed claim, inherits
+  it, with its actors and any old policy, and `<name>/ate-client` may not be
+  bound. `kubectl ate get access-policy -a <name>` shows which it got
+  (Checking a project, below). The Job is in `ate-system`, as the
+  `ate-client` ksa, with a projected token, never in `<name>`: only a global
+  owner may create an
+  atespace, and the claim's owner is `admin` in `<name>`, who could read any
+  token kept there. `substrate`'s `NetworkPolicy` `atespace-setup` admits
+  the Job to the API server. The claim also labels `<name>`
+  `ate.dev/api-access: "true"`, so its pods may reach the API, and makes a
+  ServiceAccount `ate-client` there, which owns this atespace and nothing else:
+  an owner who mints its token gets what the claim gave them already. It is
+  not the `ate-client` ksa (`docs/glossary.md`). The route through the shim,
+  a `ListenerSet`, a `Certificate` with its own `CertificateRequestPolicy`,
+  an `HTTPRoute` and an `AuthorizationPolicy`, is in Adding an atespace,
+  above. No worker pool: an
+  actor runs on the platform's `ate-workers/gvisor` with no pool named on its
+  template, and a project cannot have a pool of its own, whose workers need
+  the privileged Pod Security level.
 
 No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
-editor and viewer groups. The collection is empty in the repository (Q67).
+editor and viewer groups. `projects/` holds three claims: `payments`, `ledger`
+and `checkout`.
 
 ### Adding a project
 
@@ -3358,7 +3413,7 @@ editor and viewer groups. The collection is empty in the repository (Q67).
    ```
 
    `<name>` is the project's one name: lower case letters, digits and single
-   dashes, 2 to 63 characters. It may not be a name the platform uses: a
+   dashes, 2 to 54 characters. It may not be a name the platform uses: a
    component's, a platform namespace, Argo CD's `platform` or `default`, a
    Quay organization, a person's username, a Substrate atespace, or anything
    starting `kube-`, `bank-of-pinky-` or `project-` (`Projects.reserved`,
@@ -3428,7 +3483,74 @@ export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd get application project-my-project my-project   # Synced Healthy
 kubectl -n my-project get groups.keycloak.holos.run,users.keycloak.holos.run,groupmemberships.keycloak.holos.run,organizations.quay.holos.run
     # every READY True
-grep -r /projects/my-project/roles/owner deploy/   # the RoleBinding, the Backend, the impersonator, the Organization, the ConfigMap
+grep -r /projects/my-project/roles/owner deploy/   # the RoleBinding, the Backend, the impersonator, the Organization, the ConfigMap, the AuthorizationPolicy
+kubectl -n argocd get application project-my-project -o jsonpath='{.status.operationState.phase}'   # Succeeded
+kubectl -n ate-system get job atespace-my-project -o jsonpath='{.status.conditions[*].type}'         # Complete, not Failed
+kubectl -n ate-system logs job/atespace-my-project   # CreateAtespace and CreateAtespaceAccessPolicy: created, or already exists
+kubectl get certificaterequestpolicy project-my-project        # READY True
+kubectl -n substrate-shim get listenerset project-my-project   # ACCEPTED, PROGRAMMED True
+kubectl -n substrate-shim get certificate my-project-wildcard  # READY True
+kubectl ate get access-policy -a my-project        # owner user:system:serviceaccount:my-project:ate-client
+```
+
+Read the first two lines, not the `Application`'s status: a hook is outside an
+`Application`'s health and comparison. A failed Job fails the sync, Argo CD
+retries it ten times, each with a new Job, and stops. The `Application` then
+reads `Synced` and `Healthy` with `operationState.phase` `Failed`, the root's
+health check passes it, and no automated sync runs the Job again, so the
+atespace is missing with nothing saying so. A sync by hand runs it again, once
+what failed it is fixed:
+
+```sh
+argocd app sync project-my-project
+```
+
+If `access-policy` shows another policy, or none, the atespace was there before
+the claim (Projects, above), and is the operator's to fix with `kubectl ate`.
+
+### An actor in a project's atespace
+
+A platform operator puts an actor in a project's atespace with `kubectl ate`,
+as in the demo atespace (Substrate, above). The claim's owner can reach the
+actor, but not the API from a laptop, since `kubectl ate` port-forwards in
+`ate-system`; a pod in the project's namespace can use the API as
+`<project>/ate-client`, whose token the owner may mint.
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+project=my-project a=echo
+image=quay.$domain/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
+kubectl ate create actor-template -f - <<EOF
+metadata: {atespace: $project, name: $a}
+containers:
+- name: whoami
+  image: $image
+  env: [{name: WHOAMI_NAME, value: $a}]
+  wakeupProbe: {httpGet: {path: /health, port: 80}}
+resources:
+  limits: {cpuMillicores: 250, memoryBytes: 134217728}
+EOF
+kubectl ate get actor-templates -a $project   # a GOLDEN TAG, within a minute
+kubectl ate create actor $a -a $project --template $a
+```
+
+The template names no pool, so the actor runs on `ate-workers/gvisor`, which
+`kubectl ate get actors -a $project` shows once it is awake. Then, with an ID
+token (Reaching an actor, above), an owner of the project or a member of
+`/platform/owners` gets `Name: echo`, and anyone else 403:
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" https://$a.$project.ate.$domain/
+```
+
+The project's own ServiceAccount can do the same in its atespace and is
+denied everywhere else:
+
+```sh
+kubectl -n $project create token ate-client --audience=api.ate-system.svc --duration=1h > project.token
+kubectl ate --token-file project.token get actors -a $project   # the actor
+kubectl ate --token-file project.token get actors -a demo       # PermissionDenied
+rm project.token
 ```
 
 ### Removing a project
@@ -3440,6 +3562,23 @@ in this order, after the merge:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+# The actors, templates and tags first: Substrate refuses to delete an atespace
+# that holds any. A tag blocks it like the rest (tags_atespace_fk, RESTRICT).
+kubectl ate get actors -a <name>
+kubectl ate suspend actor <actor> -a <name> --mode sync
+kubectl ate delete actor <actor> -a <name>
+kubectl ate get actor-templates -a <name>
+kubectl ate delete actor-template <template> -a <name>
+kubectl ate get tags -a <name>
+kubectl ate delete tag <tag> -a <name>
+kubectl ate delete atespace <name>     # its access policy goes with it
+kubectl -n ate-system delete httproute ate-<name>
+kubectl -n ate-system delete job atespace-<name>
+kubectl -n substrate-shim delete listenerset,authorizationpolicy project-<name>
+kubectl -n substrate-shim delete certificate <name>-wildcard
+kubectl -n substrate-shim delete secret <name>-wildcard-tls
+kubectl delete certificaterequestpolicy project-<name>
+kubectl delete clusterrolebinding,clusterrole approver-policy:project-<name>
 kubectl -n argocd delete application <name>
 kubectl -n argocd delete appproject <name>
 kubectl delete namespace <name>        # wait: the controller's finalizers delete the groups and the membership

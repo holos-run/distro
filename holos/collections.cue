@@ -82,8 +82,10 @@ projects: proj.projects
 // per claim, which registry.cue puts just before argocd-apps. Each is the
 // component project-<name>, rendered from the one directory
 // components/project with the parameter project, so a claim adds a
-// component and an Argo CD Application of its own: a broken claim holds
-// back only its own Application (interview Q66). They are in name order,
+// component and an Argo CD Application of its own: between Applications
+// that already exist a broken claim holds back only its own (interview Q66),
+// though a root sync, which walks the waves, waits on it as on any component.
+// They are in name order,
 // whatever order CUE loads the claims' files in, so a sync wave, which is
 // the registry index, moves only when a claim is added or removed before it.
 #ProjectRegistrations: [

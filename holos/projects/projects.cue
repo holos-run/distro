@@ -12,8 +12,9 @@
 // owner group, its owner, editor and viewer groups, its Quay organization
 // with a team synced from each group, its Argo CD AppProject and
 // Application, the RoleBinding that makes its owners admins of its
-// namespace, and its owner group's entry in holos-authenticator's allowlist.
-// README.md, Projects, is the walk-through.
+// namespace, its owner group's entry in holos-authenticator's allowlist, and
+// its Substrate atespace, with the atespace's route through the Substrate
+// shim. README.md, Projects, is the walk-through.
 //
 // It is ported from holos-run/aavis-ops' Project collection (interview Q6),
 // which ProjectClaim and Project name alike here, without what this distro
@@ -34,14 +35,18 @@ import (
 )
 
 // #Name is what a project's name may be. The name is used unchanged as its
-// namespace, its Argo CD AppProject and Application, its Quay organization
-// and the segment of its Keycloak group paths, so it must suit all four: a
-// DNS label, as a namespace is, without the consecutive dashes Quay refuses
-// in an organization name, and at least two characters, Quay's minimum.
+// namespace, its Argo CD AppProject and Application, its Quay organization,
+// the segment of its Keycloak group paths, its atespace and the label of its
+// actors' hosts, so it must suit them all: a DNS label, as a namespace is,
+// without the consecutive dashes Quay refuses in an organization name, and at
+// least two characters, Quay's minimum. At most 54, not a label's 63: the Job
+// that makes the atespace is atespace-<name>, and Kubernetes refuses a Job
+// whose name would not fit the 63 characters of the label it puts on its
+// pods, at the sync rather than at the render.
 // Which names are taken is not a matter of shape: Projects.#Unreserved
 // (components/project.cue) checks that, when the project component renders
 // the claim.
-#Name: =~"^[a-z0-9]+(-[a-z0-9]+)*$" & strings.MinRunes(2) & strings.MaxRunes(63)
+#Name: =~"^[a-z0-9]+(-[a-z0-9]+)*$" & strings.MinRunes(2) & strings.MaxRunes(54)
 
 // #Email is the shape of an owner's key: a non-empty local part, an @ and a
 // dotted domain, in lower case. It is not RFC 5322; it exists to refuse an

@@ -1,5 +1,7 @@
 package holos
 
+import "list"
+
 // AteGateway is the Substrate shim's Gateway, which the substrate-shim
 // component renders: the one client of Substrate's router, which every actor
 // is reached through at https://<actor>.<atespace>.ate.<domain>. It holds
@@ -43,26 +45,97 @@ AteGateway: {
 	domain:   "ate.\(IngressGateway.domain)"
 	wildcard: "*.\(domain)"
 
-	// atespaces are the Substrate atespaces the shim serves, by name, each a
-	// listener with a wildcard certificate *.<atespace>.<domain>, an
-	// HTTPRoute to the router, and an AuthorizationPolicy rule admitting a
-	// Keycloak ID token whose groups claim holds one of groups. Any other
-	// host under domain has no listener, so the gateway refuses it.
-	// Atespaces claimed through a project are added by
-	// atespace-from-the-projectclaim as ListenerSets, which the Gateway
-	// allows from its own namespace.
-	atespaces: [NAME=string]: {
-		name:     NAME
-		hostname: "*.\(NAME).\(Self.domain)"
+	// #Atespace is one Substrate atespace the shim serves: a listener with a
+	// wildcard certificate *.<atespace>.<domain>, an HTTPRoute to the router,
+	// and an AuthorizationPolicy rule admitting a Keycloak ID token whose
+	// groups claim holds one of groups. Any other host under domain has no
+	// listener, so the gateway refuses it. The fields here are what the
+	// Gateway's atespaces and a claim's have in common, so the two cannot
+	// come to differ.
+	#Atespace: {
+		name:     string
+		hostname: "*.\(name).\(Self.domain)"
 		// groups are the full group paths (Keycloak.groupsClaim) that may
 		// reach the atespace's actors.
 		groups: [...string]
+
+		// certificate is the wildcard's spec, but for what its entry in
+		// PrivateCA.requesters adds.
+		certificate: {
+			secretName: "\(name)-wildcard-tls"
+			privateKey: {
+				algorithm: "ECDSA"
+				size:      256
+			}
+			issuerRef: {
+				group: "cert-manager.io"
+				kind:  "ClusterIssuer"
+				name:  PrivateCA.issuer
+			}
+		}
+
+		// listener is the atespace's HTTPS listener, named after it, which
+		// admits only HTTPRoutes from the router's namespace.
+		listener: {
+			"name":     name
+			"hostname": hostname
+			port:       443
+			protocol:   "HTTPS"
+			tls: {
+				mode: "Terminate"
+				certificateRefs: [{kind: "Secret", name: certificate.secretName}]
+			}
+			allowedRoutes: {
+				kinds: [{group: "gateway.networking.k8s.io", kind: "HTTPRoute"}]
+				namespaces: {
+					from: "Selector"
+					selector: matchExpressions: [{
+						key:      "kubernetes.io/metadata.name"
+						operator: "In"
+						values: [Substrate.namespace]
+					}]
+				}
+			}
+		}
+
+		// rule is the atespace's AuthorizationPolicy rule: its hosts, with or
+		// without the port, a verified token from the realm, and one of its
+		// groups in the token's groups claim.
+		rule: {
+			from: [{source: requestPrincipals: ["\(Keycloak.issuer)/*"]}]
+			to: [{operation: hosts: [hostname, "\(hostname):443"]}]
+			when: [{
+				key:    "request.auth.claims[\(Keycloak.groupsClaim)]"
+				values: list.SortStrings(groups)
+			}]
+		}
 	}
+
+	// atespaces are the platform's, each a listener on the Gateway itself.
+	atespaces: [NAME=string]: #Atespace & {name: NAME}
 	atespaces: {
 		// demo is the atespace README.md, Substrate, creates by hand, with
 		// the echo and other actors.
 		demo: groups: [Keycloak.groups.owners.path]
 		// kagent's agents, in the atespace kagent creates for itself.
 		(Kagent.atespace): groups: [Keycloak.groups.owners.path]
+	}
+
+	// claimed are the ProjectClaims' atespaces, one of each claim's name.
+	// components/project renders each, as a ListenerSet on the Gateway
+	// rather than a listener of its own, so a claim stays inside its own
+	// Application: between Applications that already exist, a broken one
+	// holds back no other (interview Q66), though a root sync, which walks
+	// the waves, waits on it as on any component. The claim's owner group may
+	// reach its actors, and so may the platform's owners, as they may
+	// everywhere else.
+	claimed: [NAME=string]: #Atespace & {name: NAME}
+	claimed: {
+		for NAME, _ in projects {
+			(NAME): groups: [
+				(#ProjectRoleGroupPath & {project: NAME, role: "owner"}).claim,
+				Keycloak.groups.owners.path,
+			]
+		}
 	}
 }

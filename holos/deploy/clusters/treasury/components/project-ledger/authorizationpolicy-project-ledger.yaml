@@ -1,0 +1,28 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: ledger
+    name: project-ledger
+    namespace: substrate-shim
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.treasury.bank.internal/realms/default/*
+          to:
+            - operation:
+                hosts:
+                    - '*.ledger.ate.treasury.bank.internal'
+                    - '*.ledger.ate.treasury.bank.internal:443'
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+                - /projects/ledger/roles/owner
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate

@@ -1,0 +1,16 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: payments
+    name: approver-policy:project-payments
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: approver-policy:project-payments
+subjects:
+    - kind: ServiceAccount
+      name: cert-manager
+      namespace: cert-manager

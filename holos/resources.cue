@@ -67,9 +67,11 @@ import (
 	// trust-manager's Bundle has no generated CUE schema here either, nor
 	// approver-policy's CertificateRequestPolicy, v1alpha1, the one version
 	// its v0.29.0 CRD serves (components/approver-policy). Both are
-	// cluster-scoped.
+	// cluster-scoped. CertificateRequestPolicy's metadata is opened as for
+	// the kinds above, since a claim's carries labels and a sync wave
+	// (components/project).
 	Bundle?: [_]: {apiVersion: "trust.cert-manager.io/v1alpha1", ...}
-	CertificateRequestPolicy?: [_]: {apiVersion: "policy.cert-manager.io/v1alpha1", ...}
+	CertificateRequestPolicy?: [_]: {apiVersion: "policy.cert-manager.io/v1alpha1", metadata: {...}, ...}
 
 	// Nor do NetworkPolicy, CloudNativePG's Cluster or the Keycloak
 	// Operator's Keycloak and KeycloakRealmImport. All are namespaced, so
@@ -130,6 +132,12 @@ import (
 	Gateway?: [_]: gwv1.#Gateway & {
 		spec: gatewayClassName: string | *"istio"
 	}
+
+	// The Gateway API's ListenerSet has no generated CUE schema here; this
+	// entry pins the version the v1.6.3 CRD serves (components/gateway-api)
+	// and leaves the rest to the API server's validation. Namespaced, so
+	// metadata is opened as for the kinds above.
+	ListenerSet?: [_]: {apiVersion: "gateway.networking.k8s.io/v1", metadata: {...}, ...}
 }
 
 // #GeneratorKinds are the namespaced generator kinds of

@@ -25,6 +25,8 @@ import (
 //   - private-ca-<namespace>: the ClusterIssuer signs, for one namespace in
 //     PrivateCA.requesters (components/private-ca.cue), exactly the names,
 //     usages and common name its Certificates list, and no CA.
+//   - project-<name>, which is not rendered here: each ProjectClaim renders
+//     its own, for its one wildcard on the Substrate shim (components/project).
 //   - deny-all: applies to every request from anyone, and allows nothing,
 //     so a request no other policy applies to is denied rather than left
 //     unprocessed.
@@ -39,14 +41,7 @@ import (
 
 let Site = Cluster.site
 
-// CertManager is cert-manager's controller's ServiceAccount, the requester
-// of every request made from a Certificate (spec.username, which
-// cert-manager's webhook stamps). Its namespace is cert-manager's, which is
-// PrivateCA.namespace.
-let CertManager = {
-	name:      "cert-manager"
-	namespace: PrivateCA.namespace
-}
+let CertManager = PrivateCA.certManager
 
 // RootSubject is the root's common name and subject, which the root's
 // Certificate asks for and its policy allows.
@@ -62,32 +57,6 @@ let RootSubject = {
 // self-signed Issuer and the Certificate the chart issues from it, both
 // named after the release (components/trust-manager).
 let TrustManager = {name: "trust-manager", namespace: PrivateCA.namespace}
-
-// Exactly is an allowed string list of approver-policy's that permits
-// exactly the names given. values are patterns, in which * matches any
-// string, so *.treasury.bank.internal would also allow
-// keycloak.treasury.bank.internal; where a name has a *, a CEL rule also
-// requires each value to be one of the names as written.
-#Exactly: {
-	names: [...string]
-	out: {
-		required: true
-		values:   names
-		if list.Contains([for N in names {strings.Contains(N, "*")}], true) {
-			validations: [{
-				rule:    "self in \(json.Marshal(names))"
-				message: "must be one of these exactly, * included: \(strings.Join(names, ", "))"
-			}]
-		}
-	}
-}
-
-// PrivateCAIssuerRef selects the ClusterIssuer.
-let PrivateCAIssuerRef = {
-	group: "cert-manager.io"
-	kind:  "ClusterIssuer"
-	name:  PrivateCA.issuer
-}
 
 holos: spec: artifacts: [(#ResourcesArtifact & {
 	resources: {
@@ -178,7 +147,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// so its Secret exists, and the issuer is Ready when it is applied.
 		ClusterIssuer: (PrivateCA.issuer): {
 			metadata: annotations: "argocd.argoproj.io/sync-wave": "2"
-			spec: ca: secretName: PrivateCA.root
+			spec: ca: secretName:                                  PrivateCA.root
 		}
 
 		// The root's request, in cert-manager's namespace, from the
@@ -258,7 +227,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					isCA: false
 				}
 				selector: {
-					issuerRef: PrivateCAIssuerRef
+					issuerRef: PrivateCA.issuerRef
 					namespace: matchNames: [NS]
 				}
 			}

@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: ledger
+    name: approver-policy:project-ledger
+rules:
+    - apiGroups:
+        - policy.cert-manager.io
+      resourceNames:
+        - project-ledger
+      resources:
+        - certificaterequestpolicies
+      verbs:
+        - use

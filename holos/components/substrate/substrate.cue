@@ -892,6 +892,23 @@ _Resources: #Resources & {
 		}
 	}
 
+	// The API server's door for the Job that makes a ProjectClaim's atespace
+	// (components/project), one for all claims. It runs in this namespace,
+	// whose upstream policy admits only Substrate's own apps by name, and
+	// not from a namespace labeled ate.dev/api-access: it needs a global
+	// owner's token, which no project's namespace may hold.
+	NetworkPolicy: "atespace-setup": {
+		metadata: namespace: NS
+		spec: {
+			podSelector: matchLabels: app: "ate-api-server"
+			policyTypes: ["Ingress"]
+			ingress: [{
+				from: [{podSelector: matchLabels: S.atespaceSetup.labels}]
+				ports: [{protocol: "TCP", port: S.api.port}]
+			}]
+		}
+	}
+
 	// The platform's gVisor pool, in a namespace of its own, which the
 	// worker pods' capabilities and unconfined profiles need privileged.
 	// One worker per general worker node; a worker's capacity is

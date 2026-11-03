@@ -78,14 +78,17 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   ([holos-authenticator](../holos/README.md#holos-authenticator)).
 
 **ProjectClaim**
-: Planned. A CUE collection in which a team claims a project, and from which its namespaces,
-  RoleBindings and, later, its Substrate atespace are rendered.
+: A CUE collection in which a team claims a project, and from which its namespace, RoleBinding,
+  Keycloak groups, Quay organization, Argo CD project and Substrate atespace are rendered
+  ([Projects](../holos/README.md#projects)).
 
 ## Identity and tokens
 
 **ksa**
 : A Kubernetes service account. "The `ate-client` ksa" is the ServiceAccount `ate-client` in
-  namespace `ate-system`, and its principal is `system:serviceaccount:ate-system:ate-client`.
+  namespace `ate-system`, and its principal is `system:serviceaccount:ate-system:ate-client`. A
+  project's namespace has a ServiceAccount of the same name, which owns that project's atespace
+  and nothing else; the documents call it `<project>/ate-client`, never the `ate-client` ksa.
 
 **ksa token**
 : A standard Kubernetes service account token: a short-lived JWT, signed by the cluster's API
@@ -151,7 +154,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 **atespace**
 : Substrate's tenant: a named group of actor templates and actors, such as `demo` or `kagent`. It
-  is an object in Substrate's database, not a Kubernetes namespace.
+  is an object in Substrate's database, not a Kubernetes namespace. A ProjectClaim makes one of the
+  project's name ([Projects](../holos/README.md#projects)).
 
 **actor template**
 : The immutable recipe for an actor: its image, by digest, and its environment.
@@ -203,7 +207,7 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 **`ate-gateway`**, **`AteGateway`**
 : `ate-gateway` is the ksa the shim's gateway pods run as, whose SPIFFE ID is on the router's
   allowed list. `AteGateway` is the CUE definition, in `holos/components/substrate-shim.cue`, that
-  names it and the shim's atespaces.
+  names it and the shim's atespaces, the platform's in `atespaces` and the claims' in `claimed`.
 
 **kagent**
 : The Kubernetes agent framework, built from the fork holos-run/kagent, that runs its agents as
