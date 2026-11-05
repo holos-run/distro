@@ -4,8 +4,8 @@ import "net"
 
 // Sites and clusters are the platform's per-site and per-cluster data. A
 // component reads its cluster as Cluster (components/component.cue), so
-// adding a cluster is a new entry here; platform/platform.cue renders every
-// component for every cluster.
+// adding a cluster is a new entry here; platform/platform.cue renders each
+// cluster's own list of components, clusterRegistry (registry.cue).
 
 // #Site is a place clusters run, with the network services they share.
 #Site: {
@@ -33,6 +33,14 @@ import "net"
 #Cluster: {
 	name: =~"^[a-z][a-z0-9-]{0,30}$"
 	site: #Site
+
+	// components names the optional entries of the registry the cluster
+	// takes, beside the stack up to standard, which every cluster takes
+	// (#Registration.priority). A name outside #OptionalComponents, whether a
+	// typo, an entry further down the stack or a claim, fails cue vet. The
+	// order here does not matter: a cluster syncs them in the registry's
+	// order (clusterRegistry, registry.cue).
+	components: [...or(#OptionalComponents)]
 
 	// ingressDomain is the zone the cluster's hostnames are in: every
 	// service is <service>.<ingressDomain>, by default
@@ -151,9 +159,18 @@ sites: garage: {
 
 // treasury is the first garage cluster: treasury-cp-1 at 10.20.0.50 and
 // treasury-general-1 to -3 at .51 to .53 on the k8s vnet. It takes the first
-// four addresses of the ingress range.
+// four addresses of the ingress range, and every optional component.
 clusters: treasury: {
 	site: sites.garage
+	components: [
+		"substrate",
+		"substrate-shim",
+		"kagent-crds",
+		"kagent",
+		"toolhive-crds",
+		"toolhive-operator",
+		"toolhive",
+	]
 	loadBalancer: {
 		start: "10.20.0.30"
 		stop:  "10.20.0.33"

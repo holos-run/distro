@@ -79,19 +79,24 @@ projects: proj.projects
 ])
 
 // #ProjectRegistrations are the registry's entries for the collection, one
-// per claim, which registry.cue puts just before argocd-apps. Each is the
-// component project-<name>, rendered from the one directory
+// per claim, which registry.cue puts after the components they need. Each is
+// the component project-<name>, rendered from the one directory
 // components/project with the parameter project, so a claim adds a
 // component and an Argo CD Application of its own: between Applications
 // that already exist a broken claim holds back only its own (interview Q66),
 // though a root sync, which walks the waves, waits on it as on any component.
 // They are in name order,
 // whatever order CUE loads the claims' files in, so a sync wave, which is
-// the registry index, moves only when a claim is added or removed before it.
+// the index in the cluster's own list (clusterRegistry, registry.cue), moves
+// only when an entry ahead of it comes or goes: a claim, or a component the
+// cluster starts or stops naming. Each is optional, at the top of the stack,
+// but no cluster names one: claims pass through to every cluster
+// (#OptionalComponents, registry.cue).
 #ProjectRegistrations: [
 	for NAME in list.SortStrings([for NAME, _ in projects {NAME}]) {
 		name:      "project-\(NAME)"
 		component: "project"
+		priority:  "optional"
 		parameters: project: NAME
 	},
 ]

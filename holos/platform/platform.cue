@@ -1,7 +1,7 @@
 package holos
 
-// The platform renders every component in the registry (registry.cue) once
-// per cluster in clusters (clusters.cue), into
+// The platform renders the components each cluster in clusters (clusters.cue)
+// takes, its list in clusterRegistry (registry.cue), into
 // deploy/clusters/<cluster>/components/<name>, from its directory under
 // components/ with its parameters and the cluster's name as CUE tags.
 // Inspect the result with `holos show platform`.
@@ -9,7 +9,7 @@ package holos
 // See https://holos.run/docs/api/author/v1alpha6/#Platform
 platform: name: "distro"
 
-for CLUSTER in clusters for C in registry {
+for CLUSTER in clusters for C in clusterRegistry[CLUSTER.name] {
 	platform: components: "\(CLUSTER.name):\(C.name)": {
 		name: C.name
 		path: "components/\(C.component)"

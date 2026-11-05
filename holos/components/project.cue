@@ -91,7 +91,9 @@ Projects: {
 	// project's Application collide with another project's component.
 	reserved: {
 		// Every component's: most components' namespace is their name, and
-		// each is an Application in argocd, as a project's is.
+		// each is an Application in argocd, as a project's is. The whole
+		// registry, not a cluster's list (clusterRegistry), so a name is
+		// reserved whether or not a cluster takes it.
 		for C in registry {(C.name): true}
 
 		// The platform's namespaces that are not a component's name, from
