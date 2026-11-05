@@ -16,8 +16,9 @@
 // and viewer groups, its Quay organization with a team synced from each group,
 // its Argo CD AppProject and Application, the RoleBinding that makes its
 // owners admins of its namespace, its owner group's entry in
-// holos-authenticator's allowlist, and its Substrate atespace, with the
-// atespace's route through the Substrate shim.
+// holos-authenticator's allowlist, and on a cluster that names substrate and
+// substrate-shim, its Substrate atespace, with the atespace's route through the
+// Substrate shim.
 //
 // A claim is a tenant choosing where it lands, so it names its clusters by
 // label, and a selector may name several, which matchLabels cannot:

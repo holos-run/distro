@@ -13,8 +13,8 @@ import (
 // mirror worker and no config editor. Its database is its own one-instance
 // CloudNativePG cluster, its blobs are in RustFS's bucket quay, and its
 // build-log and event queues are in an ephemeral Redis beside it. It holds
-// the demo actor's image, public; the Substrate and kagent images are on
-// ghcr.io (docs/forks.md).
+// the demo actor's image, public, where the cluster names substrate; the
+// Substrate and kagent images are on ghcr.io (docs/forks.md).
 //
 // Quay (components/quay.cue) holds the release, the names and the URL. Quay
 // serves plain HTTP on 8080 behind the ingress gateway, which terminates TLS
@@ -29,7 +29,8 @@ import (
 // (#GeneratedSecret), copied from rustfs (#ScopedSecretStore) or delivered
 // by the controller. Nothing secret is in git.
 //
-// The platform controller reconciles the demo Organization and its Repository here
+// The platform controller reconciles the demo Organization and its Repository
+// here, on a cluster that names substrate, whose actors alone run that image,
 // against Quay's API with an OAuth token minted by cmd/quay-bootstrap, which
 // writes it as the platform secret quay-controller-token; this component
 // copies that into the controller's namespace. Until bootstrap has run, the
@@ -545,7 +546,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// default is the upstream name, holos-controller-quay-creds.
 		// Orphan, so deleting one, or Argo CD pruning it, leaves the
 		// organization and its images in Quay: they are not in git.
-		for O in Q.organizations {
+		for O in Q.organizations if O.rendered {
 			Organization: (O.name): {
 				metadata: namespace: NS
 				spec: {
@@ -562,17 +563,20 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// The demo actor's repository, public (Q13): atelet pulls actor
-		// images with no pull secret. The actor template pins its digest.
-		Repository: "demo-echo": {
-			metadata: namespace: NS
-			spec: {
-				organizationRef: Q.organizations.demo.name
-				name:            "echo"
-				visibility:      "public"
-				description:     "The demo actor's image, public so atelet can pull it anonymously."
-				deletionPolicy:  "Orphan"
-				credentialsSecretRef: name: Q.credentials.controller
+		// The demo actor's repository, public (Q13), with its Organization:
+		// atelet pulls actor images with no pull secret. The actor template
+		// pins its digest.
+		if Q.organizations.demo.rendered {
+			Repository: "demo-echo": {
+				metadata: namespace: NS
+				spec: {
+					organizationRef: Q.organizations.demo.name
+					name:            "echo"
+					visibility:      "public"
+					description:     "The demo actor's image, public so atelet can pull it anonymously."
+					deletionPolicy:  "Orphan"
+					credentialsSecretRef: name: Q.credentials.controller
+				}
 			}
 		}
 

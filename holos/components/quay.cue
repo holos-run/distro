@@ -53,9 +53,15 @@ Quay: {
 	// namespace. demo holds the actor's public repository (Q13); the
 	// Substrate and kagent images are on ghcr.io, not here (docs/forks.md).
 	// Each syncs one team, platformowners, from the platform owners' group,
-	// as admin.
-	organizations: [NAME=string]: {name: NAME}
-	organizations: demo: _
+	// as admin. A name here is reserved on every cluster (Projects.reserved);
+	// rendered is whether the quay component makes the Organization on this
+	// one, so demo, whose image only Substrate's actors run, renders where the
+	// cluster names substrate.
+	organizations: [NAME=string]: {
+		name:     NAME
+		rendered: bool | *true
+	}
+	organizations: demo: rendered: Takes.substrate
 
 	// ownersTeam is the synced team every organization has. It is not
 	// owners: Quay makes a team owners in every new organization, with its

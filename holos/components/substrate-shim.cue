@@ -58,6 +58,8 @@ AteGateway: {
 		// groups are the full group paths (Keycloak.groupsClaim) that may
 		// reach the atespace's actors.
 		groups: [...string]
+		// rendered is whether the shim serves it on this cluster.
+		rendered: bool | *true
 
 		// certificate is the wildcard's spec, but for what its entry in
 		// PrivateCA.requesters adds.
@@ -111,31 +113,49 @@ AteGateway: {
 		}
 	}
 
-	// atespaces are the platform's, each a listener on the Gateway itself.
+	// atespaces are the platform's, each a listener on the Gateway itself. A
+	// name here is reserved on every cluster (Projects.reserved); rendered is
+	// whether the shim serves it on this one, so the private CA's policy,
+	// which sits lower in the stack, lists no wildcard for kagent where the
+	// cluster does not name kagent.
 	atespaces: [NAME=string]: #Atespace & {name: NAME}
 	atespaces: {
 		// demo is the atespace README.md, Substrate, creates by hand, with
 		// the echo and other actors.
 		demo: groups: [Keycloak.groups.owners.path]
 		// kagent's agents, in the atespace kagent creates for itself.
-		(Kagent.atespace): groups: [Keycloak.groups.owners.path]
+		(Kagent.atespace): {
+			groups: [Keycloak.groups.owners.path]
+			rendered: Takes.kagent
+		}
 	}
 
+	// servesClaims is whether a claim on this cluster gets an atespace. It
+	// needs both entries: the claim's Job and route land in Substrate's
+	// namespace, and its listener and wildcard in the shim's. Without both,
+	// those objects would have nowhere to land, so a claim renders only the
+	// rest of what it stands for.
+	servesClaims: Takes.substrate && Takes["substrate-shim"]
+
 	// claimed are the atespaces of the claims this cluster takes, one of each
-	// claim's name. components/project renders each, as a ListenerSet on the
-	// Gateway rather than a listener of its own, so a claim stays inside its
-	// own Application: between Applications that already exist, a broken one
-	// holds back no other (interview Q66), though a root sync, which walks
-	// the waves, waits on it as on any component. The claim's owner group may
-	// reach its actors, and so may the platform's owners, as they may
-	// everywhere else.
+	// claim's name, on a cluster that serves them (servesClaims) and otherwise
+	// none. atespaces, above, stays whole on every cluster, so its names stay
+	// reserved (Projects.reserved) wherever the shim is not. components/project
+	// renders each, as a ListenerSet on the Gateway rather than a listener of
+	// its own, so a claim stays inside its own Application: between
+	// Applications that already exist, a broken one holds back no other
+	// (interview Q66), though a root sync, which walks the waves, waits on it
+	// as on any component. The claim's owner group may reach its actors, and so
+	// may the platform's owners, as they may everywhere else.
 	claimed: [NAME=string]: #Atespace & {name: NAME}
-	claimed: {
-		for NAME, _ in clusterProjects[Cluster.name] {
-			(NAME): groups: [
-				(#ProjectRoleGroupPath & {project: NAME, role: "owner"}).claim,
-				Keycloak.groups.owners.path,
-			]
+	if servesClaims {
+		claimed: {
+			for NAME, _ in clusterProjects[Cluster.name] {
+				(NAME): groups: [
+					(#ProjectRoleGroupPath & {project: NAME, role: "owner"}).claim,
+					Keycloak.groups.owners.path,
+				]
+			}
 		}
 	}
 }

@@ -60,9 +60,10 @@ registry: [...#Registration]
 // #Cluster.components: the optional entries, but for the claims. A claim is
 // optional too (#ProjectRegistrations), but it selects its clusters by label
 // rather than being named by them (#Project.clusterSelector), so naming one
-// fails cue vet. A cluster a claim selects has to name substrate and
-// substrate-shim, which the claim's atespace objects need, until those become
-// conditional (Second_Cluster, nothing-renders-for-what-a-cluster-does-not-take).
+// fails cue vet. A claim's atespace and route render only on a cluster that
+// names both substrate and substrate-shim (AteGateway.servesClaims,
+// components/substrate-shim.cue); on any other cluster it selects, the claim
+// renders the rest of what it stands for.
 #OptionalComponents: [
 	for C in registry if C.priority == "optional" && C.component != "project" {C.name},
 ]
@@ -308,9 +309,10 @@ registry: [
 	// in substrate's namespace. So it comes straight after substrate.
 	{name: "substrate-shim", priority: "optional"},
 	// quay is the registry: its CloudNativePG cluster, Redis, the Quay
-	// Deployment and route, its Keycloak Client, the demo Organization and
-	// Repository holos-controller makes in it, and the copies of the RustFS
-	// keys and of holos-controller's Quay credential. It needs the CRDs of
+	// Deployment and route, its Keycloak Client, the copies of the RustFS
+	// keys and of holos-controller's Quay credential, and on a cluster that
+	// names substrate, the demo Organization and Repository holos-controller
+	// makes in it. It needs the CRDs of
 	// cloudnative-pg, external-secrets and holos-controller, the Instance
 	// from keycloak-realm, the bucket and keys from rustfs and the
 	// management namespace. It comes after secrets-manager, last of the
@@ -326,15 +328,16 @@ registry: [
 	// claim in projects/ (collections.cue), on the clusters the claim
 	// selects, each the project's namespace,
 	// Keycloak groups, users and memberships, Quay organization, RBAC,
-	// Argo CD AppProject and Application, and Substrate atespace with its
-	// route through the shim (components/project). They need
+	// Argo CD AppProject and Application, and on a cluster that names
+	// substrate and substrate-shim, Substrate atespace with its route through
+	// the shim (components/project). They need
 	// holos-controller's CRDs, the Instance from keycloak-realm, Quay's
 	// credential from quay, and holos-authenticator, whose allowlist names
-	// their owners. Their atespace Jobs need substrate's API server and the
-	// NetworkPolicy that admits them, their ListenerSets the shim's Gateway
-	// from substrate-shim, and their wildcards the ClusterIssuer from
-	// private-ca and approver-policy to approve their own policies. So they
-	// come after all of them.
+	// their owners. Where they render, their atespace Jobs need substrate's
+	// API server and the NetworkPolicy that admits them, their ListenerSets
+	// the shim's Gateway from substrate-shim, and their wildcards the
+	// ClusterIssuer from private-ca and approver-policy to approve their own
+	// policies. So they come after all of them.
 	for R in #ProjectRegistrations {R},
 	// kagent-crds is kagent's CRDs, from the fork's kagent-crds chart, which
 	// Argo CD neither prunes nor deletes. It needs nothing, but comes

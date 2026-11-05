@@ -73,7 +73,13 @@ PrivateCA: {
 	// its own, ahead of its Certificate (components/project), since an entry
 	// here would reach the cluster on private-ca's sync, which nothing orders
 	// against the claim's.
+	//
+	// _rendered is whether the entry reaches a policy on this cluster. An
+	// optional component's entry sets it (components/private-ca.cue), and a
+	// namespace with none rendered has no policy. It is hidden because each
+	// Certificate takes its entry whole, and a Certificate has no such field.
 	requesters: [Namespace=string]: [Certificate=string]: {
+		_rendered: bool | *true
 		dnsNames: [#Within, ...#Within]
 		usages?: [string, ...string]
 		commonName?: #Within

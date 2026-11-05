@@ -172,11 +172,9 @@ report it: it renders no components and exits 0.
 
 A ProjectClaim's entry is `optional` too, but no cluster names it: a claim
 runs the other way, and selects its clusters by label (Projects, below). A
-claim renders its atespace and route into `ate-system` and `substrate-shim`,
-so a cluster that a claim selects has to name `substrate` and
-`substrate-shim`. One that does not renders and passes `cue vet`, but nothing
-makes those namespaces there, so the claim cannot sync and the root stops at
-it. A cluster no claim selects needs neither.
+claim's atespace and route land in `ate-system` and `substrate-shim`, so they
+render only on a cluster that names both `substrate` and `substrate-shim`. On
+any other cluster it selects, a claim renders the rest of what it stands for.
 
 `clusterRegistry`, in `registry.cue`, is the result: the registry as each
 cluster takes it, keyed by cluster, in the registry's order.
@@ -196,6 +194,23 @@ Nothing may depend on a component above it in the stack, further up toward
 ([glossary](../docs/glossary.md#the-platform)). Stack order is not sync
 order. The registry's order is the sync order, whatever the priorities, so
 `hello`, `standard`, syncs before `ceph-csi-rbd`, `important`.
+
+Nothing at `standard` or beneath it renders for an optional entry the cluster
+does not name, either. An object that serves one stays in its component, so the
+`Application` that owns it does not change, and is conditional on the entry
+through `Takes` (`components/component.cue`):
+
+| Objects | Render on a cluster that names |
+| --- | --- |
+| `private-ca-ate-system`, RustFS's `substrate` consumer, Quay's `demo` `Organization` and `demo-echo` `Repository` | `substrate` |
+| `private-ca-substrate-shim`, the ingress `Gateway`'s `ate` listener | `substrate-shim` |
+| The `kagent` atespace's wildcard in `private-ca-substrate-shim` | `substrate-shim` and `kagent` |
+| Argo CD's `MCPServer` health check | `toolhive` |
+| A claim's atespace objects | `substrate` and `substrate-shim` |
+
+A name stays reserved on every cluster, whether its objects render there or not
+(`Projects.reserved`), so a claim cannot take `demo` on a cluster with no
+`demo` `Organization`.
 
 ## Components
 
@@ -218,11 +233,11 @@ order. The registry's order is the sync order, whatever the priorities, so
 | `cloudnative-pg` | The CloudNativePG operator 1.30.1 from its `cloudnative-pg` chart 0.29.1, in `cnpg-system`, with its CRDs and its webhooks; no `Cluster` |
 | `external-secrets` | The External Secrets operator v2.14.0 from its `external-secrets` chart 2.14.0, in `external-secrets`, with its CRDs and its webhook; no store, no `ExternalSecret` |
 | `management-namespaces` | The Secrets Manager's management organization `seabank-org-platform` and project `seabank-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
-| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.treasury.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the `ate` passthrough listener for `*.ate.treasury.bank.internal`, and the `k8s` passthrough listener for `k8s.treasury.bank.internal` |
+| `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.treasury.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the `ate` passthrough listener for `*.ate.treasury.bank.internal` on a cluster that names `substrate-shim`, and the `k8s` passthrough listener for `k8s.treasury.bank.internal` |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.treasury.bank.internal` |
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
-| `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `substrate` and `quay` buckets and users |
+| `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `quay` bucket and user, and `substrate`'s on a cluster that names it |
 | `keycloak-operator` | The Keycloak Operator 26.8.1 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
 | `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.treasury.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `seabank-controller` | The platform controller, holos-controller 0.22.0 from aavis-ops' manifests, vendored, from `components/holos-controller`, in the ambient namespace `seabank-controller`, its objects renamed from the release's `holos-controller` names, with its eight CRDs and the private root in its trust; no resources of its kinds |
@@ -236,8 +251,8 @@ order. The registry's order is the sync order, whatever the priorities, so
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace of the platform's (`demo`, `kagent`; a claim brings its own), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
-| `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and the platform controller's Quay credential |
-| `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and its Substrate atespace with its route through the shim |
+| `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
+| `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -595,7 +610,8 @@ was approved by policy `private-ca-root`.
 
 The `private-ca-<namespace>` policies are `ate-system`, `cnpg-system`,
 `external-secrets`, `seabank-authenticator`, `istio-ingress` and
-`substrate-shim`. A policy's `values` are patterns in which `*` matches any
+`substrate-shim`, the first and last only on a cluster that names `substrate`
+and `substrate-shim` respectively. A policy's `values` are patterns in which `*` matches any
 string, so a namespace with a wildcard name, `istio-ingress`'s
 `*.treasury.bank.internal` or `substrate-shim`'s atespace wildcards, also has
 a CEL rule that each name be one of the listed ones exactly; without it
@@ -1348,7 +1364,8 @@ letters and digits each:
 - `rustfs-root`, keys `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`, the root
   user. The chart passes the Secret whole to RustFS (`secret.existingSecret`).
 - `rustfs-substrate` and `rustfs-quay`, keys `access-key` and `secret-key`,
-  one per consumer. The access key is the user's name in RustFS.
+  one per consumer. The access key is the user's name in RustFS. `substrate`
+  is a consumer only on a cluster that names it.
 
 Job `rustfs-register` registers them with RustFS's own client, `rc`
 (`rustfs/rc`), whose `admin` commands speak RustFS's IAM API. For each
@@ -1367,7 +1384,9 @@ as it succeeds, so no finished pod keeps a node's copy of the Secrets
 alive (below). A failed Job stays, for its logs, until the next sync. The consumers' copies, in their own namespaces, come
 from the per-namespace stores, not from here.
 
-To rotate a consumer's key, rotate its Secret as above. Only the Job's
+To rotate a consumer's key, rotate its Secret as above; the example is
+`rustfs-substrate`, which a cluster has if it names `substrate`, and
+`rustfs-quay` works the same way. Only the Job's
 pods name it, and they are gone once it succeeds, so there is nothing to
 scale down or pause: check that no pod names it, rotate, and sync
 `rustfs` (`argocd app sync rustfs`). The Job adds the new user and
@@ -1396,7 +1415,8 @@ done
 ```
 
 Check the store, the Job and the policies, with a pod holding the
-consumers' keys:
+consumers' keys. On a cluster that does not name `substrate`, use `rustfs-quay`
+and the bucket `quay`, with no second bucket to be denied:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -3172,7 +3192,8 @@ OLM and adds nothing once the database is CloudNativePG.
   behind the gateway, as Keycloak. Pods resolve `quay.treasury.bank.internal`
   to the gateway already, so aavis-ops' ServiceEntries are not ported.
 - **Organizations.** One platform controller `Organization` in `quay`, `demo`,
-  which holds the public `Repository` `echo` for the demo actor. It syncs
+  on a cluster that names `substrate`, which holds the public `Repository`
+  `echo` for the demo actor. The name is reserved on every cluster. It syncs
   team `platformowners` from `/platform/owners` as admin, not `owners`, the
   team Quay makes in every new organization, which the controller would
   report as a conflict. Both are `deletionPolicy: Orphan`, so a deleted or
@@ -3472,7 +3493,8 @@ Q66), and on any other cluster it renders nothing:
   `RoleBinding`'s subject and the allowlist entry are the same definition,
   `#ProjectRoleGroupPath`, so `grep -r /projects/<name>/roles/owner deploy/`
   finds both.
-- **Substrate**: the atespace `<name>`, reached at
+- **Substrate**, on a cluster that names `substrate` and `substrate-shim`, and
+  nowhere else: the atespace `<name>`, reached at
   `https://<actor>.<name>.ate.treasury.bank.internal` by the project's owner
   group and `/platform/owners`. An atespace is an object in Substrate's API,
   not in Kubernetes, so a Job makes it: `atespace-<name>`, an Argo CD Sync
@@ -3599,7 +3621,7 @@ export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd get application project-my-project my-project   # Synced Healthy
 kubectl -n my-project get groups.keycloak.holos.run,users.keycloak.holos.run,groupmemberships.keycloak.holos.run,organizations.quay.holos.run
     # every READY True
-grep -r /projects/my-project/roles/owner deploy/   # the RoleBinding, the Backend, the impersonator, the Organization, the ConfigMap, the AuthorizationPolicy
+grep -r /projects/my-project/roles/owner deploy/   # the RoleBinding, the Backend, the impersonator, the Organization, the ConfigMap, and with the atespace the AuthorizationPolicy
 kubectl -n argocd get application project-my-project -o jsonpath='{.status.operationState.phase}'   # Succeeded
 kubectl -n ate-system get job atespace-my-project -o jsonpath='{.status.conditions[*].type}'         # Complete, not Failed
 kubectl -n ate-system logs job/atespace-my-project   # CreateAtespace and CreateAtespaceAccessPolicy: created, or already exists
@@ -3608,6 +3630,9 @@ kubectl -n substrate-shim get listenerset project-my-project   # ACCEPTED, PROGR
 kubectl -n substrate-shim get certificate my-project-wildcard  # READY True
 kubectl ate get access-policy -a my-project        # owner user:system:serviceaccount:my-project:ate-client
 ```
+
+The lines from `ate-system` on are for a cluster with the atespace (Substrate,
+above).
 
 Read the first two lines, not the `Application`'s status: a hook is outside an
 `Application`'s health and comparison. A failed Job fails the sync, Argo CD
@@ -3675,7 +3700,9 @@ Removing the claim and rendering removes its files, and the root prunes
 `project-<name>`'s `Application`; but no `Application` has the resources
 finalizer (Argo CD, above), so everything it made stays. Narrowing a selector
 is the same on the cluster it stops selecting. Remove it by hand, in this
-order, after the merge, on each cluster it left:
+order, after the merge, on each cluster it left. Everything down to
+`approver-policy:project-<name>` is the atespace, so a cluster without one
+(Substrate, above) starts at the `Application`:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig

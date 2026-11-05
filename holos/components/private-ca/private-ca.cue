@@ -199,12 +199,14 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// One policy per namespace in PrivateCA.requesters, from the
-		// ClusterIssuer: every name, usage and common name its Certificates
-		// list, and no CA. A field the policy leaves out, such as usages for
-		// a namespace whose Certificates set none, is one a request may not
-		// carry at all.
-		for NS, Certificates in PrivateCA.requesters {
+		// One policy per namespace in PrivateCA.requesters with an entry this
+		// cluster renders, from the ClusterIssuer: every name, usage and
+		// common name those entries list, and no CA. A field the policy leaves
+		// out, such as usages for a namespace whose Certificates set none, is
+		// one a request may not carry at all.
+		for NS, Entries in PrivateCA.requesters
+		let Certificates = [for C in Entries if C._rendered {C}]
+		if len(Certificates) > 0 {
 			let DNSNames = list.SortStrings(list.FlattenN([for C in Certificates {C.dnsNames}], 1))
 			let Usages = list.SortStrings(list.FlattenN([for C in Certificates if C.usages != _|_ {C.usages}], 1))
 			let CommonNames = list.SortStrings([for C in Certificates if C.commonName != _|_ {C.commonName}])

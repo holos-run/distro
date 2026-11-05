@@ -53,9 +53,9 @@ IngressGateway: {
 
 	// listeners are the Gateway's listener names. https terminates TLS for
 	// every host; http answers every request with a redirect to https; ate
-	// passes TLS through to the Substrate shim's Gateway (AteGateway); k8s
-	// passes TLS through to holos-authenticator's Gateway
-	// (PlatformAuthenticator).
+	// passes TLS through to the Substrate shim's Gateway (AteGateway), and the
+	// Gateway has it only on a cluster that names substrate-shim; k8s passes
+	// TLS through to holos-authenticator's Gateway (PlatformAuthenticator).
 	listeners: {
 		https: "https"
 		http:  "http"
