@@ -4017,7 +4017,9 @@ above); the platform secret can be written before `kagent` exists. The
 root's sync retries 10 times, backing off from 5 seconds to 3 minutes. That
 is about 17 minutes for the whole bootstrap, shared by every hand step that
 leaves an `Application` `Degraded`: Quay's, the workers' trust, then kagent's
-key. A step that leaves one `Progressing`, as the key pools do for their
+key. The early waves can spend some too: on cartography `gateway-api` read
+`Degraded` for a few seconds after its first sync, and the root's count was
+already 2 at `cert-manager`. A step that leaves one `Progressing`, as the key pools do for their
 first ten minutes, spends none. Quay takes minutes to come up before its
 steps can start, so the retries often run out at `quay`. If they run out,
 the root stays `OutOfSync` until the next commit to `main`, and the
@@ -4247,8 +4249,9 @@ kubectl -n $cluster-test exec dnstest -- curl -s http://<coredns pod IP>:9153/me
   grep proxy_request_duration_seconds_count
 ```
 
-The private CA: issue a certificate, check it chains to the root in the
-namespace's bundle, and remove it.
+The private CA: a `Certificate` in a namespace outside `PrivateCA.requesters`
+is denied by `deny-all` (Approval, above), and a certificate the issuer did sign
+chains to the root in the namespace's bundle, within its name constraints.
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -4263,9 +4266,10 @@ spec:
   dnsNames: [test.ca-test.$domain]
   issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: private-ca}
 EOF
-kubectl -n ca-test wait --for=condition=Ready certificate/test
+until kubectl -n ca-test get certificaterequest test-1 >/dev/null 2>&1; do sleep 1; done
+kubectl -n ca-test wait --for=condition=Denied certificaterequest/test-1 --timeout=30s
 t=$(mktemp -d)
-kubectl -n ca-test get secret test-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > $t/leaf.pem
+kubectl -n istio-ingress get secret wildcard-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > $t/leaf.pem
 kubectl -n ca-test get configmap private-ca -o jsonpath='{.data.ca\.crt}' > $t/root.pem
 openssl verify -CAfile $t/root.pem $t/leaf.pem
 kubectl delete ns ca-test
@@ -4313,7 +4317,7 @@ kubectl -n storage-test logs reader        # writer, the pod that wrote it on th
 PV=$(kubectl -n storage-test get pvc rbd -o jsonpath='{.spec.volumeName}')
 kubectl delete ns storage-test
 kubectl wait --for=delete --timeout=2m pv/$PV   # the image goes with the PV
-ssh root@r620a rbd ls $ceph_pool           # empty
+ssh root@r620a rbd ls $ceph_pool           # the csi-vol-... above is gone; the platform's own volumes stay
 ```
 
 LoadBalancer addresses answer TCP and UDP on the Service's ports only; they

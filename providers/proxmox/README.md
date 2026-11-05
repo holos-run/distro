@@ -375,17 +375,26 @@ and `<cluster>`; treasury's, `k8s-rbd` and `k8s`, are a recorded exception.
 
 ```sh
 ssh root@r620a ceph osd pool create $ceph_pool
+ssh root@r620a ceph osd pool set $ceph_pool crush_rule replicated_ssd
 ssh root@r620a rbd pool init $ceph_pool
 # The quotes are the remote shell's. get-or-create prints the key, which stays
 # off the terminal; bootstrap reads it with ceph auth get-key.
 ssh root@r620a "ceph auth get-or-create client.$ceph_user mon 'profile rbd' osd 'profile rbd pool=$ceph_pool' mgr 'profile rbd pool=$ceph_pool'" > /dev/null
 ```
 
+A new pool takes `replicated_rule` unless told otherwise, and every other pool
+on the garage uses `replicated_ssd`. The two rules' roots overlap, and the
+autoscaler skips pools whose roots overlap, so `autoscale-status` prints nothing
+and a pool left on one PG stays there. Hence the `crush_rule` line.
+
 The user's OSD and manager caps are limited to that pool; a monitor cap cannot
-be limited to a pool. Check the pool's replication and the caps, where `grep` keeps the key off the terminal:
+be limited to a pool. Check the pool's replication and rule, that the autoscaler
+sees it, and the caps, where `grep` keeps the key off the terminal:
 
 ```sh
-ssh root@r620a ceph osd pool get $ceph_pool size     # size: 3
+ssh root@r620a ceph osd pool get $ceph_pool size        # size: 3
+ssh root@r620a ceph osd pool get $ceph_pool crush_rule  # crush_rule: replicated_ssd
+ssh root@r620a ceph osd pool autoscale-status           # lists every pool
 ssh root@r620a ceph auth get client.$ceph_user | grep caps
 ```
 
@@ -395,8 +404,8 @@ ssh root@r620a ceph auth get client.$ceph_user | grep caps
 	caps osd = "profile rbd pool=cartography-rbd"
 ```
 
-These commands have not been run on the garage yet: treasury's pool and user
-were made before any README recorded how.
+Cartography's pool and user were made with these commands. Treasury's were made
+before any README recorded how.
 
 ## What talosvm sends
 
