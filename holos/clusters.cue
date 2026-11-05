@@ -1,6 +1,10 @@
 package holos
 
-import "net"
+import (
+	"net"
+
+	proj "go.holos.run/distro/holos/projects"
+)
 
 // Sites and clusters are the platform's per-site and per-cluster data. A
 // component reads its cluster as Cluster (components/component.cue), so
@@ -33,6 +37,17 @@ import "net"
 #Cluster: {
 	name: =~"^[a-z][a-z0-9-]{0,30}$"
 	site: #Site
+
+	// metadata.labels are what a ProjectClaim's clusterSelector selects on,
+	// under Kubernetes' rules for a label. Two are set from the data, as
+	// Kubernetes sets kubernetes.io/metadata.name, so any cluster can be named
+	// without declaring anything; a cluster adds its own here. name stays a
+	// top-level field: it is the label's source, and moving it would rewrite
+	// every reader for no gain (Second_Cluster interview Q12).
+	metadata: labels: proj.#Labels & {
+		"holos.run/cluster-name": name
+		"holos.run/site":         site.name
+	}
 
 	// components names the optional entries of the registry the cluster
 	// takes, beside the stack up to standard, which every cluster takes

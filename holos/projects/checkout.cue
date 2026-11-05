@@ -1,3 +1,6 @@
 package projects
 
-projects: "checkout": owners: "alice@bank.internal": _
+projects: "checkout": {
+	clusterSelector: matchLabels: "holos.run/cluster-name": "treasury"
+	owners: "alice@bank.internal": _
+}

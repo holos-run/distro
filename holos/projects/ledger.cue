@@ -1,3 +1,6 @@
 package projects
 
-projects: "ledger": owners: "bob@bank.internal": _
+projects: "ledger": {
+	clusterSelector: matchLabels: "holos.run/cluster-name": "treasury"
+	owners: "bob@bank.internal": _
+}

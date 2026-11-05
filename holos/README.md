@@ -17,7 +17,7 @@ holos/
 ├── brand.cue       the distribution's brand, Bank of the Salish Sea, which its own names are built from
 ├── clusters.cue    per-site and per-cluster data
 ├── registry.cue    the components, in sync order
-├── collections.cue the ProjectClaim collection, bound into the platform, and its group and user definitions
+├── collections.cue the ProjectClaim collection, bound into the platform, which claims each cluster takes, and its group and user definitions
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── private-ca.cue  the names of the private CA and its trust bundle, and the shape of its requesters
 ├── istio.cue       the mesh's release, namespace, images and trust domain
@@ -78,11 +78,19 @@ and IP addresses, such as the gateway's 10.20.0.30, are treasury's.
 `clusters.cue` holds everything that differs between clusters: the site the
 cluster runs in (its private DNS zone and resolvers), the Kubernetes networks
 Talos configured, the node uplink, the cluster's block of LoadBalancer
-addresses, and the optional components it takes. Components read their
-cluster as `Cluster`; none names a cluster or an address. Every cluster in
-`clusters` gets the registry's stack up to `standard` and the optional
-components it names (The stack, below), rendered to
+addresses, the optional components it takes, and any labels of its own.
+Components read their cluster as `Cluster`; none names a cluster or an
+address. Every cluster in `clusters` gets the registry's stack up to
+`standard`, the optional components it names and the ProjectClaims that
+select it (The stack, below), rendered to
 `deploy/clusters/<cluster>/components/<component>/`, one file per resource.
+
+`metadata.labels` is what a claim's `clusterSelector` selects on, under
+Kubernetes' rules for a label's key and value. Every cluster gets two from
+its data, as Kubernetes sets `kubernetes.io/metadata.name`, and `clusters.cue`
+does not spell them out; treasury's are `holos.run/cluster-name: treasury` and
+`holos.run/site: garage`. A cluster adds its own with
+`metadata: labels: "example.com/tier": "lab"`.
 
 The garage's ingress range is 10.20.0.30 to .49, sized for about six clusters
 with three or four Gateway addresses each. `treasury` has the first four,
@@ -162,12 +170,13 @@ the stack, such as `quay`, or a claim, such as `project-payments`, fails
 `cue vet`. As with `#Cluster.loadBalancer`, `holos render platform` does not
 report it: it renders no components and exits 0.
 
-A ProjectClaim's entry is `optional` too, but no cluster names it: claims
-pass through to every cluster (Projects, below). A claim renders its atespace
-and route into `ate-system` and `substrate-shim`, so until claims select
-clusters by label a cluster has to name `substrate` and `substrate-shim`. One
-that does not renders and passes `cue vet`, but nothing makes those
-namespaces there, so the first claim cannot sync and the root stops at it.
+A ProjectClaim's entry is `optional` too, but no cluster names it: a claim
+runs the other way, and selects its clusters by label (Projects, below). A
+claim renders its atespace and route into `ate-system` and `substrate-shim`,
+so a cluster that a claim selects has to name `substrate` and
+`substrate-shim`. One that does not renders and passes `cue vet`, but nothing
+makes those namespaces there, so the claim cannot sync and the root stops at
+it. A cluster no claim selects needs neither.
 
 `clusterRegistry`, in `registry.cue`, is the result: the registry as each
 cluster takes it, keyed by cluster, in the registry's order.
@@ -177,8 +186,10 @@ own list and an entry it does not take can never move them. It is a map in
 the root files, not a filter on `Cluster`, because the platform instance does
 not load `components/component.cue`, where `Cluster` is defined, and never
 gets the `clusterName` tag: a filter on that would quietly read its default,
-treasury, for every cluster. `Projects.reserved` reads the whole registry, so
-a name is reserved whether or not a cluster takes it.
+treasury, for every cluster. `clusterProjects`, in `collections.cue`, is the
+claims each cluster takes, a map for the same reason. `Projects.reserved`
+reads the whole registry, so a name is reserved whether or not a cluster
+takes it.
 
 Nothing may depend on a component above it in the stack, further up toward
 `optional`: that is a layering violation
@@ -226,7 +237,7 @@ order. The registry's order is the sync order, whatever the priorities, so
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and the platform controller's Quay credential |
-| `project-<name>` | One per ProjectClaim in `projects/`, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and its Substrate atespace with its route through the shim |
+| `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and its Substrate atespace with its route through the shim |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -1803,9 +1814,10 @@ takes this path:
   the whole request, which the API server would do for a group the
   impersonator may not impersonate. A user not on `users` is refused by the
   API server with 403. `users` is `jeff` (`Keycloak.users.jeff`, the one
-  user the realm import creates) and every project's owners, and `groups`
-  is `/platform/owners` and every project's owner group; the owners and
-  their groups come from the ProjectClaim collection (Projects, below).
+  user the realm import creates) and the owners of every project on the
+  cluster, and `groups` is `/platform/owners` and those projects' owner
+  groups; the owners and their groups come from the ProjectClaim collection
+  (Projects, below), so an owner on another cluster is on neither list here.
 - **What a group may do** is a binding of its own: `ClusterRoleBinding`
   `platform-owners-cluster-admin` makes `/platform/owners` `cluster-admin`
   (Q63), as it is Argo CD's `role:admin`.
@@ -3391,8 +3403,43 @@ names the same thing. `projects/projects.cue` is its schema,
 `collections.cue` binds it into the platform, and `components/project`
 renders each claim.
 
-A claim renders, as the component `project-<name>` with an `Application` of
-its own in the `platform` `AppProject` (interview Q66):
+The collection is the platform's, and each claim selects its clusters, by the
+clusters' labels (Clusters, above), with a required `clusterSelector`. Every
+cluster carries `holos.run/cluster-name` and `holos.run/site`, set from its
+data, beside any labels of its own. The schema is Kubernetes' LabelSelector: `matchLabels` and `matchExpressions`, all
+of whose requirements hold together, with the operators `In`, `NotIn`, `Exists`
+and `DoesNotExist`. `NotIn` holds of a cluster without the key, and `{}`
+selects every cluster, as in Kubernetes. One cluster takes a line:
+
+```cue
+clusterSelector: matchLabels: "holos.run/cluster-name": "treasury"
+```
+
+Several take `matchExpressions`, since `matchLabels` cannot list two values:
+
+```cue
+clusterSelector: matchExpressions: [{
+	key:      "holos.run/cluster-name"
+	operator: "In"
+	values: ["treasury", "cartography"]
+}]
+```
+
+The field has no default, because a forgotten one that defaulted to `{}` would
+land the claim on every cluster. A claim without one, or whose selector
+selects no cluster, fails `cue vet` with `claimClusters.<name>: incompatible
+list lengths (0 and 1)`, and a misspelled operator or a bad label key fails it
+at the claim's own field. `holos render platform` reports none of these and
+exits 0: it drops a claim that selects nothing, and a malformed selector leaves
+it rendering nothing at all, for any cluster, which is why `cue vet` goes first,
+as CI runs it. A selector left incomplete, such as an expression with no
+operator, fails both, and names every claim in that same error rather than its
+cause. Selection is open to tenants: nothing yet lets a cluster refuse a claim
+that selects it.
+
+On each cluster it selects, a claim renders, as the component `project-<name>`
+with an `Application` of its own in the `platform` `AppProject` (interview
+Q66), and on any other cluster it renders nothing:
 
 - **The namespace** `<name>`, in ambient, labeled `holos.run/project: <name>`.
 - **Keycloak**: the groups `/projects/<name>/roles/owner`, `editor` and
@@ -3420,10 +3467,11 @@ its own in the `platform` `AppProject` (interview Q66):
   own manifests are future work, to be rendered from CUE or kept outside
   `deploy/clusters`.
 - **The platform authenticator**: the owners' usernames and the owner group join
-  `PlatformAuthenticator.users` and `.groups`, so the authenticator forwards
-  the group and may impersonate the owners. The `RoleBinding`'s subject and
-  the allowlist entry are the same definition, `#ProjectRoleGroupPath`, so
-  `grep -r /projects/<name>/roles/owner deploy/` finds both.
+  `PlatformAuthenticator.users` and `.groups` on that cluster, so the
+  authenticator forwards the group and may impersonate the owners. The
+  `RoleBinding`'s subject and the allowlist entry are the same definition,
+  `#ProjectRoleGroupPath`, so `grep -r /projects/<name>/roles/owner deploy/`
+  finds both.
 - **Substrate**: the atespace `<name>`, reached at
   `https://<actor>.<name>.ate.treasury.bank.internal` by the project's owner
   group and `/platform/owners`. An atespace is an object in Substrate's API,
@@ -3455,18 +3503,21 @@ its own in the `platform` `AppProject` (interview Q66):
   the privileged Pod Security level.
 
 No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
-editor and viewer groups. `projects/` holds three claims: `payments`, `ledger`
-and `checkout`.
+editor and viewer groups. `projects/` holds three claims, `payments`, `ledger`
+and `checkout`, each selecting `treasury`.
 
 ### Adding a project
 
-1. Write `projects/<name>.cue`, with one owner or more, keyed by email in
-   lower case:
+1. Write `projects/<name>.cue`, with its `clusterSelector` (Projects, above)
+   and one owner or more, keyed by email in lower case:
 
    ```cue
    package projects
 
-   projects: "my-project": owners: "alice@bank.internal": _
+   projects: "my-project": {
+   	clusterSelector: matchLabels: "holos.run/cluster-name": "treasury"
+   	owners: "alice@bank.internal": _
+   }
    ```
 
    `<name>` is the project's one name: lower case letters, digits and single
@@ -3485,14 +3536,19 @@ and `checkout`.
    `owners: "alice@bank.internal": username: "asmith"`; a username is runs
    of lower-case letters and digits joined by single dashes or dots. An
    owner who is one of the realm's people must have the username they have
-   there, one username is one person, and no owner may be a platform
-   service user (`svc-quay-controller`, or a client's `service-account-*`):
-   each mistake fails the render. `ownerAccess: "edit"` or `"view"` gives
-   the owners less than `admin`.
+   there, one username is one person on a cluster, and no owner may be a
+   platform service user (`svc-quay-controller`, or a client's
+   `service-account-*`): each mistake fails the render of the clusters the
+   claim selects, and so `holos render platform` as a whole, and CI for every
+   cluster. Each cluster has its own Keycloak, so the same username on two
+   clusters may be two people. `cue vet` reports a conflict over a person for
+   treasury alone, or for another cluster with `-t clusterName=<cluster>`, and
+   a service user as an owner not at all, so the render is what reports those.
+   `ownerAccess: "edit"` or `"view"` gives the owners less than `admin`.
 
-2. Render, from this directory, and check what changed. A claim's registry
-   entry is `optional`, but claims pass through to every cluster (The stack,
-   above), so the changes below are each cluster's:
+2. Render, from this directory, and check what changed. The changes below are
+   each selected cluster's, and a cluster the claim does not select stays as
+   it was, byte for byte:
 
    ```sh
    cue vet ./... && rm -rf deploy/clusters && holos render platform
@@ -3617,8 +3673,9 @@ rm project.token
 
 Removing the claim and rendering removes its files, and the root prunes
 `project-<name>`'s `Application`; but no `Application` has the resources
-finalizer (Argo CD, above), so everything it made stays. Remove it by hand,
-in this order, after the merge:
+finalizer (Argo CD, above), so everything it made stays. Narrowing a selector
+is the same on the cluster it stops selecting. Remove it by hand, in this
+order, after the merge, on each cluster it left:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig

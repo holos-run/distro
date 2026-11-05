@@ -7,7 +7,14 @@ package holos
 // collections.cue because it reads Keycloak, Quay and the other definitions
 // in components/, which the platform instance does not load. Every project
 // component's render evaluates it, so a claim that breaks one of its checks
-// fails `holos render platform`.
+// fails `holos render platform`. It is the cluster's: each cluster has a
+// realm and a Quay of its own, so it reads the claims the cluster takes
+// (clusterProjects, collections.cue), and a claim's mistake fails only the
+// renders of the clusters it selects, though one of those fails holos render
+// platform as a whole. cue vet evaluates this for the default cluster,
+// treasury, or the one -t clusterName names, and with no project named, so it
+// reports a conflict over a person there; a check on one claim, such as
+// Projects.#Person, only the render reports.
 Projects: {
 	// teams are the Quay teams of a project's organization, by role, each
 	// synced from that role's group (#ProjectRoleGroupPath). Quay team names
@@ -34,11 +41,12 @@ Projects: {
 
 	// people are the realm's users a claim may name, by username: the
 	// platform's people, whom keycloak-realm's import or a person by hand
-	// creates (Keycloak.users, and Quay's controller user), and every
-	// project's owners. A username is one person: two emails for one
-	// username conflict here, and fail the render of each project that
-	// names it, rather than leave holos-controller to report a Keycloak
-	// conflict, or holos-authenticator to impersonate the wrong person.
+	// creates (Keycloak.users, and Quay's controller user), and the owners of
+	// every project the cluster takes. A username is one person on a cluster,
+	// where one Keycloak holds it: two emails for one username conflict here,
+	// and fail the render of each project on the cluster that names it, rather
+	// than leave holos-controller to report a Keycloak conflict, or
+	// holos-authenticator to impersonate the wrong person.
 	people: [USERNAME=string]: {
 		username: USERNAME
 		email:    string
@@ -55,7 +63,7 @@ Projects: {
 			(U.username): {email: U.email, platform: true}
 		}
 		(Quay.controller.username): {email: Quay.controller.email, platform: true, service: true}
-		for P in projects for O in P.owners {
+		for P in clusterProjects[Cluster.name] for O in P.owners {
 			(O.username): email: O.email
 		}
 	}
@@ -127,7 +135,7 @@ Projects: {
 		// Quay's organizations and users share one namespace, so a project's
 		// organization may take neither the name of the platform's own
 		// organizations nor of anyone who logs in to Quay: the platform's
-		// people and every project's owners.
+		// people and the owners of every project on the cluster.
 		for O in Quay.organizations {(O.name): true}
 		for U in Quay.superUsers {(U): true}
 		for U, _ in people {(U): true}
