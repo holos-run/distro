@@ -9,7 +9,7 @@ spec:
     clusterResourceWhitelist:
         - group: '*'
           kind: '*'
-    description: The Bank of Pinky platform's components, synced from https://github.com/holos-run/distro.git
+    description: The Bank of the Salish Sea platform's components, synced from https://github.com/holos-run/distro.git
     destinations:
         - namespace: '*'
           server: https://kubernetes.default.svc

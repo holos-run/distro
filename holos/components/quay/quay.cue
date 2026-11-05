@@ -540,7 +540,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// from the platform owners' group as admin. They name no caBundle: the
 		// controller trusts the private root through SSL_CERT_DIR
 		// (components/holos-controller), and reads its token from
-		// Q.credentials.controller, bank-of-pinky-controller-quay-creds,
+		// Q.credentials.controller, seabank-controller-quay-creds,
 		// below, which each names in credentialsSecretRef: the CRD's
 		// default is the upstream name, holos-controller-quay-creds.
 		// Orphan, so deleting one, or Argo CD pruning it, leaves the
@@ -634,8 +634,8 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 	// The store for the controller's credential, in the controller's
 	// namespace: it may get quay-controller-token in
-	// bank-of-pinky-prj-platform and nothing else. Its reader is
-	// bank-of-pinky-controller-platform-reader.
+	// seabank-prj-platform and nothing else. Its reader is
+	// seabank-controller-platform-reader.
 	resources: (#ScopedSecretStore & {
 		name:      "platform"
 		namespace: PlatformController.namespace

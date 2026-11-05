@@ -80,7 +80,7 @@ let Secrets = {
 	oidc:         "kagent-oidc"
 	anthropic:    "kagent-anthropic"
 	anthropicKey: "ANTHROPIC_API_KEY"
-	// platform is the platform secret, in bank-of-pinky-prj-platform, written by
+	// platform is the platform secret, in seabank-prj-platform, written by
 	// hand through the Secrets Manager.
 	platform: "anthropic-api-key"
 }
@@ -700,7 +700,7 @@ _Resources: (#GeneratedSecret & {
 // The stores: users, here, that may get the passwords in Substrate's
 // namespace, for the connection strings; oidc, here, that may get the
 // Client's secret and the cookie secret in this namespace; and platform,
-// that may get the Anthropic key in bank-of-pinky-prj-platform.
+// that may get the Anthropic key in seabank-prj-platform.
 _Resources: (#ScopedSecretStore & {
 	name:      Secrets.users
 	namespace: NS

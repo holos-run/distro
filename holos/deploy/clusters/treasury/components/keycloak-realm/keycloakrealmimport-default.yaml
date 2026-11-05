@@ -9,11 +9,11 @@ spec:
         JEFF_PASSWORD:
             secret:
                 key: password
-                name: bank-of-pinky-user-jeff
+                name: seabank-user-jeff
         SVC_CONTROLLER_CLIENT_SECRET:
             secret:
                 key: password
-                name: svc-bank-of-pinky-controller
+                name: svc-seabank-controller
         SVC_QUAY_CONTROLLER_PASSWORD:
             secret:
                 key: password
@@ -559,11 +559,11 @@ spec:
               webOrigins:
                 - https://argocd.treasury.bank.internal
             - clientAuthenticatorType: client-secret
-              clientId: svc-bank-of-pinky-controller
+              clientId: svc-seabank-controller
               directAccessGrantsEnabled: false
               enabled: true
               implicitFlowEnabled: false
-              name: bank-of-pinky-controller
+              name: seabank-controller
               protocol: openid-connect
               publicClient: false
               secret: ${SVC_CONTROLLER_CLIENT_SECRET}
@@ -586,7 +586,7 @@ spec:
             - phone
             - microprofile-jwt
             - organization
-        displayName: Bank of Pinky
+        displayName: Bank of the Salish Sea
         duplicateEmailsAllowed: false
         enabled: true
         loginWithEmailAllowed: true
@@ -601,8 +601,8 @@ spec:
                     - query-clients
                     - query-groups
               enabled: true
-              serviceAccountClientId: svc-bank-of-pinky-controller
-              username: service-account-svc-bank-of-pinky-controller
+              serviceAccountClientId: svc-seabank-controller
+              username: service-account-svc-seabank-controller
             - credentials:
                 - temporary: false
                   type: password

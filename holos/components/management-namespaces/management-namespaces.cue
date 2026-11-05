@@ -3,14 +3,14 @@ package holos
 import "encoding/json"
 
 // management-namespaces is the Secrets Manager's management organization and
-// project (interview Q54): the Namespaces bank-of-pinky-org-platform and
-// bank-of-pinky-prj-platform (SecretsManager.platform, from Brand.slug),
+// project (interview Q54): the Namespaces seabank-org-platform and
+// seabank-prj-platform (SecretsManager.platform, from Brand.slug),
 // which git owns rather than the server, and the RoleBinding that lets the
 // server work with Secrets in the project. Platform secrets are made in
-// bank-of-pinky-prj-platform through the Secrets Manager
+// seabank-prj-platform through the Secrets Manager
 // (components/secrets-manager) and copied out by each consumer's
 // per-namespace store (#ScopedSecretStore), whose Role and RoleBinding land
-// in bank-of-pinky-prj-platform. So the namespaces are a component of their own,
+// in seabank-prj-platform. So the namespaces are a component of their own,
 // right after external-secrets in the registry, rather than part of the
 // server's, which comes late: a consumer's sync would otherwise fail on a
 // namespace that does not exist yet.
@@ -40,7 +40,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// The organizations and projects are the server's own keys
 		// (console/resolver, metadata domain holos.run): a namespace is one
 		// when it carries managed-by and resource-type, with the name under
-		// the resource's prefix, bank-of-pinky-org- or bank-of-pinky-prj-
+		// the resource's prefix, seabank-org- or seabank-prj-
 		// (SecretsManager.namespacePrefix). The keys' domain, holos.run, is
 		// the server's --metadata-domain default, kept. The share-roles
 		// annotation is a resource's grant.

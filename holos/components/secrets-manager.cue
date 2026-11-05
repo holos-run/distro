@@ -1,9 +1,9 @@
 package holos
 
-// SecretsManager names the Bank of Pinky Secrets Manager (interview Q18),
-// titled from Brand.name: the release the secrets-manager component runs,
-// its namespace and URL, its Keycloak client, and the management namespaces
-// it edits, bank-of-pinky-org-platform and bank-of-pinky-prj-platform, the
+// SecretsManager names the Bank of the Salish Sea Secrets Manager (interview
+// Q18), titled from Brand.name: the release the secrets-manager component
+// runs, its namespace and URL, its Keycloak client, and the management
+// namespaces it edits, seabank-org-platform and seabank-prj-platform, the
 // second of which every per-namespace store (#ScopedSecretStore) reads from
 // by default.
 SecretsManager: {
@@ -64,7 +64,7 @@ SecretsManager: {
 
 	// platform is the management organization and project (Q54), under the
 	// server's prefixes, namespacePrefix with org- or prj-:
-	// bank-of-pinky-org-platform and bank-of-pinky-prj-platform. The SPA
+	// seabank-org-platform and seabank-prj-platform. The SPA
 	// lists projects only within an
 	// organization, so the project carries the organization's label and the
 	// organization is a namespace of its own. The server manages only

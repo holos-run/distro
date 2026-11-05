@@ -30,7 +30,7 @@ package holos
 // #GeneratedSecret the copy is not immutable.
 //
 // The source defaults to the platform's management namespace,
-// bank-of-pinky-prj-platform (SecretsManager.platform, interview Q54), where
+// seabank-prj-platform (SecretsManager.platform, interview Q54), where
 // platform secrets are made through the Secrets Manager; set source for a
 // Secret a component generated in its own namespace, as keycloak-realm does
 // for the platform controller's credential.

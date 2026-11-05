@@ -67,7 +67,7 @@ Quay: {
 
 	// credentials is the platform secret cmd/quay-bootstrap writes the
 	// controller's token to, in the management project
-	// (SecretsManager.platform.namespace, bank-of-pinky-prj-platform), and
+	// (SecretsManager.platform.namespace, seabank-prj-platform), and
 	// the copy in the platform controller's namespace its Quay reconcilers
 	// read. The copy's name is the distribution's, <slug>-controller-quay-creds,
 	// not the CRDs' default, holos-controller-quay-creds, so every

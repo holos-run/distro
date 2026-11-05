@@ -7,11 +7,11 @@ rules:
         - policy.cert-manager.io
       resourceNames:
         - private-ca-ate-system
-        - private-ca-bank-of-pinky-authenticator
         - private-ca-cnpg-system
         - private-ca-external-secrets
         - private-ca-istio-ingress
         - private-ca-root
+        - private-ca-seabank-authenticator
         - private-ca-substrate-shim
         - trust-manager-webhook
       resources:

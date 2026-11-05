@@ -14,7 +14,7 @@ import (
 //
 //   - A KeycloakRealmImport creates the realm with what the controller cannot
 //     reconcile: the groups client scope, the kubectl, argocd and
-//     svc-bank-of-pinky-controller clients, svc-bank-of-pinky-controller's
+//     svc-seabank-controller clients, svc-seabank-controller's
 //     admin roles, the user jeff and the service user svc-quay-controller.
 //     The Keycloak Operator imports it once, when the realm does not exist,
 //     and never again: a change to it here reaches a running cluster only by
@@ -31,15 +31,15 @@ import (
 // namespace, because the import's placeholders read Secrets in the import's
 // own namespace alone:
 //
-//   - svc-bank-of-pinky-controller, a login whose username is the client ID
+//   - svc-seabank-controller, a login whose username is the client ID
 //     and whose password is the client's secret.
-//   - bank-of-pinky-user-jeff, jeff's login.
+//   - seabank-user-jeff, jeff's login.
 //   - svc-quay-controller, the Quay superuser's login, which
 //     cmd/quay-bootstrap reads to mint the platform controller's Quay token.
 //
 // The controller reads its credential from its own namespace, so an
-// ExternalSecret copies svc-bank-of-pinky-controller there as
-// bank-of-pinky-controller-keycloak-creds, with the keys the controller reads,
+// ExternalSecret copies svc-seabank-controller there as
+// seabank-controller-keycloak-creds, with the keys the controller reads,
 // clientId and clientSecret, through a per-namespace store
 // (#ScopedSecretStore), a SecretStore of External Secrets' kubernetes
 // provider allowed to read that one Secret in keycloak and nothing else.
@@ -48,7 +48,7 @@ import (
 // should it ever be rotated, or at once with a forced refresh.
 //
 // Every resource here is in a namespace earlier components made, keycloak or
-// bank-of-pinky-controller, and every kind's CRD comes from an earlier
+// seabank-controller, and every kind's CRD comes from an earlier
 // component: KeycloakRealmImport from keycloak-operator, the
 // keycloak.holos.run kinds from the platform controller, ExternalSecret and
 // SecretStore from external-secrets.
@@ -61,8 +61,8 @@ let Namespace = KC.namespace
 let Clients = KC.clients
 
 // ControllerSecret is the controller client's generated login,
-// svc-bank-of-pinky-controller, and UserSecret jeff's,
-// bank-of-pinky-user-jeff.
+// svc-seabank-controller, and UserSecret jeff's,
+// seabank-user-jeff.
 let ControllerSecret = Clients.controller
 let UserSecret = "\(Brand.slug)-user-\(User.username)"
 
@@ -112,8 +112,9 @@ let OptionalScopes = ["offline_access", "address", "phone", "microprofile-jwt", 
 // Placeholders are the import's environment variables, which the operator
 // sets on its import Job from the Secrets named, and which Keycloak puts in
 // place of ${NAME} in the realm as it imports it. The values are never in
-// the resource or in git. An environment variable's name cannot carry the
-// brand's dashes, so the controller client's is brand-neutral.
+// the resource or in git. An environment variable's name cannot carry a
+// dash, which a brand's slug may have, so the controller client's is
+// brand-neutral.
 let Placeholders = {
 	SVC_CONTROLLER_CLIENT_SECRET: secret: {name: ControllerSecret, key: "password"}
 	JEFF_PASSWORD: secret: {name: UserSecret, key: "password"}
@@ -265,7 +266,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 							}
 						},
 						{
-							// svc-bank-of-pinky-controller: the
+							// svc-seabank-controller: the
 							// platform controller's own login, client credentials alone. Its
 							// secret is the generated one, through
 							// the placeholder.
@@ -285,7 +286,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 					users: [
 						{
-							// svc-bank-of-pinky-controller's service account
+							// svc-seabank-controller's service account
 							// user, with the realm-management roles
 							// the controller's kinds need: clients
 							// (manage-clients, query-clients),
@@ -386,8 +387,8 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// bank-of-pinky-controller-keycloak-creds, the keys the controller
-		// reads from svc-bank-of-pinky-controller's username and password. Not
+		// seabank-controller-keycloak-creds, the keys the controller
+		// reads from svc-seabank-controller's username and password. Not
 		// immutable, unlike its source: it is a copy, and follows the
 		// source.
 		ExternalSecret: (HC.credentials): {
@@ -490,11 +491,11 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		}
 	}
 
-	// The copy of svc-bank-of-pinky-controller into the controller's namespace,
+	// The copy of svc-seabank-controller into the controller's namespace,
 	// through a per-namespace store (#ScopedSecretStore) whose
 	// ServiceAccount, keycloak-secret-reader, may get that one Secret in
 	// keycloak. The reader keeps the name it had before the definition
-	// existed, rather than the default, bank-of-pinky-controller-keycloak-reader,
+	// existed, rather than the default, seabank-controller-keycloak-reader,
 	// so the render and the cluster do not change.
 	resources: (#ScopedSecretStore & {
 		name:      "keycloak"

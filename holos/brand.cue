@@ -9,9 +9,9 @@ package holos
 // ships, so all of these are brandable by an adopter.
 //
 // Both fields are disjunctions with defaults. An unchanged distribution
-// renders Bank of Pinky; a vendor overrides them by unifying its own values
-// with Brand, in one file of its own in this directory, and the names
-// follow:
+// renders Bank of the Salish Sea; a vendor overrides them by unifying its
+// own values with Brand, in one file of its own in this directory, and the
+// names follow:
 //
 //	Brand: {name: "Example Bank", slug: "example-bank"}
 //
@@ -22,7 +22,7 @@ package holos
 // CLI and the paths it reads.
 Brand: {
 	// name is the brand as people read it, in titles and descriptions.
-	name: *"Bank of Pinky" | string
+	name: *"Bank of the Salish Sea" | string
 	name: !=""
 	// slug is the brand in names: lowercase letters, digits and dashes, so
 	// valid in a namespace, a Kubernetes object's name, a Keycloak client ID
@@ -30,6 +30,6 @@ Brand: {
 	// 28 characters at most, the longest, the controller's Service
 	// <slug>-controller-manager-metrics-service, stays within the 63 a
 	// Service name allows.
-	slug: *"bank-of-pinky" | string
+	slug: *"seabank" | string
 	slug: =~"^[a-z]([a-z0-9-]{0,26}[a-z0-9])?$"
 }

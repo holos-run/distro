@@ -5,7 +5,7 @@ metadata:
     namespace: quay
 spec:
     credentialsSecretRef:
-        name: bank-of-pinky-controller-quay-creds
+        name: seabank-controller-quay-creds
     deletionPolicy: Orphan
     email: quay+demo@bank.internal
     name: demo

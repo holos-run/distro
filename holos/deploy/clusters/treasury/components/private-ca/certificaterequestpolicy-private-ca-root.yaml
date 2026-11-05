@@ -6,7 +6,7 @@ spec:
     allowed:
         commonName:
             required: true
-            value: Bank of Pinky treasury root CA
+            value: Bank of the Salish Sea treasury root CA
         isCA: true
         subject:
             organizationalUnits:
@@ -16,7 +16,7 @@ spec:
             organizations:
                 required: true
                 values:
-                    - Bank of Pinky
+                    - Bank of the Salish Sea
     selector:
         issuerRef:
             group: cert-manager.io

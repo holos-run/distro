@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: seabank-controller
+  name: seabank-controller-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: seabank-controller-manager-role
+subjects:
+- kind: ServiceAccount
+  name: seabank-controller-manager
+  namespace: seabank-controller

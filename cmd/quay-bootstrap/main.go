@@ -12,8 +12,8 @@
 // password from Secret keycloak/svc-quay-controller, makes the organization
 // and the Application if they are missing, takes a token through the
 // implicit grant, and writes Secret quay-controller-token (url, token,
-// username) in bank-of-pinky-prj-platform, which the quay component copies to
-// bank-of-pinky-controller/bank-of-pinky-controller-quay-creds. A stored token is probed
+// username) in seabank-prj-platform, which the quay component copies to
+// seabank-controller/seabank-controller-quay-creds. A stored token is probed
 // first and replaced only when Quay refuses it, 401 or 403: a token stays
 // live until someone revokes it, so minting on any other failure would leave
 // another live superuser token behind. To replace it on purpose, delete the Secret.
@@ -21,11 +21,12 @@
 // Platform secrets carry the label app.kubernetes.io/managed-by=holos.run and
 // the platform owners' grant, so they show under Platform in the Secrets
 // Manager. The defaults that name the platform's own objects, -namespace and
-// -application, are Bank of Pinky's, the brand's defaults (holos/brand.cue);
-// a distribution with another brand passes its own. The command converges: a second run reports no change and writes
-// nothing. The program talks to the cluster through kubectl, with its current
-// context unless -context is given, and trusts the cluster's private root,
-// from ConfigMap private-ca, or -ca-file, beside the system roots.
+// -application, are Bank of the Salish Sea's, the brand's defaults
+// (holos/brand.cue); a distribution with another brand passes its own. The
+// command converges: a second run reports no change and writes nothing. The
+// program talks to the cluster through kubectl, with its current context
+// unless -context is given, and trusts the cluster's private root, from
+// ConfigMap private-ca, or -ca-file, beside the system roots.
 package main
 
 import (
@@ -115,7 +116,7 @@ func parseOptions(args []string, stderr io.Writer) (*options, error) {
 	fs.StringVar(&o.quayURL, "quay-url", "https://quay.treasury.bank.internal", "Quay's URL, treasury's unless set")
 	fs.StringVar(&o.caFile, "ca-file", "", "PEM file of the private root (default: ConfigMap private-ca from the cluster)")
 	fs.StringVar(&o.caNamespace, "ca-namespace", "default", "namespace of ConfigMap private-ca")
-	fs.StringVar(&o.namespace, "namespace", "bank-of-pinky-prj-platform", "namespace of the platform secrets, the Secrets Manager's management project")
+	fs.StringVar(&o.namespace, "namespace", "seabank-prj-platform", "namespace of the platform secrets, the Secrets Manager's management project")
 	fs.StringVar(&o.tokenSecret, "token-secret", "quay-controller-token", "platform secret holding the platform controller's token")
 	fs.StringVar(&o.automationOrg, "automation-org", "platform-automation", "organization holding the OAuth Application")
 	fs.StringVar(&o.emailDomain, "email-domain", "bank.internal", "domain of the organization's email: the site's private zone, not Quay's host's")
@@ -123,7 +124,7 @@ func parseOptions(args []string, stderr io.Writer) (*options, error) {
 	case "token":
 		fs.StringVar(&o.username, "username", "svc-quay-controller", "realm user to log in as; a Quay superuser")
 		fs.StringVar(&o.passwordNamespace, "password-namespace", "keycloak", "namespace of the user's password Secret, named after the user")
-		fs.StringVar(&o.application, "application", "bank-of-pinky-controller", "OAuth Application name, the platform controller's")
+		fs.StringVar(&o.application, "application", "seabank-controller", "OAuth Application name, the platform controller's")
 	default:
 		fmt.Fprint(stderr, usage)
 		return nil, fmt.Errorf("unknown command %q", cmd)

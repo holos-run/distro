@@ -5,7 +5,7 @@ metadata:
     namespace: quay
 spec:
     credentialsSecretRef:
-        name: bank-of-pinky-controller-quay-creds
+        name: seabank-controller-quay-creds
     deletionPolicy: Orphan
     description: The demo actor's image, public so atelet can pull it anonymously.
     name: echo

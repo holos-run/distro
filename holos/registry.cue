@@ -97,7 +97,7 @@ registry: [
 	// private-ca.
 	{name: "external-secrets"},
 	// management-namespaces is the Secrets Manager's management organization
-	// and project, bank-of-pinky-org-platform and bank-of-pinky-prj-platform
+	// and project, seabank-org-platform and seabank-prj-platform
 	// (<slug>-org-platform and <slug>-prj-platform, Brand), and the
 	// RoleBinding that grants the server's secrets verbs in the project. A
 	// consumer of a platform secret renders its per-namespace store's Role
@@ -183,11 +183,11 @@ registry: [
 		component: "holos-authenticator"
 		syncOptions: ["SkipDryRunOnMissingResource=true"]
 	},
-	// secrets-manager is the Bank of Pinky Secrets Manager (Brand.name): its
-	// Deployment, RBAC and route, and the platform controller Client it logs
-	// in through, with the ReferenceGrant that lets the Client name the
-	// Instance in keycloak. It needs the Client CRD from the platform
-	// controller and the Instance from
+	// secrets-manager is the Bank of the Salish Sea Secrets Manager
+	// (Brand.name): its Deployment, RBAC and route, and the platform
+	// controller Client it logs in through, with the ReferenceGrant that
+	// lets the Client name the Instance in keycloak. It needs the Client
+	// CRD from the platform controller and the Instance from
 	// keycloak-realm, so it comes after both. Its HTTPRoute is in its own
 	// namespace, on the HTTPS listener, which takes routes from every
 	// namespace, so it need not come before ingress-gateway. A consumer of a
