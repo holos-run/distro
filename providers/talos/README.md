@@ -74,6 +74,7 @@ The Proxmox credentials, the CA and the snippets mount are set up once
 `create -dry-run`, `resize -dry-run` and `destroy` without `-yes` print the
 exact Proxmox API calls and send none of them
 ([What talosvm sends](../proxmox/README.md#what-talosvm-sends)).
+`-cluster` also picks the cluster's committed config ([Config](#config)).
 
 `create` checks the config and posts the schematic to Image Factory, which
 names the ISO the VMs boot, then asks compute to plan the VMs: compute checks
@@ -99,10 +100,10 @@ one at a time.
 ```sh
 set -a; . ~/.config/holos/proxmox.env; set +a
 
-# 1. Change memoryMiB or cores: the default in providers/talos/config.go,
-#    or the pool in the -config file the cluster was made with.
-# 2. See what changes, then change it. Pass the -config and -workers that
-#    create was given, if any.
+# 1. Change memoryMiB or cores in the cluster's file,
+#    providers/talos/clusters/treasury/talosvm.json.
+# 2. See what changes, then change it. Pass the -workers that create was
+#    given, if any, and the -config, if it was given another file.
 go run ./providers/talos/cmd/talosvm resize -cluster treasury -dry-run
 go run ./providers/talos/cmd/talosvm resize -cluster treasury
 # 3. Apply it, one node at a time: the command resize prints at the end.
@@ -128,10 +129,8 @@ does not ask for.
 It refuses the whole run, dry run included, before any change, when:
 
 - it would give a VM fewer cores or less memory than it runs with, unless
-  `-shrink` is given. Without `-config` it takes the built-in sizes, so a
-  cluster made with a `-config` must be resized with the same file, or a
-  plain `resize` would shrink it; the refusal names each VM, current and
-  new size;
+  `-shrink` is given, so a config that has fallen behind the VMs cannot
+  shrink them; the refusal names each VM, current and new size;
 - a VM's role or pool tag is not the one the config gives its name, such as
   a worker renamed by hand to `treasury-cp-1`;
 - two of the cluster's VMs share a name, or `-nodes` names one that is not
@@ -221,6 +220,9 @@ It drives `kubectl` and `talosctl` (`-kubectl`, `-talosctl`), which act with
 the kubeconfig and talosconfig `KUBECONFIG` and `TALOSCONFIG` name, and
 reaches Talos at the VM's own address, from its config or its network
 snippet, or the node's `InternalIP` when the snippets mount is not there.
+`-talosctl` defaults to plain `talosctl`, so a cluster whose
+`talosVersion` differs from that binary, or a machine that has only
+`talosctl-<version>`, passes `-talosctl talosctl-<version>`.
 Before it changes anything it checks the token's privileges and refuses
 unless:
 
@@ -255,10 +257,25 @@ changes nothing.
 
 ### Config
 
-Without `-config` the program uses the defaults below. A JSON file overrides
-only the fields it names, except that `pools` replaces the default pools as a
-whole; unknown fields are an error. `-cluster`, `-first-address` and
-`-workers` (the first pool's count, on `create` and `resize`) override the file.
+Each cluster's config is committed at
+`providers/talos/clusters/<cluster>/talosvm.json`. It records the Talos
+version, addresses and sizes the cluster was made with, and nothing in it is
+secret. `-cluster` finds the file from the repository root, the nearest
+directory at or above the working directory whose `go.mod` declares
+`go.holos.run/distro`, so the commands run from anywhere in the repository.
+`-config` names another file instead.
+
+`create` and `resize` refuse a cluster with no file, naming the path, and
+refuse to run outside the repository without `-config`: falling back would
+let a mistyped name build from the defaults at .50. `list`, `restart` and
+`destroy` use the file when it is there and go on without it. A file that is
+there but cannot be read or decoded is an error for every command, and so is
+a `-config` that does not exist.
+
+The file sits over the built-in defaults below. It overrides only the fields
+it names, except that `pools` replaces the default pools as a whole; unknown
+fields are an error. `-cluster`, `-first-address` and `-workers` (the first
+pool's count, on `create` and `resize`) override the file.
 
 The file holds both layers' settings, with flat keys as before the split:
 `nodes`, the storages, `diskSSD`, `nameserver` and `searchDomain` are the
@@ -286,7 +303,10 @@ provider's node network and first node address.
 }
 ```
 
-- `cluster` has no default: every command names the cluster it acts on.
+- `cluster` has no default: every command names the cluster it acts on. A
+  committed file's `cluster` is the name of its directory.
+- `talosVersion` picks the Image Factory ISO. `cluster.sh` reads it too, so
+  one cluster can lead another on a patch.
 - `nodes` is the Proxmox nodes to spread VMs across, round robin, starting
   with the control plane. Empty means every online node, sorted by name;
   naming them keeps placement stable when a host is down. `controlPlane` and
@@ -352,12 +372,13 @@ rest:
   control plane, if the file exists;
 - the cluster name and the endpoint `https://<control plane address>:6443`,
   with no VIP;
-- the installer image `factory.talos.dev/nocloud-installer/<schematic>:v1.14.4`,
+- the installer image `factory.talos.dev/nocloud-installer/<schematic>:<talosVersion>`,
   where the schematic is read from the control plane node itself
   (`talosctl get extensions`), or taken from `INSTALLER` when set. It must
   be the schematic `talosvm create` printed, so the installed system keeps
   the extensions and the `nocloud` platform;
-- Talos `v1.14` config and Kubernetes `1.37.1`, pinned in the script.
+- the Talos config of the minor release of the cluster's `talosVersion`, such
+  as `v1.14`, and Kubernetes `1.37.1`, pinned in the script.
 
 The machine config has no network section. The installed system is still the
 `nocloud` platform, so it keeps reading the /32 address, the on-link default
@@ -384,19 +405,31 @@ can no longer be administered.
 
 ### Bringing a cluster up
 
-`talosctl` v1.14.4, `kubectl`, `jq` and Go are needed, and `gen` and
-`apply` read the inventory with `talosvm list`, which needs the Proxmox
-credentials and the snippets mount described in the [Proxmox provider
-README](../proxmox/README.md#snippets); without
-the mount it leaves addresses blank and the script refuses. Install `talosctl`
-from the Talos release, checking its checksum:
+`kubectl`, `jq`, Go and the `talosctl` of the cluster's `talosVersion` are
+needed, and `gen` and `apply` read the inventory with `talosvm list`, which
+needs the Proxmox credentials and the snippets mount described in the [Proxmox
+provider README](../proxmox/README.md#snippets); without
+the mount it leaves addresses blank and the script refuses.
+
+`cluster.sh` reads `talosVersion` from the cluster's `talosvm.json`. It runs
+`TALOSCTL` when that is set, else `talosctl-<version>` on `PATH`, else plain
+`talosctl`, and refuses any of them that is not that version, printing the
+steps below for it. Install `talosctl` from the Talos release, checking its
+checksum, starting from the repository root with `cluster` set to the cluster's
+name:
 
 ```sh
+version=$(jq -r .talosVersion "providers/talos/clusters/$cluster/talosvm.json")
+asset=talosctl-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 cd "$(mktemp -d)"
-gh release download v1.14.4 -R siderolabs/talos -p talosctl-linux-amd64 -p sha256sum.txt
-grep ' talosctl-linux-amd64$' sha256sum.txt | sha256sum -c -
-install -m 0755 talosctl-linux-amd64 ~/.local/bin/talosctl
+gh release download "$version" -R siderolabs/talos -p "$asset" -p sha256sum.txt
+grep " $asset\$" sha256sum.txt | shasum -a 256 -c -
+mkdir -p ~/.local/bin
+install -m 0755 "$asset" ~/.local/bin/"talosctl-$version"
 ```
+
+The `talosctl` commands run by hand below mean that binary, under its own name
+or a link named `talosctl`.
 
 Then, from the repository root, with the Proxmox credentials loaded for
 `talosvm list`:

@@ -1,0 +1,9 @@
+{
+  "cluster": "cartography",
+  "talosVersion": "v1.14.5",
+  "firstAddress": "10.20.0.60",
+  "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 8192, "diskGiB": 32 },
+  "pools": [
+    { "name": "general", "count": 3, "cores": 4, "memoryMiB": 16384, "diskGiB": 64 }
+  ]
+}

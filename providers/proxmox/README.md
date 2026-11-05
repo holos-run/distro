@@ -70,8 +70,8 @@ made by `talosvm`, are never touched. `create` leaves a VM that already exists
 under its name with those tags as it is, except to start it if it is stopped,
 and refuses to run at all, before changing anything, if any of its names is
 taken by some other VM. It never moves or readdresses an existing VM:
-if the config now gives an existing VM another address, for example because a
-rerun forgot the cluster's `-first-address`, `create` refuses with
+if the config now gives an existing VM another address, for example because
+the cluster's `firstAddress` changed, `create` refuses with
 "VM X has address P, config says Q". Nor does it resize one. When a VM runs
 with another size than the config's it points at `resize`, or, when the
 config's size is already pending on a running VM, at the power-cycle
@@ -237,7 +237,7 @@ is one more reason to keep to the table below.
 
 Ten addresses per slot fit one control plane and up to nine workers, or three
 control planes and seven workers. A cluster takes its slot with
-`-first-address`, or `firstAddress` in its config.
+`firstAddress` in its committed `providers/talos/clusters/<cluster>/talosvm.json`.
 
 ## Before the first run
 

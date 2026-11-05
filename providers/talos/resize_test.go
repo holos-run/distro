@@ -116,9 +116,8 @@ func TestPlanResize(t *testing.T) {
 	}
 }
 
-// resize never shrinks a VM unless told to: without -config it takes the
-// built-in sizes, which may be smaller than the ones the cluster was made
-// with.
+// resize never shrinks a VM unless told to: a config can fall behind the sizes
+// a cluster runs with.
 func TestPlanResizeRefusesShrink(t *testing.T) {
 	vms := resizeVMs()
 	c := treasury()
@@ -128,7 +127,7 @@ func TestPlanResizeRefusesShrink(t *testing.T) {
 		"treasury-general-1 id 105 from 4 cores and 8192 MiB to 4 cores and 4096 MiB",
 		"treasury-general-2 id 106 from 4 cores and 8192 MiB to 4 cores and 4096 MiB",
 		"treasury-general-3 id 107 from 4 cores and 8192 MiB to 4 cores and 4096 MiB",
-		"pass the -config the cluster was created with, or -shrink",
+		"fix the sizes in the cluster's config, or pass -shrink",
 	} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("shrink err = %v, want it to mention %q", err, want)

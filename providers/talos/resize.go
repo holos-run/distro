@@ -41,9 +41,8 @@ type ResizeOptions struct {
 	// the config asks for.
 	Nodes []string
 	// Shrink allows fewer cores or less memory than a VM runs with. Without
-	// it a smaller size refuses the run, since resize takes its sizes from
-	// the built-in defaults unless it is given the -config the cluster was
-	// created with, and a forgotten -config would otherwise shrink it.
+	// it a smaller size refuses the run, so a config that has fallen behind
+	// the VMs cannot take memory from a running cluster.
 	Shrink bool
 }
 
@@ -169,7 +168,7 @@ func PlanResize(c Config, vms []infra.VM, o ResizeOptions) (ResizePlan, error) {
 		}
 	}
 	if len(shrinks) > 0 {
-		errs = append(errs, fmt.Errorf("these would shrink: %w; pass the -config the cluster was created with, or -shrink to shrink them", errors.Join(shrinks...)))
+		errs = append(errs, fmt.Errorf("these would shrink: %w; fix the sizes in the cluster's config, or pass -shrink to shrink them", errors.Join(shrinks...)))
 	}
 	for _, n := range names {
 		if count[n] == 0 && len(o.Nodes) == 0 {

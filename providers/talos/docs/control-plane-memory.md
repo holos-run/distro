@@ -174,7 +174,7 @@ The reasoning, and what would change it:
 - The next large sources of watches are Substrate, kagent and their
   controllers. Re-measure after they are installed, with the sampling in this
   page, before they ship. At 8 GiB the rule holds while peak USED stays
-  under about 3.9 GiB; raise the default again past that, or if the API
+  under about 3.9 GiB; raise the cluster's size again past that, or if the API
   server's anonymous memory floor keeps rising. Ballooning stays off, so the
   memory is reserved on the host, which has 251 GiB on `r620a`; the host is
   not the constraint.
@@ -213,9 +213,10 @@ re-read USED with the agent on the node before relying on that margin.
 
 ### Resizing a running control plane
 
-Changing the default in the provider changes new VMs only. Resizing the
-running `treasury-cp-1` means changing `memory` on the VM in Proxmox, which
-`talosvm resize` does from the config, and then stopping and starting the
+A cluster's sizes live in its `providers/talos/clusters/<cluster>/talosvm.json`,
+and changing the file changes no VM by itself. Resizing the running
+`treasury-cp-1` means changing `memory` on the VM in Proxmox, which
+`talosvm resize` does from that file, and then stopping and starting the
 VM, because the VM has no memory hotplug configured; a reboot inside the
 guest (`talosctl reboot`) keeps the running QEMU process and its old memory.
 `talosvm restart` does that, and waits for the node to come back
@@ -228,10 +229,9 @@ go run ./providers/talos/cmd/talosvm restart -cluster treasury -mode power-cycle
 ```
 
 `-nodes` keeps `resize` to the control plane; without it, `resize` sets
-every VM to the config's size, workers included. Pass the `-config` and
-`-workers` the cluster was made with, if any; without them `resize` skips
-workers beyond the config's count, and it refuses to shrink a VM unless
-given `-shrink`.
+every VM to the config's size, workers included. Pass the `-workers` the
+cluster was made with, if any; without it `resize` skips workers beyond the
+config's count, and it refuses to shrink a VM unless given `-shrink`.
 
 With one control plane the Kubernetes API is down until it is back. Prefer
 to leave it until the next rebuild, as with the move to 6 GiB. A worker's
