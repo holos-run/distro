@@ -45,6 +45,23 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   Application. `holos/registry.cue` lists them in sync order
   ([Components](../holos/README.md#components)).
 
+**stack**
+: The platform's components as levels, by priority, with `required` at the bottom and `optional`
+  at the top. A cluster takes the stack up to `standard`, plus the optional components it names in
+  `components`. "Above" only ever means further up the stack, toward `optional`, never more
+  important. Stack order is not sync order: the registry's order is, and `hello`, `standard`, syncs
+  before `ceph-csi-rbd`, `important` ([The stack](../holos/README.md#the-stack)).
+
+**priority**
+: A registry entry's level in the stack, `priority` in `holos/registry.cue`, in Debian's
+  vocabulary: `required`, `important`, `standard` or `optional`. Every entry states it, with no
+  default ([The stack](../holos/README.md#the-stack)).
+
+**layering violation**
+: A component that depends on one above it in the stack, in the Kubernetes sense of the term.
+  Nothing at the `standard` level may depend on the `optional` components above it in the stack
+  ([The stack](../holos/README.md#the-stack)).
+
 **render**
 : `holos render platform`, which writes every component's manifests to `holos/deploy/`. The rendered
   tree is committed and never edited by hand ([Render](../holos/README.md#render)).

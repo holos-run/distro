@@ -1,17 +1,21 @@
 package holos
 
-// registry lists the platform's components in sync order. Every cluster in
-// clusters (clusters.cue) gets every component (platform/platform.cue), and
-// every component gets an Argo CD Application (components/argocd-apps) whose
-// sync wave is its index here. The waves order the root Application's own
-// syncs: when a cluster is bootstrapped it creates one Application, waits
-// for it to be Synced and Healthy (argocd-cm's health check for
-// Applications, components/argocd), then creates the next, and a later sync
-// of the root, such as one adding a component, walks the same waves. Once
-// created, each Application polls main and syncs on its own, so a later
-// merge syncs the components it touches in parallel, and a component whose
-// dependency is not ready yet relies on its sync retry. The order is also
-// the order to apply components by hand in.
+import "list"
+
+// registry lists the platform's components in sync order. Each has a level in
+// the stack, its priority (#Registration), and a cluster takes the stack up to
+// standard and the optional entries it names (#Cluster.components,
+// clusters.cue). clusterRegistry, below, is that list for each cluster:
+// platform/platform.cue renders it, and every entry in it gets an Argo CD
+// Application (components/argocd-apps) whose sync wave is its index there,
+// not here. The waves order the root Application's own syncs: when a cluster
+// is bootstrapped it creates one Application, waits for it to be Synced and
+// Healthy (argocd-cm's health check for Applications, components/argocd), then
+// creates the next, and a later sync of the root, such as one adding a
+// component, walks the same waves. Once created, each Application polls main
+// and syncs on its own, so a later merge syncs the components it touches in
+// parallel, and a component whose dependency is not ready yet relies on its
+// sync retry. The order is also the order to apply components by hand in.
 registry: [...#Registration]
 
 // #Registration is one component in the registry.
@@ -22,6 +26,21 @@ registry: [...#Registration]
 	// directory renders several components, as components/project renders
 	// one per ProjectClaim (collections.cue).
 	component: string | *name
+	// priority is the component's level in the stack, in Debian's Priority
+	// vocabulary: required at the bottom, then important, then standard, and
+	// optional at the top. A cluster takes the stack up to standard, plus the
+	// optional entries it names (#Cluster.components): the cluster picks its
+	// components, as a Debian machine picks its packages, and a component
+	// never names clusters. Nothing may depend on a component above it in the
+	// stack, further up toward optional: that is a layering violation
+	// (docs/glossary.md). Stack order is not sync order: the registry's order
+	// is, so hello, standard, syncs before ceph-csi-rbd, important.
+	//
+	// It has no default (Second_Cluster interview Q19): a forgotten field
+	// that defaulted to optional would render nowhere with every check
+	// passing. Left out, it fails cue vet, which says only that some
+	// instances are incomplete; cue vet -c names the entry.
+	priority!: "required" | "important" | "standard" | "optional"
 	// parameters are the component's CUE tags, beside clusterName, which
 	// every component gets (platform/platform.cue): project, for a
 	// ProjectClaim's.
@@ -35,67 +54,98 @@ registry: [...#Registration]
 	ignoreDifferences: [...{...}]
 }
 
+// #OptionalComponents are the names a cluster may list in
+// #Cluster.components: the optional entries, but for the claims. A claim is
+// optional too (#ProjectRegistrations), but no cluster names one: claims pass
+// through to every cluster until they select clusters by label (the
+// Second_Cluster planning project), so naming one fails cue vet. Until then a
+// cluster has to name substrate and substrate-shim, which its claims need.
+#OptionalComponents: [
+	for C in registry if C.priority == "optional" && C.component != "project" {C.name},
+]
+
+// clusterRegistry is the registry as each cluster takes it, by cluster name,
+// in the registry's order: every entry but the ones in #OptionalComponents,
+// and of those the ones the cluster names. A cluster's sync waves are indexes
+// into its own list, so an entry it does not take can never move them, and
+// components/argocd-apps is the only place that reads the index.
+//
+// It is a map in the root, not a filter on Cluster, because the platform reads
+// it too: Cluster is defined in components/component.cue, which the platform
+// instance does not load, and the platform never gets the clusterName tag
+// (tags.cue), so a filter on that would quietly read its default, treasury,
+// for every cluster.
+clusterRegistry: {
+	for NAME, CLUSTER in clusters {
+		(NAME): [
+			for C in registry
+			if !list.Contains(#OptionalComponents, C.name) || list.Contains(CLUSTER.components, C.name) {C},
+		]
+	}
+}
+
 registry: [
 	// cilium is the CNI and kube-proxy replacement. Nothing else gets a pod
 	// address until it is up.
-	{name: "cilium"},
+	{name: "cilium", priority: "required"},
 	// cilium-resources holds the Cilium custom resources: the LB IPAM pools,
 	// the L2 announcement policy and the ambient kubelet probe policy. The
 	// operator registers their CRDs when it starts, after cilium is synced,
 	// so the dry run Argo CD makes before applying skips kinds it cannot
 	// find yet.
 	{
-		name: "cilium-resources"
+		name:     "cilium-resources"
+		priority: "required"
 		syncOptions: ["SkipDryRunOnMissingResource=true"]
 	},
 	// coredns replaces the CoreDNS Talos deploys, to own the Corefile.
-	{name: "coredns"},
+	{name: "coredns", priority: "required"},
 	// argocd syncs everything from git, itself included. It needs pod
 	// networking and DNS to reach GitHub, and nothing else, so it comes
 	// straight after them.
-	{name: "argocd"},
+	{name: "argocd", priority: "required"},
 	// gateway-api is the Gateway API CRDs, standard channel, at the release
 	// Istio supports, installed ahead of Istio.
-	{name: "gateway-api"},
+	{name: "gateway-api", priority: "important"},
 	// cert-manager, its CRDs and its webhook.
-	{name: "cert-manager"},
+	{name: "cert-manager", priority: "important"},
 	// approver-policy approves cert-manager's CertificateRequests by policy,
 	// in place of cert-manager's own approver: its CertificateRequestPolicy
 	// CRD, its controller and its webhook. It needs only cert-manager's
 	// CRDs, whose requests it watches.
-	{name: "approver-policy"},
+	{name: "approver-policy", priority: "important"},
 	// private-ca is the bootstrap Issuer, the root, the ClusterIssuer and the
 	// CertificateRequestPolicies that let them sign. It needs cert-manager's
 	// CRDs established and its controller running, and approver-policy's
 	// CRD, so it comes after both.
-	{name: "private-ca"},
+	{name: "private-ca", priority: "important"},
 	// trust-manager, its Bundle CRD and its webhook. Its webhook certificate
 	// is a cert-manager Certificate, so it comes after cert-manager.
-	{name: "trust-manager"},
+	{name: "trust-manager", priority: "important"},
 	// private-ca-bundle is the Bundle that copies the root into every
 	// namespace. It needs trust-manager's CRD and the root's Secret.
-	{name: "private-ca-bundle"},
+	{name: "private-ca-bundle", priority: "important"},
 	// istio-base is Istio's CRDs and the istio-system namespace, ahead of
 	// everything else of Istio's.
-	{name: "istio-base"},
+	{name: "istio-base", priority: "important"},
 	// istiod is the mesh's control plane. It mounts the private-ca
 	// ConfigMap, so it comes after private-ca-bundle.
-	{name: "istiod"},
+	{name: "istiod", priority: "important"},
 	// istio-cni and ztunnel are the ambient node agents. Both wait on istiod
 	// for their configuration and certificates.
-	{name: "istio-cni"},
-	{name: "ztunnel"},
+	{name: "istio-cni", priority: "important"},
+	{name: "ztunnel", priority: "important"},
 	// cloudnative-pg is the CloudNativePG operator, its CRDs and its
 	// webhooks; each consumer writes its own Cluster. Its webhook
 	// certificate is a cert-manager Certificate from the private-ca
 	// ClusterIssuer, so it comes after private-ca.
-	{name: "cloudnative-pg"},
+	{name: "cloudnative-pg", priority: "important"},
 	// external-secrets is the External Secrets operator, its CRDs and its
 	// webhook; components generate their own secrets with it
 	// (#GeneratedSecret). Its webhook certificate is a cert-manager
 	// Certificate from the private-ca ClusterIssuer, so it comes after
 	// private-ca.
-	{name: "external-secrets"},
+	{name: "external-secrets", priority: "important"},
 	// management-namespaces is the Secrets Manager's management organization
 	// and project, seabank-org-platform and seabank-prj-platform
 	// (<slug>-org-platform and <slug>-prj-platform, Brand), and the
@@ -107,35 +157,35 @@ registry: [
 	// that can write one; it is not part of external-secrets, a chart whose
 	// artifact drops invalid resources silently, nor of secrets-manager,
 	// which comes too late.
-	{name: "management-namespaces"},
+	{name: "management-namespaces", priority: "important"},
 	// ingress-gateway is the ingress Gateway, its wildcard certificate and
 	// the routes of components that come before it. It needs the Gateway API
 	// CRDs, the private-ca ClusterIssuer and istiod's istio GatewayClass.
-	{name: "ingress-gateway"},
+	{name: "ingress-gateway", priority: "important"},
 	// hello is the ambient echo service behind the gateway. It needs the node
 	// agents and the Gateway.
-	{name: "hello"},
+	{name: "hello", priority: "standard"},
 	// ceph-csi-rbd is the Ceph RBD driver and the default StorageClass,
 	// ceph-rbd. It needs pod networking, the CRDs of external-secrets and the
 	// management namespace, where bootstrap writes its key by hand and from
 	// which its ExternalSecret copies it; it comes ahead of every component
 	// that claims a volume.
-	{name: "ceph-csi-rbd"},
+	{name: "ceph-csi-rbd", priority: "important"},
 	// local-path is the node-local fallback StorageClass, not the default.
-	{name: "local-path"},
+	{name: "local-path", priority: "important"},
 	// rustfs is the S3 store, RustFS standalone. It claims a ceph-rbd
 	// volume and generates its keys with ExternalSecrets, so it comes after
 	// ceph-csi-rbd and external-secrets; its Job registers the consumers'
 	// buckets and users once RustFS is up.
-	{name: "rustfs"},
+	{name: "rustfs", priority: "standard"},
 	// keycloak-operator is the Keycloak Operator, its CRDs and the keycloak
 	// namespace. It needs only the mesh's node agents.
-	{name: "keycloak-operator"},
+	{name: "keycloak-operator", priority: "standard"},
 	// keycloak is the identity provider: its CloudNativePG cluster, its
 	// generated Secrets, the Keycloak resource and its route. It needs the
 	// CRDs of cloudnative-pg, external-secrets and keycloak-operator, a
 	// ceph-rbd volume and the Gateway, so it comes after all of them.
-	{name: "keycloak"},
+	{name: "keycloak", priority: "standard"},
 	// <slug>-controller is the platform controller, the software
 	// holos-controller, from the holos-controller component
 	// (PlatformController, components/keycloak.cue, which builds the same
@@ -145,6 +195,7 @@ registry: [
 	// keycloak-realm's, after it, so its CRDs are established first.
 	{
 		name:      "\(Brand.slug)-controller"
+		priority:  "standard"
 		component: "holos-controller"
 	},
 	// keycloak-realm is the realm default: the KeycloakRealmImport and its
@@ -155,7 +206,8 @@ registry: [
 	// PlatformController.instance's (components/keycloak.cue), which the
 	// platform, rendering from here, does not load.
 	{
-		name: "keycloak-realm"
+		name:     "keycloak-realm"
+		priority: "standard"
 		ignoreDifferences: [{
 			group:     "keycloak.holos.run"
 			kind:      "Instance"
@@ -180,6 +232,7 @@ registry: [
 	// established.
 	{
 		name:      "\(Brand.slug)-authenticator"
+		priority:  "standard"
 		component: "holos-authenticator"
 		syncOptions: ["SkipDryRunOnMissingResource=true"]
 	},
@@ -197,7 +250,7 @@ registry: [
 	// component's UI, so on a new cluster a component earlier than this one
 	// cannot get a platform secret by itself. The Ceph key is the exception:
 	// bootstrap writes it with kubectl, before Argo CD.
-	{name: "secrets-manager"},
+	{name: "secrets-manager", priority: "standard"},
 	// toolhive-crds is ToolHive's CRDs, from its toolhive-operator-crds
 	// chart, which Argo CD neither prunes nor deletes; toolhive-operator is
 	// its operator, which watches them, in toolhive-system; and toolhive is
@@ -208,9 +261,9 @@ registry: [
 	// them needs it. They come straight after secrets-manager, ahead of
 	// substrate, quay and kagent, so a bootstrap holding at any of their
 	// hand steps has ToolHive up already.
-	{name: "toolhive-crds"},
-	{name: "toolhive-operator"},
-	{name: "toolhive"},
+	{name: "toolhive-crds", priority: "optional"},
+	{name: "toolhive-operator", priority: "optional"},
+	{name: "toolhive", priority: "optional"},
 	// substrate is Agent Substrate's control plane, rendered from the fork's
 	// install tree in vendor/substrate (substrate.cue): its CRDs, the pod
 	// certificate controller, the API server, the IdP, the controller, the
@@ -232,7 +285,8 @@ registry: [
 	// Quay up and Keycloak; neither needs the other, and the demo actor's
 	// image, which needs both, is pushed by hand afterwards.
 	{
-		name: "substrate"
+		name:     "substrate"
+		priority: "optional"
 		syncOptions: ["SkipDryRunOnMissingResource=true"]
 	},
 	// substrate-shim is the Istio shim in front of Substrate's router: its
@@ -244,7 +298,7 @@ registry: [
 	// gateway's pods project a certificate from Substrate's pod identity
 	// signer, which waits on substrate's key pools, and its HTTPRoutes are
 	// in substrate's namespace. So it comes straight after substrate.
-	{name: "substrate-shim"},
+	{name: "substrate-shim", priority: "optional"},
 	// quay is the registry: its CloudNativePG cluster, Redis, the Quay
 	// Deployment and route, its Keycloak Client, the demo Organization and
 	// Repository holos-controller makes in it, and the copies of the RustFS
@@ -259,7 +313,7 @@ registry: [
 	// waits on that by hand at a bootstrap: the projects, whose Quay
 	// organizations need that credential anyway, and kagent, which waits on
 	// a step of its own, and comes after them for that reason.
-	{name: "quay"},
+	{name: "quay", priority: "standard"},
 	// The ProjectClaim collection's components, project-<name>, one per
 	// claim in projects/ (collections.cue), each the project's namespace,
 	// Keycloak groups, users and memberships, Quay organization, RBAC,
@@ -276,7 +330,7 @@ registry: [
 	// kagent-crds is kagent's CRDs, from the fork's kagent-crds chart, which
 	// Argo CD neither prunes nor deletes. It needs nothing, but comes
 	// straight before kagent, whose chart writes objects of its kinds.
-	{name: "kagent-crds"},
+	{name: "kagent-crds", priority: "optional"},
 	// kagent is kagent on Substrate (components/kagent): the fork's chart,
 	// with its controller, UI, tool server and oauth2-proxy, and beside it
 	// the namespace, the Keycloak Client, the role Job and its passwords in
@@ -295,10 +349,10 @@ registry: [
 	// everything it needs and after quay and the projects, which need
 	// nothing of it: at a bootstrap only the root Application's own sync
 	// waits on the key, as it already waits on quay's step.
-	{name: "kagent"},
-	// argocd-apps is the platform AppProject and every component's
-	// Application, its own included: its Application is the root Application.
-	// It is last, so the root syncs every other Application before it waits
-	// on itself.
-	{name: "argocd-apps"},
+	{name: "kagent", priority: "optional"},
+	// argocd-apps is the platform AppProject and the Application of every
+	// component the cluster takes, its own included: its Application is the
+	// root Application. It is last, so the root syncs every other Application
+	// before it waits on itself.
+	{name: "argocd-apps", priority: "required"},
 ]

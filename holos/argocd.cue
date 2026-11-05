@@ -5,7 +5,7 @@ package holos
 // branch it syncs from, the AppProject every platform Application belongs to,
 // and the keys a commit on that branch must be signed with. The argocd
 // component installs it; argocd-apps renders the AppProject and an
-// Application per component in the registry (registry.cue).
+// Application per component its cluster takes (clusterRegistry, registry.cue).
 ArgoCD: {
 	namespace: "argocd"
 

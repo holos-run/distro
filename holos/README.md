@@ -77,10 +77,11 @@ and IP addresses, such as the gateway's 10.20.0.30, are treasury's.
 
 `clusters.cue` holds everything that differs between clusters: the site the
 cluster runs in (its private DNS zone and resolvers), the Kubernetes networks
-Talos configured, the node uplink, and the cluster's block of LoadBalancer
-addresses. Components read their cluster as `Cluster`; none names a cluster
-or an address. Every cluster in `clusters` gets every component in the
-registry (`registry.cue`), rendered to
+Talos configured, the node uplink, the cluster's block of LoadBalancer
+addresses, and the optional components it takes. Components read their
+cluster as `Cluster`; none names a cluster or an address. Every cluster in
+`clusters` gets the registry's stack up to `standard` and the optional
+components it names (The stack, below), rendered to
 `deploy/clusters/<cluster>/components/<component>/`, one file per resource.
 
 The garage's ingress range is 10.20.0.30 to .49, sized for about six clusters
@@ -129,6 +130,62 @@ and render; the Gateway's `spec.addresses` and both pools follow. Then
 change the cluster's router line, `/<cluster>.bank.internal/<address>`, to
 match.
 
+### The stack
+
+The platform is a stack. Every entry in the registry (`registry.cue`) states
+a `priority`, its level in the stack, in Debian's vocabulary: `required` at
+the bottom, then `important`, then `standard`, and `optional` at the top.
+The field has no default: a forgotten one that defaulted to `optional` would
+render nowhere with every check passing. Left out, it fails `cue vet`, which
+says only that some instances are incomplete; `cue vet -c` names the entry.
+
+A cluster takes the stack up to `standard`, plus the optional components it
+names in `components`. The cluster picks its components, as a Debian machine
+picks its packages, and a component never names clusters. Treasury takes all
+seven:
+
+```cue
+clusters: treasury: components: [
+	"substrate",
+	"substrate-shim",
+	"kagent-crds",
+	"kagent",
+	"toolhive-crds",
+	"toolhive-operator",
+	"toolhive",
+]
+```
+
+A cluster that sets no `components` takes none of them. Each name must be an
+optional entry (`#OptionalComponents`), so a typo, a component further down
+the stack, such as `quay`, or a claim, such as `project-payments`, fails
+`cue vet`. As with `#Cluster.loadBalancer`, `holos render platform` does not
+report it: it renders no components and exits 0.
+
+A ProjectClaim's entry is `optional` too, but no cluster names it: claims
+pass through to every cluster (Projects, below). A claim renders its atespace
+and route into `ate-system` and `substrate-shim`, so until claims select
+clusters by label a cluster has to name `substrate` and `substrate-shim`. One
+that does not renders and passes `cue vet`, but nothing makes those
+namespaces there, so the first claim cannot sync and the root stops at it.
+
+`clusterRegistry`, in `registry.cue`, is the result: the registry as each
+cluster takes it, keyed by cluster, in the registry's order.
+`platform/platform.cue` renders each cluster's list and `argocd-apps` makes
+its `Application`s from it, so a cluster's sync waves are indexes into its
+own list and an entry it does not take can never move them. It is a map in
+the root files, not a filter on `Cluster`, because the platform instance does
+not load `components/component.cue`, where `Cluster` is defined, and never
+gets the `clusterName` tag: a filter on that would quietly read its default,
+treasury, for every cluster. `Projects.reserved` reads the whole registry, so
+a name is reserved whether or not a cluster takes it.
+
+Nothing may depend on a component above it in the stack, further up toward
+`optional`: that is a layering violation
+([glossary](../docs/glossary.md#the-platform)). Stack order is not sync
+order. The registry's order is the sync order, whatever the priorities, so
+`hello`, `standard`, syncs before `ceph-csi-rbd`, `important`.
+
 ## Components
 
 | Component | What it renders |
@@ -170,7 +227,7 @@ match.
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the `Organization` `demo` and its public `Repository` `demo/echo`, and the platform controller's Quay credential |
 | `project-<name>` | One per ProjectClaim in `projects/`, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and its Substrate atespace with its route through the shim |
-| `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component, its own being the root `Application` |
+| `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
 committed, so a render needs no network and reads the same chart everywhere.
@@ -626,7 +683,7 @@ to a plugged-in CA, or stops it starting if the set is incomplete.
 
 ### Argo CD
 
-Argo CD syncs every component from its directory under
+Argo CD syncs every component a cluster takes from its directory under
 `holos/deploy/clusters/<cluster>/components/` on `main` of
 https://github.com/holos-run/distro.git. The repository is public, so Argo CD
 reads it anonymously: there is no deploy key and no repository Secret.
@@ -638,32 +695,32 @@ GitHub cannot reach the garage to deliver a webhook, so Argo CD polls:
 is synced in under a minute. `argocd app sync` syncs at once.
 
 `argocd-apps` renders the `platform` `AppProject` and one `Application` per
-entry in the registry, for its cluster:
+entry its cluster takes, its list in `clusterRegistry` (The stack, above):
 
 - `argocd-apps` is last; its own `Application` is the root, which syncs the
   directory the `Application`s are rendered to. A component added to the
-  registry gets its `Application` from the merge alone. Each `Application`'s
-  sync wave is the component's index in the registry, and `argocd-cm` has
-  the health check for `Application`s that Argo CD dropped in 1.8. Argo
-  CD's own health for an `Application` counts only the objects that exist,
-  so one that has created only its namespace is `Healthy`; the check is
-  `Healthy` only once the `Application` is also `Synced` to its spec's
-  source. Until then, and while its sync runs or retries, it is
+  registry gets its `Application` from the merge alone, on each cluster that
+  takes it. Each `Application`'s sync wave is the component's index in its
+  cluster's own list, so an entry a cluster does not take never moves its
+  waves, and `argocd-cm` has the health check for `Application`s that Argo CD
+  dropped in 1.8. Argo CD's own health for an `Application` counts only the
+  objects that exist, so one that has created only its namespace is `Healthy`;
+  the check is `Healthy` only once the `Application` is also `Synced` to its
+  spec's source. Until then, and while its sync runs or retries, it is
   `Progressing`, and a sync waits on a wave while anything in it is. It is
   `Degraded` once its sync has ended with the component `Degraded`, or has
   failed and left it `OutOfSync`, and a `Degraded` object fails the sync,
-  which then retries from the first wave. A component that is done but
-  never `Synced`, such as one with a diff that comes back after every sync,
-  holds the root with no timeout. The waves order the root's own syncs: at
-  bootstrap it creates one `Application`, waits for it to be `Synced` and
-  `Healthy`, then creates the next, and every later sync of the root, such
-  as a merge that adds a component, walks the same waves, so it creates the
-  new `Application` only once every component ahead of it is `Synced` and
-  `Healthy`. They do not order the components themselves: once created,
-  each `Application` polls `main` and syncs on its own, so a later merge
-  syncs the components it touches in parallel, and a component whose
-  dependency is not ready yet relies on its retry. The `AppProject` is
-  wave -1.
+  which then retries from the first wave. A component that is done but never
+  `Synced`, such as one with a diff that comes back after every sync, holds
+  the root with no timeout. The waves order the root's own syncs: at bootstrap
+  it creates one `Application`, waits for it to be `Synced` and `Healthy`,
+  then creates the next, and every later sync of the root, such as a merge
+  that adds a component, walks the same waves, so it creates the new
+  `Application` only once every component ahead of it is `Synced` and
+  `Healthy`. They do not order the components themselves: once created, each
+  `Application` polls `main` and syncs on its own, so a later merge syncs the
+  components it touches in parallel, and a component whose dependency is not
+  ready yet relies on its retry. The `AppProject` is wave -1.
   `argocd-cm` also overrides Argo CD's health check for `ExternalSecret`,
   for generated secrets (External Secrets, below).
 - Every `Application` syncs automatically, with `prune` and `selfHeal`: a
@@ -3433,7 +3490,9 @@ and `checkout`.
    each mistake fails the render. `ownerAccess: "edit"` or `"view"` gives
    the owners less than `admin`.
 
-2. Render, from this directory, and check what changed:
+2. Render, from this directory, and check what changed. A claim's registry
+   entry is `optional`, but claims pass through to every cluster (The stack,
+   above), so the changes below are each cluster's:
 
    ```sh
    cue vet ./... && rm -rf deploy/clusters && holos render platform
@@ -3441,9 +3500,10 @@ and `checkout`.
      # new: components/project-<name>/, projects/<name>/ and
      #      components/argocd-apps/application-project-<name>.yaml
      # changed: seabank-authenticator's Backend and impersonator ClusterRole,
-     #      and the sync wave, its index in the registry, of every
-     #      Application after the new one: argocd-apps' always, and any
-     #      other project-* Application that sorts after it
+     #      and the sync wave, its index in the cluster's own list, of every
+     #      Application after the new one: argocd-apps' always, kagent-crds'
+     #      and kagent's on a cluster that takes them, and any other
+     #      project-* Application that sorts after it
    ```
 
 3. Commit the claim and `deploy/` together, signed (`git commit -S`, Argo
@@ -3648,10 +3708,11 @@ reach GitHub, before it can sync anything, so a new cluster gets four
 components by hand: `cilium`, `coredns`, `argocd` and the root
 `Application` with its `AppProject`. It also gets `management-namespaces`
 and the Ceph key in it (Storage, above), which no component renders. The
-root then creates every component's `Application` in registry order,
-waiting for each to be `Synced` and `Healthy` before the next, and takes
-over the hand-applied components as it goes. Apply from a checkout of
-`main`, since that is what Argo CD will sync, and from this directory:
+root then creates the `Application` of every component the cluster takes,
+in registry order, waiting for each to be `Synced` and `Healthy` before the
+next, and takes over the hand-applied components as it goes. Apply from a
+checkout of `main`, since that is what Argo CD will sync, and from this
+directory:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -3711,16 +3772,16 @@ export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n argocd rollout restart deploy/argocd-server
 ```
 
-The root then waits on `substrate` until its key pools exist: once its
-namespaces are synced, run the key pool commands under Bringing Substrate
-up (Substrate, above). Its pods that project the pools wait in
-ContainerCreating until then, so the Application stays Progressing, and
-the root holds there without spending a retry. Run them within ten
-minutes: a Deployment that has not progressed by then passes its progress
-deadline and reports `Degraded`, and once `substrate`'s own sync has ended,
-that fails the root's sync and starts its retries (below).
+On a cluster that takes `substrate`, the root then waits on it until its
+key pools exist: once its namespaces are synced, run the key pool commands
+under Bringing Substrate up (Substrate, above). Its pods that project the
+pools wait in ContainerCreating until then, so the Application stays
+Progressing, and the root holds there without spending a retry. Run them
+within ten minutes: a Deployment that has not progressed by then passes its
+progress deadline and reports `Degraded`, and once `substrate`'s own sync
+has ended, that fails the root's sync and starts its retries (below).
 
-The root then waits on `quay`, ahead of the projects and kagent, whose
+The root then waits on `quay`, ahead of the projects and any kagent, whose
 credential is a platform secret made by `cmd/quay-bootstrap` against the
 running Quay: once Quay's pod is up, run the steps under Bringing Quay up,
 and patch the workers' trust and restart them with `talosvm restart`
@@ -3729,19 +3790,19 @@ credential's `ExternalSecret`, and so `quay`, is `Degraded`: the root's sync
 fails at `quay` and retries, and creates nothing after it until `quay` is
 `Healthy`.
 
-Last comes `kagent`, which stays `Degraded` until the Anthropic key is in
-(Adding the Anthropic key, under kagent, above); the platform secret can be
-written before `kagent` exists. The root's sync retries 10 times, backing
-off from 5 seconds to 3 minutes. That is about 17 minutes for the whole
-bootstrap, shared by every hand step that leaves an `Application`
-`Degraded`: Quay's, the workers' trust, then kagent's key. A step that
-leaves one `Progressing`, as the key pools do for their first ten minutes,
-spends none. Quay takes minutes to come up before its steps can start, so
-the retries often run out at `quay`. If they run out, the root stays
-`OutOfSync` until the next commit to `main`, and the `Application`s after
-the one it stopped at are not created. Once the hand steps are done,
-kagent's key included, sync the root again with the automated policy's
-prune and retry. This needs no `argocd` CLI:
+Last, on a cluster that takes it, comes `kagent`, which stays `Degraded`
+until the Anthropic key is in (Adding the Anthropic key, under kagent,
+above); the platform secret can be written before `kagent` exists. The
+root's sync retries 10 times, backing off from 5 seconds to 3 minutes. That
+is about 17 minutes for the whole bootstrap, shared by every hand step that
+leaves an `Application` `Degraded`: Quay's, the workers' trust, then kagent's
+key. A step that leaves one `Progressing`, as the key pools do for their
+first ten minutes, spends none. Quay takes minutes to come up before its
+steps can start, so the retries often run out at `quay`. If they run out,
+the root stays `OutOfSync` until the next commit to `main`, and the
+`Application`s after the one it stopped at are not created. Once the hand
+steps are done, kagent's key included, sync the root again with the automated
+policy's prune and retry. This needs no `argocd` CLI:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig

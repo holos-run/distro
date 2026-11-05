@@ -2,8 +2,8 @@ package holos
 
 import "list"
 
-// The platform AppProject and an Argo CD Application for every component in
-// the registry (registry.cue), for this cluster, each syncing the
+// The platform AppProject and an Argo CD Application for every component this
+// cluster takes (clusterRegistry, registry.cue), each syncing the
 // component's directory in deploy/ from main. This component's own
 // Application is among them: it is the root Application, which syncs the
 // directory these are rendered to, so an Application rendered for a new
@@ -47,7 +47,10 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		for WAVE, C in registry {
+		// The sync wave is the index in this cluster's own list, so an entry
+		// it does not take can never move its waves. Nothing else reads the
+		// index.
+		for WAVE, C in clusterRegistry[Cluster.name] {
 			// No resources-finalizer: deleting an Application, or the root
 			// pruning one the platform stopped rendering, leaves the
 			// component's objects in place rather than deleting them.
