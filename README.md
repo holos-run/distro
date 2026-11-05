@@ -1,8 +1,9 @@
 # Holos Base Distribution
 
 This repository represents the Holos base distribution branded as the fictional
-Bank of Pinky.  Holos is a Kubernetes distribution: as Debian is to Linux and
-GNU, this distribution is to Kubernetes and the CNCF. The problems Holos solves are:
+Bank of the Salish Sea.  Holos is a Kubernetes distribution: as Debian is to
+Linux and GNU, this distribution is to Kubernetes and the CNCF. The problems
+Holos solves are:
 
  1. Distributing new platform capabilities as broadly and openly as possible to
     secure our future.
@@ -10,7 +11,7 @@ GNU, this distribution is to Kubernetes and the CNCF. The problems Holos solves 
     efficient into a cohesive and coherent platform, complete with rapid
     security updates and trustworthy provenance.
 
-Bank of Pinky is a fictional brand, not the software: every name the
+Bank of the Salish Sea is a fictional brand, not the software: every name the
 distribution chooses for itself, its namespaces, its Keycloak client and users,
 its product titles, is built from `Brand` in
 [`holos/brand.cue`](holos/brand.cue), so a vendor's distribution built from
@@ -31,7 +32,7 @@ markets.
 ## Demonstration
 
 This repository demonstrates the integration of the following independent
-projects into a holistic platform for the fictional Bank of Pinky:
+projects into a holistic platform for the fictional Bank of the Salish Sea:
 
 1. [agent-substrate](https://github.com/agent-substrate/substrate) - Zero-trust
    sandboxing for millions of agents on Kubernetes.

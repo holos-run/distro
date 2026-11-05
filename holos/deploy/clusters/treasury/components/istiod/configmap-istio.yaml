@@ -35,9 +35,9 @@ data:
     extensionProviders:
     - envoyExtAuthzGrpc:
         port: 9000
-        service: bank-of-pinky-authenticator.bank-of-pinky-authenticator.svc.cluster.local
+        service: seabank-authenticator.seabank-authenticator.svc.cluster.local
         timeout: 2s
-      name: bank-of-pinky-authenticator
+      name: seabank-authenticator
     rootNamespace: istio-system
     serviceScopeConfigs:
     - scope: GLOBAL

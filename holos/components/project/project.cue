@@ -32,7 +32,7 @@ import (
 // No Keycloak client: aavis-ops makes one per project only so that Quay
 // teams can sync from its client roles, and Quay here syncs teams from the
 // full group paths in the groups claim (interview Q65). No Secrets Manager
-// project, bank-of-pinky-prj-<project>, yet (Q64). No ResourceQuota, and no RBAC
+// project, seabank-prj-<project>, yet (Q64). No ResourceQuota, and no RBAC
 // for the editor and viewer groups, which nothing binds.
 //
 // Every kind's CRD comes from an earlier component: Group, User,

@@ -1,11 +1,11 @@
 package holos
 
-// secrets-manager is the Bank of Pinky Secrets Manager (interview Q18,
-// SecretsManager.appName), at
+// secrets-manager is the Bank of the Salish Sea Secrets Manager (interview
+// Q18, SecretsManager.appName), at
 // https://secrets.treasury.bank.internal: a Go server with a web UI that
 // manages Kubernetes Secrets directly, with Keycloak login and project
 // grants, so there is no external store. A platform secret is made here, in
-// the management namespace bank-of-pinky-prj-platform (Q54), which
+// the management namespace seabank-prj-platform (Q54), which
 // management-namespaces renders, early in the registry, and copied into each
 // consumer's namespace by an ExternalSecret through that consumer's
 // per-namespace store (#ScopedSecretStore).
@@ -15,7 +15,7 @@ package holos
 // distroless image, serving plain HTTP on 8080 behind the ingress gateway,
 // which terminates TLS as it does for Keycloak, in the mesh namespace
 // secrets-manager. It keeps no state of its own beyond Namespaces and
-// Secrets: a project is a Namespace named bank-of-pinky-prj-<project> with its
+// Secrets: a project is a Namespace named seabank-prj-<project> with its
 // labels, and every grant is a JSON annotation on a Namespace or a Secret.
 //
 // Login is OIDC against the realm default, through the public client
@@ -55,7 +55,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// The server acts as its own ServiceAccount and impersonates no
 		// one. It reads and writes Secrets only in project namespaces,
-		// bank-of-pinky-prj-<project>, and in this distro those come from git, as
+		// seabank-prj-<project>, and in this distro those come from git, as
 		// organizations come only from platform owners (Q55). So its access
 		// is two ClusterRoles:
 		//
@@ -64,7 +64,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		//     Namespaces the server may make at runtime.
 		//   - SM.secretsRole, secrets, bound by a RoleBinding in each
 		//     project namespace git renders, beside the namespace
-		//     (components/management-namespaces), so bank-of-pinky-prj-platform
+		//     (components/management-namespaces), so seabank-prj-platform
 		//     alone for now.
 		//
 		// The cost: a project made in the UI has a namespace but no access

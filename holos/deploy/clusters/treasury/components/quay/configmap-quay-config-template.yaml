@@ -6,8 +6,8 @@ data:
         EXTERNAL_TLS_TERMINATION: true
         SETUP_COMPLETE: true
         TESTING: false
-        REGISTRY_TITLE: Bank of Pinky
-        REGISTRY_TITLE_SHORT: Bank of Pinky
+        REGISTRY_TITLE: Bank of the Salish Sea
+        REGISTRY_TITLE_SHORT: Bank of the Salish Sea
         DB_URI: __DB_URI__
         SECRET_KEY: __SECRET_KEY__
         DATABASE_SECRET_KEY: __DATABASE_SECRET_KEY__

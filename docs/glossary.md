@@ -27,16 +27,16 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   (`providers/proxmox`) into the Talos layer (`providers/talos`).
 
 **private root**, **private CA**
-: The cluster's own certificate authority, `Bank of Pinky treasury root CA`. The `private-ca` ClusterIssuer
-  issues from it, and every namespace has it as ConfigMap `private-ca`, key `ca.crt`. A laptop
-  trusts it to reach `*.treasury.bank.internal`
+: The cluster's own certificate authority, `Bank of the Salish Sea treasury root CA`. The
+  `private-ca` ClusterIssuer issues from it, and every namespace has it as ConfigMap `private-ca`,
+  key `ca.crt`. A laptop trusts it to reach `*.treasury.bank.internal`
   ([The private CA](../holos/README.md#the-private-ca)).
 
 ## The platform
 
-**Bank of Pinky**
+**Bank of the Salish Sea**
 : The distribution's brand, `Brand` in `holos/brand.cue`, which every name it chooses for itself is
-  built from: `bank-of-pinky-controller`, `bank-of-pinky-prj-platform`, the Secrets Manager's title. A
+  built from: `seabank-controller`, `seabank-prj-platform`, the Secrets Manager's title. A
   vendor's distribution sets its own. The software it is built with keeps its own names: the
   `holos` CLI, the `*.holos.run` API groups and `holos.run/*` keys, holos-controller.
 
@@ -50,7 +50,7 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   tree is committed and never edited by hand ([Render](../holos/README.md#render)).
 
 **platform secret**
-: A Kubernetes Secret made through the Secrets Manager in project namespace `bank-of-pinky-prj-platform`,
+: A Kubernetes Secret made through the Secrets Manager in project namespace `seabank-prj-platform`,
   such as the Ceph key. A consumer copies it into its own namespace through a `#ScopedSecretStore`
   ([Secrets Manager](../holos/README.md#secrets-manager)).
 
@@ -63,18 +63,18 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   it in an immutable Secret ([External Secrets](../holos/README.md#external-secrets)).
 
 **Secrets Manager**
-: The Bank of Pinky Secrets Manager, holos-run/secrets-manager, at
+: The Bank of the Salish Sea Secrets Manager, holos-run/secrets-manager, at
   `https://secrets.treasury.bank.internal`: the web UI where platform secrets are made.
 
 **platform controller**, **holos-controller**
 : The controller that manages Keycloak and Quay for the platform, such as each service's
   confidential client, from its own custom resources. The software is holos-controller; it runs as
-  `bank-of-pinky-controller` ([The realm](../holos/README.md#the-realm)).
+  `seabank-controller` ([The realm](../holos/README.md#the-realm)).
 
 **platform authenticator**, **holos-authenticator**
 : The ext_authz server in front of the Kubernetes API at `k8s.treasury.bank.internal` that turns a
   verified Keycloak ID token into impersonation headers, so `kubectl` works with a Keycloak
-  identity. The software is holos-authenticator; it runs as `bank-of-pinky-authenticator`
+  identity. The software is holos-authenticator; it runs as `seabank-authenticator`
   ([holos-authenticator](../holos/README.md#holos-authenticator)).
 
 **ProjectClaim**

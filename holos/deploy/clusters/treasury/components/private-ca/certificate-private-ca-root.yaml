@@ -6,7 +6,7 @@ metadata:
     name: private-ca-root
     namespace: cert-manager
 spec:
-    commonName: Bank of Pinky treasury root CA
+    commonName: Bank of the Salish Sea treasury root CA
     duration: 87600h
     isCA: true
     issuerRef:
@@ -33,4 +33,4 @@ spec:
         organizationalUnits:
             - treasury.bank.internal
         organizations:
-            - Bank of Pinky
+            - Bank of the Salish Sea

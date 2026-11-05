@@ -48,7 +48,7 @@ let Owner = "keycloak"
 // is the platform's lasting admin of the master realm, its credential
 // generated and kept in the cluster. The platform controller does not use
 // it: it logs in to the realm default as its own client,
-// svc-bank-of-pinky-controller. The
+// svc-seabank-controller. The
 // server still flags any bootstrap admin as temporary and says so in the
 // admin console; the flag changes nothing else.
 let Admin = "admin"

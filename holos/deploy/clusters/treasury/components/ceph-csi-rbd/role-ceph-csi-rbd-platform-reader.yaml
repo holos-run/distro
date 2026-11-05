@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: ceph-csi-rbd-platform-reader
-  namespace: bank-of-pinky-prj-platform
+  namespace: seabank-prj-platform
 rules:
 - apiGroups:
   - ""

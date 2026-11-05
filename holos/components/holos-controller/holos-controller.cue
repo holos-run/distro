@@ -45,10 +45,10 @@ import (
 // their CRDs are established before Argo CD applies them.
 //
 // The manager reads its Keycloak credential from Secret
-// bank-of-pinky-controller-keycloak-creds in its own namespace, by
+// seabank-controller-keycloak-creds in its own namespace, by
 // POD_NAMESPACE, which keycloak-realm writes; until it exists, each resource
 // reports CredentialsNotFound and is retried. Its Quay credential is
-// bank-of-pinky-controller-quay-creds, there too, which the quay component
+// seabank-controller-quay-creds, there too, which the quay component
 // copies from the platform secret cmd/quay-bootstrap writes; until then each
 // Organization and Repository is retried the same way. PlatformController
 // (components/keycloak.cue) holds the version, the image and the names.
