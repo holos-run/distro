@@ -1,0 +1,249 @@
+apiVersion: v1
+data:
+  admin.enabled: "true"
+  application.instanceLabelKey: argocd.argoproj.io/instance
+  application.resourceTrackingMethod: annotation
+  application.sync.impersonation.enabled: "false"
+  exec.enabled: "false"
+  oidc.config: |
+    name: Keycloak
+    issuer: https://keycloak.cartography.bank.internal/realms/default
+    clientID: argocd
+    enablePKCEAuthentication: true
+    requestedScopes:
+      - openid
+      - profile
+      - email
+      - groups
+  resource.customizations.health.argoproj.io_Application: |-
+    local hs = {}
+    local function field(s, k)
+      if s == nil or s[k] == nil then
+        return ""
+      end
+      return s[k]
+    end
+    local function sameSource(a, b)
+      for _, k in ipairs({"repoURL", "path", "targetRevision", "chart", "ref"}) do
+        if field(a, k) ~= field(b, k) then
+          return false
+        end
+      end
+      return true
+    end
+    local function current(spec, compared)
+      if spec.sourceHydrator ~= nil then
+        return true
+      end
+      if spec.sources ~= nil and #spec.sources > 0 then
+        local sources = compared.sources or {}
+        if #sources ~= #spec.sources then
+          return false
+        end
+        for i, source in ipairs(spec.sources) do
+          if not sameSource(source, sources[i]) then
+            return false
+          end
+        end
+        return true
+      end
+      return sameSource(spec.source, compared.source)
+    end
+    if obj.status == nil or obj.status.health == nil or obj.status.sync == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for the application controller"
+      return hs
+    end
+    local health = obj.status.health.status or "Unknown"
+    local sync = obj.status.sync.status or "Unknown"
+    local op = obj.status.operationState
+    local state = health .. ", " .. sync
+    if obj.operation ~= nil then
+      hs.status = "Progressing"
+      hs.message = state .. ", sync requested"
+      return hs
+    end
+    if op ~= nil and op.phase == "Running" then
+      hs.status = "Progressing"
+      hs.message = state .. ", syncing: " .. (op.message or "")
+      return hs
+    end
+    if health == "Degraded" then
+      hs.status = "Degraded"
+      hs.message = obj.status.health.message or state
+      return hs
+    end
+    if sync ~= "Synced" and op ~= nil and (op.phase == "Failed" or op.phase == "Error") then
+      hs.status = "Degraded"
+      hs.message = state .. ", sync failed: " .. (op.message or "")
+      return hs
+    end
+    local compared = obj.status.sync.comparedTo or {}
+    if health == "Healthy" and sync == "Synced" and current(obj.spec, compared) then
+      hs.status = "Healthy"
+      hs.message = ""
+      return hs
+    end
+    hs.status = "Progressing"
+    hs.message = state
+    return hs
+  resource.customizations.health.external-secrets.io_ExternalSecret: |-
+    local hs = {}
+    local target = obj.metadata.name
+    if obj.spec ~= nil and obj.spec.target ~= nil and obj.spec.target.name ~= nil and obj.spec.target.name ~= "" then
+      target = obj.spec.target.name
+    end
+    local immutable = "could not update secret, target is immutable: unable to update secret " .. target .. ": secret is immutable"
+    if obj.status ~= nil then
+      if obj.status.conditions ~= nil then
+        for i, condition in ipairs(obj.status.conditions) do
+          if condition.type == "Ready" and condition.status == "False" then
+            if condition.reason == "SecretImmutable" and condition.message == immutable then
+              hs.status = "Healthy"
+              hs.message = "Secret " .. target .. " is immutable and kept as it is"
+              return hs
+            end
+            hs.status = "Degraded"
+            hs.message = condition.message
+            return hs
+          end
+          if condition.type == "Ready" and condition.status == "True" then
+            hs.status = "Healthy"
+            hs.message = condition.message
+            return hs
+          end
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for ExternalSecret"
+    return hs
+  resource.customizations.health.policy.cert-manager.io_CertificateRequestPolicy: |-
+    local hs = {}
+    if obj.status ~= nil and obj.status.conditions ~= nil then
+      for i, condition in ipairs(obj.status.conditions) do
+        if condition.type == "Ready" and condition.status == "True" then
+          hs.status = "Healthy"
+          hs.message = condition.message
+          return hs
+        end
+        if condition.type == "Ready" and condition.status == "False" then
+          hs.status = "Degraded"
+          hs.message = condition.message
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for approver-policy"
+    return hs
+  resource.customizations.ignoreResourceUpdates.ConfigMap: |
+    jqPathExpressions:
+      # Ignore the cluster-autoscaler status
+      - '.metadata.annotations."cluster-autoscaler.kubernetes.io/last-updated"'
+      # Ignore the annotation of the legacy Leases election
+      - '.metadata.annotations."control-plane.alpha.kubernetes.io/leader"'
+  resource.customizations.ignoreResourceUpdates.Endpoints: |
+    jsonPointers:
+      - /metadata
+      - /subsets
+  resource.customizations.ignoreResourceUpdates.all: |
+    jsonPointers:
+      - /status
+  resource.customizations.ignoreResourceUpdates.apps_ReplicaSet: |
+    jqPathExpressions:
+      - '.metadata.annotations."deployment.kubernetes.io/desired-replicas"'
+      - '.metadata.annotations."deployment.kubernetes.io/max-replicas"'
+      - '.metadata.annotations."rollout.argoproj.io/desired-replicas"'
+  resource.customizations.ignoreResourceUpdates.argoproj.io_Application: |
+    jqPathExpressions:
+      - '.metadata.annotations."notified.notifications.argoproj.io"'
+      - '.metadata.annotations."argocd.argoproj.io/refresh"'
+      - '.metadata.annotations."argocd.argoproj.io/hydrate"'
+      - '.operation'
+  resource.customizations.ignoreResourceUpdates.argoproj.io_Rollout: |
+    jqPathExpressions:
+      - '.metadata.annotations."notified.notifications.argoproj.io"'
+  resource.customizations.ignoreResourceUpdates.autoscaling_HorizontalPodAutoscaler: |
+    jqPathExpressions:
+      - '.metadata.annotations."autoscaling.alpha.kubernetes.io/behavior"'
+      - '.metadata.annotations."autoscaling.alpha.kubernetes.io/conditions"'
+      - '.metadata.annotations."autoscaling.alpha.kubernetes.io/metrics"'
+      - '.metadata.annotations."autoscaling.alpha.kubernetes.io/current-metrics"'
+  resource.customizations.ignoreResourceUpdates.discovery.k8s.io_EndpointSlice: |
+    jsonPointers:
+      - /metadata
+      - /endpoints
+      - /ports
+  resource.exclusions: |
+    ### Network resources created by the Kubernetes control plane and excluded to reduce the number of watched events and UI clutter
+    - apiGroups:
+      - ''
+      - discovery.k8s.io
+      kinds:
+      - Endpoints
+      - EndpointSlice
+    ### Internal Kubernetes resources excluded reduce the number of watched events
+    - apiGroups:
+      - coordination.k8s.io
+      kinds:
+      - Lease
+    ### Internal Kubernetes Authz/Authn resources excluded reduce the number of watched events
+    - apiGroups:
+      - authentication.k8s.io
+      - authorization.k8s.io
+      kinds:
+      - SelfSubjectReview
+      - TokenReview
+      - LocalSubjectAccessReview
+      - SelfSubjectAccessReview
+      - SelfSubjectRulesReview
+      - SubjectAccessReview
+    ### Intermediate Certificate Request excluded reduce the number of watched events
+    - apiGroups:
+      - certificates.k8s.io
+      kinds:
+      - CertificateSigningRequest
+    - apiGroups:
+      - cert-manager.io
+      kinds:
+      - CertificateRequest
+    ### Cilium internal resources excluded reduce the number of watched events and UI Clutter
+    - apiGroups:
+      - cilium.io
+      kinds:
+      - CiliumIdentity
+      - CiliumEndpoint
+      - CiliumEndpointSlice
+    ### Kyverno intermediate and reporting resources excluded reduce the number of watched events and improve performance
+    - apiGroups:
+      - kyverno.io
+      - reports.kyverno.io
+      - wgpolicyk8s.io
+      kinds:
+      - PolicyReport
+      - ClusterPolicyReport
+      - EphemeralReport
+      - ClusterEphemeralReport
+      - AdmissionReport
+      - ClusterAdmissionReport
+      - BackgroundScanReport
+      - ClusterBackgroundScanReport
+      - UpdateRequest
+  statusbadge.enabled: "false"
+  timeout.hard.reconciliation: 0s
+  timeout.reconciliation: 30s
+  timeout.reconciliation.jitter: 0s
+  url: https://argocd.cartography.bank.internal
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: argocd
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+    app.kubernetes.io/version: v3.5.6
+    helm.sh/chart: argo-cd-10.11.6
+  name: argocd-cm
+  namespace: argocd

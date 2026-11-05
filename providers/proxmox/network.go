@@ -56,7 +56,7 @@ func (r Reservation) Contains(a netip.Addr) bool {
 // same ranges.
 var Reservations = []Reservation{
 	{"manual", netip.MustParseAddr("10.20.0.20"), netip.MustParseAddr("10.20.0.29"), "hand-made VMs for manual testing"},
-	{"ingress", netip.MustParseAddr("10.20.0.30"), netip.MustParseAddr("10.20.0.49"), "ingress Gateway LoadBalancer addresses, about six clusters with three or four gateways each"},
+	{"ingress", netip.MustParseAddr("10.20.0.30"), netip.MustParseAddr("10.20.0.49"), "ingress Gateway LoadBalancer addresses, five blocks of four, one per cluster"},
 }
 
 // CheckNodeAddress refuses an address a node may not have: outside the

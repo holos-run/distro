@@ -8,8 +8,9 @@ import (
 
 // Sites and clusters are the platform's per-site and per-cluster data. A
 // component reads its cluster as Cluster (components/component.cue), so
-// adding a cluster is a new entry here; platform/platform.cue renders each
-// cluster's own list of components, clusterRegistry (registry.cue).
+// adding a cluster starts with a new entry here (README.md, "Adding a
+// cluster"); platform/platform.cue renders each cluster's own list of
+// components, clusterRegistry (registry.cue).
 
 // #Site is a place clusters run, with the network services they share.
 #Site: {
@@ -23,7 +24,7 @@ import (
 	// resolvers serve privateDomain. CoreDNS forwards the zone to them.
 	resolvers: [...net.IPv4 & string] & [_, ...]
 	// ceph is the Ceph cluster the site's hosts run, which ceph-csi-rbd
-	// provisions volumes from. The driver creates nothing on the Ceph side.
+	// provisions volumes from. The driver creates no pool and no user.
 	ceph: {
 		// fsid names the Ceph cluster; ceph-csi calls it the clusterID.
 		fsid: =~"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -109,9 +110,9 @@ import (
 	}
 
 	// loadBalancer is the cluster's block of the site's ingress range
-	// (10.20.0.30 to .49 in the garage, sized for about six clusters of
-	// three or four Gateway addresses). Cilium LB IPAM hands these out to
-	// LoadBalancer Services and announces them with ARP.
+	// (10.20.0.30 to .49 in the garage, five blocks of four addresses).
+	// Cilium LB IPAM hands these out to LoadBalancer Services and announces
+	// them with ARP.
 	loadBalancer: {
 		start: net.IPv4 & string
 		stop:  net.IPv4 & string
@@ -140,8 +141,9 @@ import (
 	// git. It is a platform secret, <secret>, in the management namespace,
 	// put there once per cluster at bootstrap from ceph auth get-key, and an
 	// ExternalSecret copies it into the driver's namespace under the same
-	// name (README.md, "Storage"). A second cluster on the site takes a pool
-	// of its own.
+	// name (README.md, "Storage"). Each cluster on the site takes a pool and
+	// a user of its own, <cluster>-rbd and <cluster>; treasury's are the
+	// exception recorded on its entry.
 	ceph: {
 		pool:   string
 		user:   string
@@ -193,9 +195,31 @@ clusters: treasury: {
 	// The control plane endpoint, treasury-cp-1.
 	serviceAccountIssuer: "https://10.20.0.50:6443"
 	apiServer: address: "10.20.0.50"
-	// Volumes are images in k8s-rbd, as client.k8s.
+	// Volumes are images in k8s-rbd, as client.k8s. These names are a recorded
+	// exception to <cluster>-rbd and <cluster>: they came first, and the rename
+	// planned in the Talos_Kubernetes_Layer planning project died with it.
 	ceph: {
 		pool: "k8s-rbd"
 		user: "k8s"
+	}
+}
+
+// cartography is the second garage cluster, in slot 2: cartography-cp-1 at
+// 10.20.0.60 and cartography-general-1 to -3 at .61 to .63 on the k8s vnet. It
+// takes the second block of the ingress range and no optional component, and
+// shares only the site with treasury.
+clusters: cartography: {
+	site: sites.garage
+	loadBalancer: {
+		start: "10.20.0.34"
+		stop:  "10.20.0.37"
+	}
+	// The control plane endpoint, cartography-cp-1.
+	serviceAccountIssuer: "https://10.20.0.60:6443"
+	apiServer: address: "10.20.0.60"
+	// Volumes are images in cartography-rbd, as client.cartography.
+	ceph: {
+		pool: "cartography-rbd"
+		user: "cartography"
 	}
 }

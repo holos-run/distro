@@ -12,9 +12,14 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   holds its data ([Clusters](../holos/README.md#clusters)).
 
 **treasury**
-: The Talos cluster in the garage: control plane `treasury-cp-1` at 10.20.0.50 and workers
+: The garage's first Talos cluster: control plane `treasury-cp-1` at 10.20.0.50 and workers
   `treasury-general-1` to `-3` at .51 to .53. Its admin kubeconfig is
   `~/.config/holos/talos/treasury/kubeconfig` on the machine that built it.
+
+**cartography**
+: The garage's second Talos cluster, independent of treasury: control plane `cartography-cp-1` at
+  10.20.0.60 and workers `cartography-general-1` to `-3` at .61 to .63, with its ingress gateway at
+  10.20.0.34.
 
 **bank.internal**
 : The garage's private DNS zone. Each cluster has a subdomain of it, so every service is

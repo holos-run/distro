@@ -59,8 +59,8 @@ type Pool struct {
 // secret.
 type Config struct {
 	// Cluster names the Talos cluster. It prefixes every VM name and is the
-	// group compute keeps the cluster's VMs in. Up to about six clusters
-	// share the garage, so it has no default.
+	// group compute keeps the cluster's VMs in. Clusters share the garage,
+	// so it has no default.
 	Cluster string `json:"cluster"`
 	// TalosVersion picks the Image Factory ISO, with the leading v.
 	TalosVersion string `json:"talosVersion"`

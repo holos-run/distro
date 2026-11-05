@@ -33,43 +33,67 @@ holos/
 
 ## Before you start
 
-The commands in this README act on one cluster, named by three shell
+The commands in this README act on one cluster, named by five shell
 variables. Set them first, in every shell the commands run in:
 
 ```sh
 cluster=treasury
 domain=$cluster.bank.internal
 root_ca=$HOME/$cluster-root-ca.pem
+ceph_pool=k8s-rbd
+ceph_user=k8s
 ```
 
 `cluster` is the cluster the commands act on. `domain` is its
 `ingressDomain`, the zone every service is named in, `<service>.$domain`.
 `root_ca` is the file its private root is exported to (The private CA,
-below).
+below). `ceph_pool` and `ceph_user` are its `ceph.pool` and `ceph.user` in
+`clusters.cue`. `ceph_user` is the bare name, as `clusters.cue` has it and
+as the Secret's `userID` holds it: `cartography`, not `client.cartography`.
+The commands add `client.` where Ceph wants the full name, and the Secret is
+`ceph-client-$ceph_user`.
 
-A second cluster changes only `cluster=`. The rest follows from it while
-the cluster keeps the default `ingressDomain`, `<cluster>.<privateDomain>`
-(Clusters, below), and was built with `providers/talos/cluster.sh` with
-`HOLOS_TALOS_DIR` unset, so its admin kubeconfig and talosconfig are in
-`~/.config/holos/talos/<cluster>/`. Every block that runs admin commands
+Another cluster changes `cluster=`, `ceph_pool=` and `ceph_user=`.
+Cartography's are:
+
+```sh
+cluster=cartography
+domain=$cluster.bank.internal
+root_ca=$HOME/$cluster-root-ca.pem
+ceph_pool=cartography-rbd
+ceph_user=cartography
+```
+
+The Ceph names do not follow from `$cluster`, because treasury's do not:
+`k8s-rbd` and `k8s` are a recorded exception to `<cluster>-rbd` and
+`<cluster>`. A pool or user left over from another cluster would act on that
+cluster's volumes or key, so check them against the render, from this
+directory:
+
+```sh
+grep -E ' pool:|node-stage-secret-name:' deploy/clusters/$cluster/components/ceph-csi-rbd/storageclass-ceph-rbd.yaml
+# ceph-client-$ceph_user, then $ceph_pool
+```
+
+`domain` and `root_ca` follow from `$cluster`, and so do the admin configs,
+while the cluster keeps the default `ingressDomain`,
+`<cluster>.<privateDomain>` (Clusters, below), and was built with
+`providers/talos/cluster.sh` with `HOLOS_TALOS_DIR` unset, so its admin
+kubeconfig and talosconfig are in `~/.config/holos/talos/<cluster>/`. Every block that runs admin commands
 starts by exporting `KUBECONFIG`, and `TALOSCONFIG` where it runs
 `talosctl`, from `$cluster`, so it never acts on whatever cluster the shell
 last pointed at. The blocks that log in through Keycloak use the kubectl
 context and user `$cluster-oidc` instead (Logging in with kubectl, below).
 
-Two things do not follow from `$cluster`. Ceph: the commands that reach it
-run on the Ceph host `r620a` (`ssh root@r620a`) and name treasury's pool and
-user, `k8s-rbd` and `client.k8s`; another cluster's are its own `ceph.pool`
-and `ceph.user` in `clusters.cue` (Storage, below). And the storage check
-names workers `$cluster-general-1` and `$cluster-general-3`, which assumes
-the cluster has a `general` node pool of at least three workers.
+The commands that reach Ceph run on the Ceph host `r620a` (`ssh root@r620a`),
+which is the same for every cluster on the site (Storage, below).
 
 The same names stand for their values outside the shell too: a URL to open
 in a browser, such as `https://argocd.$domain`, or a path in an instruction,
 is your cluster's. Email addresses are identities on the site's zone, such
 as `jeff@bank.internal`, on every cluster, and never take `$domain`.
 Expected-output comments follow `$domain` and `$cluster` too. Prose that
-describes the platform as it runs names `treasury`, the garage's cluster,
+describes the platform as it runs names `treasury`, the garage's first cluster,
 and its hosts, such as `keycloak.treasury.bank.internal`, and recorded logs
 and IP addresses, such as the gateway's 10.20.0.30, are treasury's.
 
@@ -92,21 +116,30 @@ does not spell them out; treasury's are `holos.run/cluster-name: treasury` and
 `holos.run/site: garage`. A cluster adds its own with
 `metadata: labels: "example.com/tier": "lab"`.
 
-The garage's ingress range is 10.20.0.30 to .49, sized for about six clusters
-with three or four Gateway addresses each. `treasury` has the first four,
-10.20.0.30 to .33. A new cluster takes the next free block:
+The garage's ingress range is 10.20.0.30 to .49, five blocks of four
+addresses. `treasury` has the first, 10.20.0.30 to .33, and `cartography` the
+second, .34 to .37. A new cluster takes the next free block, and states its
+control plane's address and its Ceph pool and user, which have no defaults:
 
 ```cue
 clusters: example: {
 	site: sites.garage
-	loadBalancer: {start: "10.20.0.34", stop: "10.20.0.37"}
+	loadBalancer: {start: "10.20.0.38", stop: "10.20.0.41"}
+	serviceAccountIssuer: "https://10.20.0.70:6443"
+	apiServer: address: "10.20.0.70"
+	ceph: {pool: "example-rbd", user: "example"}
 }
 ```
 
+`serviceAccountIssuer` and `apiServer.address` are recorded, not chosen: both
+are the control plane's address, its slot's first, which `talosvm.json` sets
+as `firstAddress` and `providers/talos/cluster.sh` generates the cluster with.
+
 Its names are `<service>.example.bank.internal`, under its own
 `*.example.bank.internal` wildcard, and the router gets a line of its own
-pointing that subdomain at its Gateway, `/example.bank.internal/10.20.0.34`
-(`providers/proxmox/README.md`, "DNS").
+pointing that subdomain at its Gateway, `/example.bank.internal/10.20.0.38`
+(`providers/proxmox/README.md`, "DNS"). The whole procedure is under Adding a
+cluster, below.
 
 The ingress Gateway's address, `loadBalancer.gateway`, the block's first
 unless set, is reserved, so the private zone's wildcard record stays right
@@ -211,6 +244,90 @@ through `Takes` (`components/component.cue`):
 A name stays reserved on every cluster, whether its objects render there or not
 (`Projects.reserved`), so a claim cannot take `demo` on a cluster with no
 `demo` `Organization`.
+
+### Adding a cluster
+
+This is the whole procedure for a new cluster, in order. It crosses this
+README, [`providers/proxmox/README.md`](../providers/proxmox/README.md) and
+[`providers/talos/README.md`](../providers/talos/README.md), which link here
+rather than repeat it, and each step points at the section with its commands.
+Steps 1 to 3 are a pull request, which merges before anything boots, since
+Argo CD syncs a cluster's tree from `main`. The rest are by hand.
+
+A step marked *Only with* an entry belongs to that optional entry. A cluster
+that does not name the entry in `components` skips the step, and nothing on it
+waits for what the step makes. `cartography` names no optional entry, so it
+skips steps 11, 14 and 15: no `ate-setup` and no Anthropic key. The other
+optional entries have no hand step.
+
+1. **Take the addresses.** The next free cluster slot and ingress block, from
+   [Address
+   allocation](../providers/proxmox/README.md#address-allocation). The control
+   plane takes the slot's first address.
+2. **Add the cluster.** Its entry in `clusters.cue`, as in the example under
+   Clusters, above, with the optional components it takes in `components`. Its
+   config at `providers/talos/clusters/<cluster>/talosvm.json`
+   ([Config](../providers/talos/README.md#config)), with `cluster`,
+   `talosVersion` and `firstAddress`: `talosvm create` and `cluster.sh` refuse a
+   cluster with no committed file. It needs at least three workers, since
+   ceph-csi's three provisioner replicas take one worker each. *Only with
+   `substrate`*, one pool is named `general`, which `WorkerPool` `gvisor`
+   selects.
+3. **Render and merge.** Render and run `contract-check` (Render, below). The
+   cluster's tree appears under `deploy/clusters/<cluster>/`, and no other
+   cluster's tree changes. Merge to `main`: the bootstrap applies from a
+   checkout of it, and the cluster syncs from it.
+4. **Set the variables.** All five under Before you start, above, in every
+   shell from here on.
+5. **Make the Ceph pool and user.** [Ceph pool and
+   user](../providers/proxmox/README.md#ceph-pool-and-user), over root SSH to
+   `r620a`. ceph-csi creates no pool and no user, and step 9 reads the user's
+   key.
+6. **Add the router line.** `/<cluster>.bank.internal/<gateway address>`
+   ([DNS](../providers/proxmox/README.md#dns)). Pods reach Keycloak and Quay at
+   `$domain` through it from their first sync, by CoreDNS's forward to the
+   router, and so do the laptop and `quay-bootstrap`.
+7. **Install the cluster's `talosctl`.** `cluster.sh` takes `talosctl-<version>`
+   for the cluster's `talosVersion`, or a plain `talosctl` of that version, and
+   refuses any other, printing the install steps, which are also under
+   [Bringing a cluster up](../providers/talos/README.md#bringing-a-cluster-up).
+   Clusters can pin different versions: `cartography` is on v1.14.5 and
+   `treasury` on v1.14.4, so a machine that runs both keeps `talosctl-v1.14.5`
+   beside `talosctl`. On such a cluster every `talosctl` run by hand below means
+   that binary, and `talosvm restart` is passed `-talosctl talosctl-v1.14.5`.
+8. **Make the VMs and the cluster.** `talosvm create`, the wait for maintenance
+   mode and `cluster.sh up`, under [Bringing a cluster
+   up](../providers/talos/README.md#bringing-a-cluster-up).
+9. **Bootstrap Argo CD.** The hand applies, the Ceph key and the root, under
+   Bootstrap Argo CD, below. The steps after this one are the hand steps that
+   section names, in the order the root reaches them.
+10. **Trust the new root.** Once `private-ca-bundle` is `Healthy`, restart
+    `argocd-server` (Bootstrap Argo CD, below) and export the cluster's root for
+    the laptop (The private CA, below). It goes beside any other cluster's
+    root, which stays.
+11. *Only with `substrate`.* **The key pools**, with `ate-setup`, within ten
+    minutes of the namespaces syncing (Bringing Substrate up, under Substrate,
+    below).
+12. **Quay's credential.** Once Quay's pod is up,
+    `quay-bootstrap token -quay-url https://quay.$domain` (Bringing Quay up,
+    under Quay, below). That block's step 1 is only for a realm imported before
+    `svc-quay-controller` was added, so a new cluster skips it. Every run passes
+    `-quay-url`, whose default is treasury's.
+13. **The workers' trust.** The `TrustedRootsConfig` patch and `talosvm restart`
+    (Trusting the root on the workers, under Quay, below).
+14. *Only with `substrate`.* **The demo atespace and its actors** (Bringing
+    Substrate up, under Substrate, below). Their image is copied into Quay, so
+    this comes after step 12.
+15. *Only with `kagent`.* **The Anthropic key** (Adding the Anthropic key, under
+    kagent, below).
+16. **Finish the root's sync.** If its retries ran out during these steps, sync
+    it again (Bootstrap Argo CD, below). Every `Application` the cluster takes
+    is then `Synced` and `Healthy`; on `cartography` the last before the root is
+    `quay`.
+17. **Log in and check.** As `jeff`, with the password from Secret
+    `keycloak/seabank-user-jeff`, generated per cluster (Logging in, below), and
+    with `kubectl` as `$cluster-oidc` (Logging in with kubectl, under
+    holos-authenticator, below). Then Check, below.
 
 ## Components
 
@@ -997,8 +1114,12 @@ Proxmox hosts already run (Tentacle, three monitors on the hosts'
 hosts, survives losing one, and follows its pod to any worker.
 `clusters.cue` has the Ceph cluster as the site's (`ceph.fsid`,
 `ceph.monitors`) and the pool and Ceph user as the cluster's (`ceph.pool`,
-`ceph.user`): `treasury` uses pool `k8s-rbd` as `client.k8s`, whose caps are
-`profile rbd` on that pool. The driver creates nothing on the Ceph side.
+`ceph.user`). `cartography` uses pool `cartography-rbd` as
+`client.cartography`, and `treasury` uses `k8s-rbd` as `client.k8s`, a recorded
+exception to those names. A user's caps are `profile rbd`, limited to its own
+pool on the OSDs and the manager. The driver creates no pool and no user, so
+both are made by hand, once per cluster ([Ceph pool and
+user](../providers/proxmox/README.md#ceph-pool-and-user)).
 
 The `ceph-rbd` class is the cluster default: ext4, image features
 `layering,exclusive-lock,object-map,fast-diff`, volume expansion on, reclaim
@@ -1028,9 +1149,10 @@ which the chart always renders, is patched out until CNPG backups need it.
 - ceph-csi registers no admission webhook and no APIService.
 
 The Ceph user's key is never in git, since the repository is public. Ceph
-keeps it, outside the cluster, so `ceph auth get-key client.k8s` reads it
-again for a rebuilt cluster. It is a platform secret, `ceph-client-k8s`
-(`Cluster.ceph.secret`), with keys `userID` and `userKey`, in the management
+keeps it, outside the cluster, so `ceph auth get-key client.$ceph_user` reads
+it again for a rebuilt cluster. It is a platform secret,
+`ceph-client-$ceph_user` (`Cluster.ceph.secret`), with keys `userID`, the bare
+name, and `userKey`, in the management
 namespace, `seabank-prj-platform`, written there once per cluster at bootstrap
 (Bootstrap Argo CD, below). It carries the label
 `app.kubernetes.io/managed-by=holos.run` and the annotation
@@ -1041,7 +1163,8 @@ reverts it, and the namespace carries `Prune=false,Delete=false`.
 
 `ceph-csi-rbd` copies it into its namespace through its own store,
 `SecretStore` `platform` (Per-namespace stores, under Secrets Manager), whose
-Role may `get` that one Secret, and `ExternalSecret` `ceph-client-k8s`, with
+Role may `get` that one Secret, and `ExternalSecret`
+`ceph-client-$ceph_user`, with
 `creationPolicy: Owner` and a `refreshInterval` of an hour. The copy is the
 Secret the class's provisioner, controller-expand, controller-publish and
 node-stage secret parameters name. Deleting and re-creating the
@@ -1057,9 +1180,9 @@ terminal:
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl -n ceph-csi-rbd get secretstore,externalsecret   # Valid; SecretSynced
-kubectl -n ceph-csi-rbd get secret ceph-client-k8s -o jsonpath='{.metadata.labels.reconcile\.external-secrets\.io/managed} {.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'   # true ExternalSecret/ceph-client-k8s
-cmp -s <(kubectl -n ceph-csi-rbd get secret ceph-client-k8s -o jsonpath='{.data.userKey}' | base64 -d) \
-  <(ssh root@r620a ceph auth get-key client.k8s) && echo same || echo differ
+kubectl -n ceph-csi-rbd get secret ceph-client-$ceph_user -o jsonpath='{.metadata.labels.reconcile\.external-secrets\.io/managed} {.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'   # true ExternalSecret/ceph-client-$ceph_user
+cmp -s <(kubectl -n ceph-csi-rbd get secret ceph-client-$ceph_user -o jsonpath='{.data.userKey}' | base64 -d) \
+  <(ssh root@r620a ceph auth get-key client.$ceph_user) && echo same || echo differ
 ```
 
 To rotate the key, give Ceph a new one, write it into the management copy,
@@ -1072,12 +1195,12 @@ stages its volume again with the new key:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
-ssh root@r620a ceph auth rotate client.k8s > /dev/null
-key=$(ssh root@r620a ceph auth get-key client.k8s) && [ -n "$key" ] &&
+ssh root@r620a ceph auth rotate client.$ceph_user > /dev/null
+key=$(ssh root@r620a ceph auth get-key client.$ceph_user) && [ -n "$key" ] &&
 printf %s "$key" | jq -Rc '{data: {userKey: @base64}}' |
-  kubectl -n seabank-prj-platform patch secret ceph-client-k8s --type=merge --patch-file=/dev/stdin
+  kubectl -n seabank-prj-platform patch secret ceph-client-$ceph_user --type=merge --patch-file=/dev/stdin
 unset key
-kubectl -n ceph-csi-rbd annotate externalsecret ceph-client-k8s force-sync=$(date +%s) --overwrite
+kubectl -n ceph-csi-rbd annotate externalsecret ceph-client-$ceph_user force-sync=$(date +%s) --overwrite
 ```
 
 A cluster that ran on a Secret made by hand in `ceph-csi-rbd`, as `treasury`
@@ -2343,7 +2466,9 @@ What it runs, in `ate-system` unless named:
 
 #### Bringing Substrate up
 
-Three things have no declarative form and are done by hand, in this order.
+Three things have no declarative form and are done by hand, in this order. A
+cluster that does not name `substrate` skips all three (Adding a cluster,
+above).
 
 **The key pools**, once per cluster, after Argo CD has synced the
 namespaces. They are the root of every pod identity, actor token and MITM
@@ -2441,7 +2566,7 @@ git -C vendor/substrate checkout <commit>
 # components/substrate/ATE-SETUP.md: walk steps/deploy.go again, change what moved,
 # then the line numbers and the pin at its top
 cue vet ./... && rm -rf deploy/clusters && holos render platform
-git diff deploy/clusters/$cluster/components/substrate   # what the bump changes on the cluster
+git diff deploy/clusters/*/components/substrate   # what the bump changes, on every cluster that takes it
 git add vendor/substrate substrate.cue components/substrate deploy
 ```
 
@@ -2453,7 +2578,7 @@ pin ([docs/forks.md](../docs/forks.md), Rebasing on upstream):
 # components/kagent/setup.sql: re-copy go/core/pkg/postgressetup/setup.sql if it changed
 rm -rf components/kagent/vendor components/kagent-crds/vendor   # the render pulls both charts at Kagent.version
 cue vet ./... && rm -rf deploy/clusters && holos render platform
-git diff deploy/clusters/$cluster/components/kagent deploy/clusters/$cluster/components/kagent-crds
+git diff deploy/clusters/*/components/kagent deploy/clusters/*/components/kagent-crds
 git add kagent.cue components/kagent components/kagent-crds deploy
 ```
 
@@ -2909,6 +3034,7 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
 
 #### Adding the Anthropic key
 
+A cluster that does not name `kagent` skips this (Adding a cluster, above).
 The model key is the platform secret `anthropic-api-key`, key
 `ANTHROPIC_API_KEY` (Adding a platform secret, under Secrets Manager,
 above). The `ExternalSecret` `kagent/kagent-anthropic` copies it within the
@@ -3236,7 +3362,10 @@ and the platform owners' grant, so it shows under Platform in the Secrets
 Manager. The command converges: a second run prints `no change` and writes
 nothing. It uses `kubectl`'s current context (or `-context`) and trusts the
 private root from the cluster's `private-ca` ConfigMap (or `-ca-file`)
-beside the system's; `-h` lists the rest.
+beside the system's; `-h` lists the rest. Every run passes `-quay-url`, which
+says which cluster's Quay it logs in to and is the `url` the controller gets.
+Its default is treasury's, compiled into the program, so a run on another
+cluster without the flag goes to treasury's Quay.
 
 On a new cluster the root reaches `quay` ahead of the projects and kagent
 and waits there: the credential's `ExternalSecret` reports
@@ -3264,8 +3393,11 @@ kubectl -n keycloak get secret svc-quay-controller -o jsonpath='{.data.password}
 
 # 2. The controller's token, then its copy.
 cd ..   # the repository's root
-go run ./cmd/quay-bootstrap token
+go run ./cmd/quay-bootstrap token -quay-url https://quay.$domain
 kubectl -n seabank-controller annotate externalsecret seabank-controller-quay-creds force-sync=$(date +%s) --overwrite
+
+# 3. Only on a cluster with substrate or a claim: nothing else renders an
+#    organization or repository, and a wait on none is an error, not a pass.
 kubectl -n quay wait --for=condition=Ready organization --all --timeout=5m
 kubectl -n quay wait --for=condition=Ready repository --all --timeout=5m
 ```
@@ -3321,8 +3453,8 @@ kubectl -n argocd get applications                                          # ev
 #### Rotation
 
 - **The controller's token.** Delete `quay-controller-token` in
-  `seabank-prj-platform` and run `quay-bootstrap token`; the copy follows within
-  the hour, or at once with the `force-sync` above. The old token stays live
+  `seabank-prj-platform` and run `quay-bootstrap token -quay-url
+  https://quay.$domain`; the copy follows within the hour, or at once with the `force-sync` above. The old token stays live
   in Quay until the Application is deleted (organization
   `platform-automation`, Applications), which deletes every token it issued;
   the next `token` run makes a new one.
@@ -3335,7 +3467,8 @@ kubectl -n argocd get applications                                          # ev
 - **`svc-quay-controller`'s password.** The import set it once. Rotate the
   Secret (Generated secrets, above), then set the user's password to it
   through the admin API (`PUT $a/users/<id>/reset-password`), then run
-  `quay-bootstrap token` only if the token must be replaced too.
+  `quay-bootstrap token -quay-url https://quay.$domain` only if the token must
+  be replaced too.
 
 None of these has been exercised on a cluster yet.
 
@@ -3368,9 +3501,9 @@ kubectl -n quay logs deploy/quay -c quay | grep -i -m3 'migrat'
 #    through Keycloak, log out, and log in again (no 400 on the code exchange).
 
 # 3. The command converges, and the secret is listed under Platform.
-go run ./cmd/quay-bootstrap token | tail -1              # ... no change
+go run ./cmd/quay-bootstrap token -quay-url https://quay.$domain | tail -1   # ... no change
 kubectl -n seabank-prj-platform get secret -l app.kubernetes.io/managed-by=holos.run
-  # ceph-client-k8s, quay-controller-token
+  # ceph-client-$ceph_user, quay-controller-token
 
 # 4. The organization and the repository are Ready, and jeff is in the platformowners team.
 kubectl -n quay get organization,repository             # READY True
@@ -3413,6 +3546,10 @@ kubectl delete ns quay-test
 Step 6 is what the Talos patch is for, and a pull that fails with a
 certificate error points there. The check's tag, `demo/echo:check`, is
 deleted in the UI afterwards.
+
+The `demo` organization and repository in steps 4 to 6 render with
+`substrate`. A cluster that does not take it has neither, so those steps do
+not run there as written, and this check leaves its workers' trust unproved.
 
 ## Projects
 
@@ -3824,10 +3961,10 @@ kubectl -n argocd rollout status sts/argocd-application-controller
 # read into a variable first, so a failed ssh writes nothing rather than an
 # empty key.
 kubectl apply --server-side --field-manager=argocd-controller -f $d/management-namespaces/
-key=$(ssh root@r620a ceph auth get-key client.k8s) && [ -n "$key" ] &&
+key=$(ssh root@r620a ceph auth get-key client.$ceph_user) && [ -n "$key" ] &&
 printf %s "$key" |
-  kubectl -n seabank-prj-platform create secret generic ceph-client-k8s \
-    --from-literal=userID=k8s --from-file=userKey=/dev/stdin --dry-run=client -o yaml |
+  kubectl -n seabank-prj-platform create secret generic ceph-client-$ceph_user \
+    --from-literal=userID=$ceph_user --from-file=userKey=/dev/stdin --dry-run=client -o yaml |
   kubectl label --local -f - app.kubernetes.io/managed-by=holos.run -o yaml |
   kubectl annotate --local -f - \
     'holos.run/share-roles=[{"principal":"/platform/owners","role":"owner"}]' -o yaml |
@@ -3885,8 +4022,8 @@ first ten minutes, spends none. Quay takes minutes to come up before its
 steps can start, so the retries often run out at `quay`. If they run out,
 the root stays `OutOfSync` until the next commit to `main`, and the
 `Application`s after the one it stopped at are not created. Once the hand
-steps are done, kagent's key included, sync the root again with the automated
-policy's prune and retry. This needs no `argocd` CLI:
+steps are done, kagent's key included on a cluster that takes it, sync the
+root again with the automated policy's prune and retry. This needs no `argocd` CLI:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -3929,16 +4066,16 @@ go run ./providers/talos/cmd/talosvm destroy -cluster "${cluster:?set cluster fi
 mv ~/.config/holos/talos/$cluster ~/.config/holos/talos/$cluster.old-$(date +%FT%H%M)
 
 # printf, so zsh splits the list too.
-for i in $(printf '%s\n' "$images"); do ssh root@r620a rbd rm --no-progress "k8s-rbd/$i"; done
-ssh root@r620a rbd ls k8s-rbd   # empty: the pool is the cluster's alone
+for i in $(printf '%s\n' "$images"); do ssh root@r620a rbd rm --no-progress "${ceph_pool:?set ceph_pool first}/$i"; done
+ssh root@r620a rbd ls "${ceph_pool:?set ceph_pool first}"   # empty: the pool is the cluster's alone
 ```
 
 `rbd rm` refuses an image that still has a watcher. A destroyed VM's watch
 expires within about 30 seconds, so retry once if it refuses. Keep the old
 state directory until the new cluster is up, then delete it, since it holds
-the old cluster's secrets. The new cluster comes up by the usage in
-`../providers/talos/README.md`, from `talosvm create` to `cluster.sh
-up`. Its private root is new (The private CA, above).
+the old cluster's secrets. The new cluster comes up by Adding a cluster, above,
+from step 8. Its private root is new (The private CA, above). The pool and the Ceph
+user stay, so a rebuild keeps both, and the key.
 
 ### Logging in
 
@@ -4135,8 +4272,8 @@ kubectl delete ns ca-test
 ```
 
 Storage: `ceph-rbd` the only default class, the driver's pods on the
-workers only, and a volume written on one worker read back on another, its
-image in the pool while the claim exists and gone once it is deleted.
+workers only, and a volume written on the first worker read back on the last,
+its image in the pool while the claim exists and gone once it is deleted.
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -4165,17 +4302,18 @@ spec:
   volumes: [{name: d, persistentVolumeClaim: {claimName: rbd}}]
 EOF
 }
-pod writer $cluster-general-1 'hostname > /data/x'
+workers=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' --no-headers -o custom-columns=:.metadata.name)
+pod writer "$(echo "$workers" | head -1)" 'hostname > /data/x'
 kubectl -n storage-test wait --for=condition=Ready --timeout=2m pod/writer
-ssh root@r620a rbd ls k8s-rbd              # csi-vol-...
+ssh root@r620a rbd ls $ceph_pool           # csi-vol-...
 kubectl -n storage-test delete pod writer
-pod reader $cluster-general-3 'cat /data/x'
+pod reader "$(echo "$workers" | tail -1)" 'cat /data/x'
 kubectl -n storage-test wait --for=condition=Ready --timeout=2m pod/reader
-kubectl -n storage-test logs reader        # writer, the pod that wrote it on general-1
+kubectl -n storage-test logs reader        # writer, the pod that wrote it on the first worker
 PV=$(kubectl -n storage-test get pvc rbd -o jsonpath='{.spec.volumeName}')
 kubectl delete ns storage-test
 kubectl wait --for=delete --timeout=2m pv/$PV   # the image goes with the PV
-ssh root@r620a rbd ls k8s-rbd              # empty
+ssh root@r620a rbd ls $ceph_pool           # empty
 ```
 
 LoadBalancer addresses answer TCP and UDP on the Service's ports only; they
@@ -4197,7 +4335,7 @@ kubectl -n istio-ingress get gateway ingress     # ADDRESS 10.20.0.30, PROGRAMME
 gw=$(kubectl -n istio-ingress get gateway ingress -o jsonpath='{.spec.addresses[0].value}')   # the pinned address
 kubectl get ciliumloadbalancerippools            # $cluster: 0 available; $cluster-general: none CONFLICTING
 kubectl get httproute -A                         # argocd, hello, https-redirect
-kubectl get tlsroute -A                          # ate, k8s
+kubectl get tlsroute -A                          # k8s, and ate with substrate-shim
 kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration \
   -o custom-columns='NAME:.metadata.name,FP:.webhooks[*].failurePolicy,SVC:.webhooks[*].clientConfig.service.name'   # Fail everywhere, every one a Service
 
