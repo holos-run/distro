@@ -1,0 +1,12 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Group
+metadata:
+    labels:
+        holos.run/project: cards
+    name: cards-roles-editor
+    namespace: cards
+spec:
+    instanceRef:
+        name: default
+        namespace: keycloak
+    path: projects/cards/roles/editor

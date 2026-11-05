@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: cards
+    name: approver-policy:project-cards
+rules:
+    - apiGroups:
+        - policy.cert-manager.io
+      resourceNames:
+        - project-cards
+      resources:
+        - certificaterequestpolicies
+      verbs:
+        - use

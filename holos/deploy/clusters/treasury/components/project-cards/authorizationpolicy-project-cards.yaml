@@ -1,0 +1,28 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: cards
+    name: project-cards
+    namespace: substrate-shim
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.treasury.bank.internal/realms/default/*
+          to:
+            - operation:
+                hosts:
+                    - '*.cards.ate.treasury.bank.internal'
+                    - '*.cards.ate.treasury.bank.internal:443'
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+                - /projects/cards/roles/owner
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate
