@@ -97,12 +97,13 @@ PlatformAuthenticator: {
 	// verified, and the API server refuses the impersonation with 403. They
 	// are the resourceNames of the impersonator's users rule, each with
 	// usernamePrefix. Each is in Keycloak.users, whom the realm import or
-	// a person by hand creates, or is the owner of a project, whose claim
-	// creates them (#ProjectOwnerUsernames, collections.cue), each once.
+	// a person by hand creates, or is the owner of a project on this
+	// cluster, whose claim creates them (#ProjectOwnerUsernames,
+	// collections.cue), each once.
 	users: [...string]
 	users: [for U, _ in {
 		(Keycloak.users.jeff.username): true
-		for U in #ProjectOwnerUsernames {(U): true}
+		for U in #ProjectOwnerUsernames[Cluster.name] {(U): true}
 	} {U}]
 
 	// groups are the groups, by the full path the groups claim carries
@@ -114,10 +115,10 @@ PlatformAuthenticator: {
 	// groups include one the impersonator may not impersonate. Granting a
 	// group something is a binding of its own, such as the cluster-admin
 	// binding of owners in the holos-authenticator component, or the
-	// RoleBinding of each project's owner group in its namespace
-	// (components/project), whose claim the ProjectClaim collection adds
-	// here (#ProjectOwnerGroupClaims, collections.cue) from the definition
-	// the RoleBinding's subject is made from.
+	// RoleBinding of the owner group of each project on this cluster in its
+	// namespace (components/project), whose claim the ProjectClaim collection
+	// adds here (#ProjectOwnerGroupClaims, collections.cue) from the
+	// definition the RoleBinding's subject is made from.
 	groups: [...string]
-	groups: list.Concat([[Keycloak.groups.owners.path], #ProjectOwnerGroupClaims])
+	groups: list.Concat([[Keycloak.groups.owners.path], #ProjectOwnerGroupClaims[Cluster.name]])
 }

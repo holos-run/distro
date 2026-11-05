@@ -211,7 +211,7 @@ jobs:
       # README.md, Render. holos render platform writes files but never
       # removes one, so deploy/clusters goes first, and a file the CUE no
       # longer renders shows as deleted. cue vet comes first because the
-      # render does not report every error in clusters.cue.
+      # render does not report every error in clusters.cue or projects/.
       - name: render
         working-directory: holos
         run: |

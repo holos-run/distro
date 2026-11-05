@@ -4,8 +4,9 @@ import "list"
 
 // registry lists the platform's components in sync order. Each has a level in
 // the stack, its priority (#Registration), and a cluster takes the stack up to
-// standard and the optional entries it names (#Cluster.components,
-// clusters.cue). clusterRegistry, below, is that list for each cluster:
+// standard, the optional entries it names (#Cluster.components, clusters.cue)
+// and the claims that select it (collections.cue). clusterRegistry, below, is
+// that list for each cluster:
 // platform/platform.cue renders it, and every entry in it gets an Argo CD
 // Application (components/argocd-apps) whose sync wave is its index there,
 // not here. The waves order the root Application's own syncs: when a cluster
@@ -31,10 +32,11 @@ registry: [...#Registration]
 	// optional at the top. A cluster takes the stack up to standard, plus the
 	// optional entries it names (#Cluster.components): the cluster picks its
 	// components, as a Debian machine picks its packages, and a component
-	// never names clusters. Nothing may depend on a component above it in the
-	// stack, further up toward optional: that is a layering violation
-	// (docs/glossary.md). Stack order is not sync order: the registry's order
-	// is, so hello, standard, syncs before ceph-csi-rbd, important.
+	// never names clusters; only a claim does, by label. Nothing may depend on
+	// a component above it in the stack, further up toward optional: that is
+	// a layering violation (docs/glossary.md). Stack order is not sync order:
+	// the registry's order is, so hello, standard, syncs before ceph-csi-rbd,
+	// important.
 	//
 	// It has no default (Second_Cluster interview Q19): a forgotten field
 	// that defaulted to optional would render nowhere with every check
@@ -56,18 +58,20 @@ registry: [...#Registration]
 
 // #OptionalComponents are the names a cluster may list in
 // #Cluster.components: the optional entries, but for the claims. A claim is
-// optional too (#ProjectRegistrations), but no cluster names one: claims pass
-// through to every cluster until they select clusters by label (the
-// Second_Cluster planning project), so naming one fails cue vet. Until then a
-// cluster has to name substrate and substrate-shim, which its claims need.
+// optional too (#ProjectRegistrations), but it selects its clusters by label
+// rather than being named by them (#Project.clusterSelector), so naming one
+// fails cue vet. A cluster a claim selects has to name substrate and
+// substrate-shim, which the claim's atespace objects need, until those become
+// conditional (Second_Cluster, nothing-renders-for-what-a-cluster-does-not-take).
 #OptionalComponents: [
 	for C in registry if C.priority == "optional" && C.component != "project" {C.name},
 ]
 
 // clusterRegistry is the registry as each cluster takes it, by cluster name,
-// in the registry's order: every entry but the ones in #OptionalComponents,
-// and of those the ones the cluster names. A cluster's sync waves are indexes
-// into its own list, so an entry it does not take can never move them, and
+// in the registry's order: every entry up to standard, and of the optional
+// ones those the cluster names and the claims that select it
+// (clusterProjects, collections.cue). A cluster's sync waves are indexes into
+// its own list, so an entry it does not take can never move them, and
 // components/argocd-apps is the only place that reads the index.
 //
 // It is a map in the root, not a filter on Cluster, because the platform reads
@@ -77,9 +81,13 @@ registry: [...#Registration]
 // for every cluster.
 clusterRegistry: {
 	for NAME, CLUSTER in clusters {
+		let Taken = list.Concat([
+			CLUSTER.components,
+			[for PROJECT, _ in clusterProjects[NAME] {"project-\(PROJECT)"}],
+		])
 		(NAME): [
 			for C in registry
-			if !list.Contains(#OptionalComponents, C.name) || list.Contains(CLUSTER.components, C.name) {C},
+			if C.priority != "optional" || list.Contains(Taken, C.name) {C},
 		]
 	}
 }
@@ -315,7 +323,8 @@ registry: [
 	// a step of its own, and comes after them for that reason.
 	{name: "quay", priority: "standard"},
 	// The ProjectClaim collection's components, project-<name>, one per
-	// claim in projects/ (collections.cue), each the project's namespace,
+	// claim in projects/ (collections.cue), on the clusters the claim
+	// selects, each the project's namespace,
 	// Keycloak groups, users and memberships, Quay organization, RBAC,
 	// Argo CD AppProject and Application, and Substrate atespace with its
 	// route through the shim (components/project). They need

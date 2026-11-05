@@ -121,17 +121,17 @@ AteGateway: {
 		(Kagent.atespace): groups: [Keycloak.groups.owners.path]
 	}
 
-	// claimed are the ProjectClaims' atespaces, one of each claim's name.
-	// components/project renders each, as a ListenerSet on the Gateway
-	// rather than a listener of its own, so a claim stays inside its own
-	// Application: between Applications that already exist, a broken one
+	// claimed are the atespaces of the claims this cluster takes, one of each
+	// claim's name. components/project renders each, as a ListenerSet on the
+	// Gateway rather than a listener of its own, so a claim stays inside its
+	// own Application: between Applications that already exist, a broken one
 	// holds back no other (interview Q66), though a root sync, which walks
 	// the waves, waits on it as on any component. The claim's owner group may
 	// reach its actors, and so may the platform's owners, as they may
 	// everywhere else.
 	claimed: [NAME=string]: #Atespace & {name: NAME}
 	claimed: {
-		for NAME, _ in projects {
+		for NAME, _ in clusterProjects[Cluster.name] {
 			(NAME): groups: [
 				(#ProjectRoleGroupPath & {project: NAME, role: "owner"}).claim,
 				Keycloak.groups.owners.path,

@@ -48,9 +48,10 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 **stack**
 : The platform's components as levels, by priority, with `required` at the bottom and `optional`
   at the top. A cluster takes the stack up to `standard`, plus the optional components it names in
-  `components`. "Above" only ever means further up the stack, toward `optional`, never more
-  important. Stack order is not sync order: the registry's order is, and `hello`, `standard`, syncs
-  before `ceph-csi-rbd`, `important` ([The stack](../holos/README.md#the-stack)).
+  `components` and the ProjectClaims that select it. "Above" only ever means further up the stack,
+  toward `optional`, never more important. Stack order is not sync order: the registry's order is,
+  and `hello`, `standard`, syncs before `ceph-csi-rbd`, `important`
+  ([The stack](../holos/README.md#the-stack)).
 
 **priority**
 : A registry entry's level in the stack, `priority` in `holos/registry.cue`, in Debian's
@@ -96,8 +97,9 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 **ProjectClaim**
 : A CUE collection in which a team claims a project, and from which its namespace, RoleBinding,
-  Keycloak groups, Quay organization, Argo CD project and Substrate atespace are rendered
-  ([Projects](../holos/README.md#projects)).
+  Keycloak groups, Quay organization, Argo CD project and Substrate atespace are rendered on the
+  clusters its required `clusterSelector` selects, a Kubernetes LabelSelector over each cluster's
+  `metadata.labels` ([Projects](../holos/README.md#projects)).
 
 ## Identity and tokens
 

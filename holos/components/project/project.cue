@@ -7,10 +7,11 @@ import (
 
 // project renders one ProjectClaim, projects.<project> (projects/), as the
 // component project-<project>: the registry adds one per claim, each from
-// this directory with the parameter project (collections.cue), and
-// argocd-apps gives each an Application in the platform AppProject. The
-// claim is a few lines of CUE, and this is everything it stands for, ported
-// from aavis-ops' project component:
+// this directory with the parameter project (collections.cue), a cluster
+// takes the claims that select it (clusterProjects), and argocd-apps gives
+// each an Application in the platform AppProject. The claim is a few lines of
+// CUE, and this is everything it stands for, ported from aavis-ops' project
+// component:
 //
 //   - the project's namespace, named for it, in the mesh;
 //   - its owner, editor and viewer groups in the realm, each owner's user,
