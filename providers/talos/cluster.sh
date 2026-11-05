@@ -7,6 +7,12 @@
 #   cluster.sh bootstrap <cluster>   bootstrap etcd, write kubeconfig
 #   cluster.sh up        <cluster>   gen, apply, bootstrap
 #
+# The cluster's Talos version is talosVersion in its committed
+# clusters/<cluster>/talosvm.json, for the client check, the machine configs
+# and the installer tag. The client is $TALOSCTL when it is set, else
+# talosctl-<version> on PATH, else talosctl, and it must be that version;
+# the refusal prints how to install it.
+#
 # The patches in patches/ are the same for every cluster. A cluster that
 # needs a patch of its own puts it in clusters/<cluster>/controlplane.yaml;
 # none does today.
@@ -19,7 +25,6 @@
 # credentials must be in the environment, as for talosvm itself.
 set -euo pipefail
 
-TALOS_VERSION=v1.14.4
 KUBERNETES_VERSION=1.37.1
 POOL_LABEL=holos.run/nodepool
 
@@ -34,11 +39,35 @@ log() { echo "cluster.sh: $*" >&2; }
 cmd=$1 cluster=$2
 [[ $cluster =~ ^[a-z][a-z0-9-]{0,30}$ ]] || die "invalid cluster name: $cluster"
 
-for tool in talosctl jq go kubectl; do
+for tool in jq go kubectl; do
   command -v "$tool" >/dev/null || die "$tool not found in PATH"
 done
-have=$(talosctl version --client --short 2>/dev/null | awk '/Talos/ {print $2}')
-[[ $have == "$TALOS_VERSION" ]] || die "talosctl is ${have:-unknown}, want $TALOS_VERSION"
+
+config=$here/clusters/$cluster/talosvm.json
+[[ -f $config ]] || die "no config for cluster $cluster: $config does not exist"
+TALOS_VERSION=$(jq -r '.talosVersion // empty' "$config") || die "cannot read talosVersion from $config"
+[[ -n $TALOS_VERSION ]] || die "$config sets no talosVersion"
+
+if [[ -z ${TALOSCTL:-} ]]; then
+  TALOSCTL=talosctl
+  if command -v "talosctl-$TALOS_VERSION" >/dev/null; then TALOSCTL=talosctl-$TALOS_VERSION; fi
+fi
+# A client that is missing or fails leaves have empty, and the refusal below
+# reports it, so the failure must not end the script here under set -e.
+have=$("$TALOSCTL" version --client --short 2>/dev/null | awk '/Talos/ {print $2}') || have=
+if [[ $have != "$TALOS_VERSION" ]]; then
+  log "$TALOSCTL is ${have:-unknown}, want $TALOS_VERSION; to install it:"
+  asset=talosctl-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+  cat >&2 <<EOF
+
+cd "\$(mktemp -d)"
+gh release download $TALOS_VERSION -R siderolabs/talos -p $asset -p sha256sum.txt
+grep ' $asset\$' sha256sum.txt | shasum -a 256 -c -
+mkdir -p ~/.local/bin
+install -m 0755 $asset ~/.local/bin/talosctl-$TALOS_VERSION
+EOF
+  exit 1
+fi
 
 umask 077
 state=${HOLOS_TALOS_DIR:-$HOME/.config/holos/talos}/$cluster
@@ -83,10 +112,10 @@ installer() {
   if [[ -n ${INSTALLER:-} ]]; then echo "$INSTALLER"; return; fi
   local cp id
   cp=$(controlplane)
-  id=$(talosctl get extensions -n "$cp" --insecure -o json 2>/dev/null |
+  id=$("$TALOSCTL" get extensions -n "$cp" --insecure -o json 2>/dev/null |
     jq -r 'select(.spec.metadata.name == "schematic") | .spec.metadata.version' || true)
   if [[ -z $id && -s $TALOSCONFIG ]]; then
-    id=$(talosctl get extensions -n "$cp" -e "$cp" -o json 2>/dev/null |
+    id=$("$TALOSCTL" get extensions -n "$cp" -e "$cp" -o json 2>/dev/null |
       jq -r 'select(.spec.metadata.name == "schematic") | .spec.metadata.version' || true)
   fi
   [[ $id =~ ^[0-9a-f]{64}$ ]] || die "cannot read the schematic from $cp; set INSTALLER to the image talosvm create printed"
@@ -110,7 +139,7 @@ gen() {
 
   if [[ ! -s $state/secrets.yaml ]]; then
     log "generating secrets in $state/secrets.yaml"
-    talosctl gen secrets -o "$state/secrets.yaml"
+    "$TALOSCTL" gen secrets -o "$state/secrets.yaml"
   fi
 
   local cp image base
@@ -119,7 +148,7 @@ gen() {
   log "endpoint https://$cp:6443, installer $image"
   base=$(mktemp -d "$state/gen.XXXXXX")
   trap 'rm -rf "$base"' RETURN
-  talosctl gen config "$cluster" "https://$cp:6443" \
+  "$TALOSCTL" gen config "$cluster" "https://$cp:6443" \
     --with-secrets "$state/secrets.yaml" \
     --talos-version "${TALOS_VERSION%.*}" \
     --kubernetes-version "$KUBERNETES_VERSION" \
@@ -129,8 +158,8 @@ gen() {
     ${own_patch[@]+"${own_patch[@]}"} \
     --output "$base" --force >/dev/null
 
-  talosctl --talosconfig "$base/talosconfig" config endpoint "$cp"
-  talosctl --talosconfig "$base/talosconfig" config node "$cp"
+  "$TALOSCTL" --talosconfig "$base/talosconfig" config endpoint "$cp"
+  "$TALOSCTL" --talosconfig "$base/talosconfig" config node "$cp"
   mv "$base/talosconfig" "$TALOSCONFIG"
 
   local node name role
@@ -146,10 +175,10 @@ gen() {
       "  topology.kubernetes.io/region: \(.region | @json)",
       "  topology.kubernetes.io/zone: \(.zone | @json)",
       (if .pool then "  \($pool): \(.pool | @json)" else empty end)' <<<"$node" >"$state/nodes/$name.patch.yaml"
-    talosctl machineconfig patch "$base/$role.yaml" \
+    "$TALOSCTL" machineconfig patch "$base/$role.yaml" \
       --patch "@$state/nodes/$name.patch.yaml" \
       --output "$state/nodes/$name.yaml"
-    talosctl validate --mode cloud --config "$state/nodes/$name.yaml" >/dev/null
+    "$TALOSCTL" validate --mode cloud --config "$state/nodes/$name.yaml" >/dev/null
     log "wrote $state/nodes/$name.yaml"
   done < <(nodes)
 }
@@ -176,12 +205,12 @@ apply() {
     [[ -s $state/nodes/$name.yaml ]] || die "no config for $name; run: cluster.sh gen $cluster"
     # A node in maintenance mode answers without credentials and installs
     # Talos to disk on apply; a configured node takes the update in place.
-    if talosctl get machinestatus -n "$addr" --insecure >/dev/null 2>&1; then
+    if "$TALOSCTL" get machinestatus -n "$addr" --insecure >/dev/null 2>&1; then
       log "$name ($addr): maintenance mode, installing"
-      talosctl apply-config -n "$addr" --insecure --file "$state/nodes/$name.yaml"
+      "$TALOSCTL" apply-config -n "$addr" --insecure --file "$state/nodes/$name.yaml"
     else
       log "$name ($addr): configured, applying"
-      talosctl apply-config -n "$addr" -e "$addr" --file "$state/nodes/$name.yaml"
+      "$TALOSCTL" apply-config -n "$addr" -e "$addr" --file "$state/nodes/$name.yaml"
     fi
   done < <(nodes)
 }
@@ -192,7 +221,7 @@ bootstrap() {
   cp=$(controlplane)
   log "waiting for the Talos API on $cp"
   for i in $(seq 120); do
-    talosctl version -n "$cp" >/dev/null 2>&1 && break
+    "$TALOSCTL" version -n "$cp" >/dev/null 2>&1 && break
     [[ $i -lt 120 ]] || die "Talos API on $cp did not come up"
     sleep 5
   done
@@ -201,7 +230,7 @@ bootstrap() {
   # second time with AlreadyExists, which is success here.
   local out
   for i in $(seq 120); do
-    if out=$(talosctl bootstrap -n "$cp" 2>&1); then break; fi
+    if out=$("$TALOSCTL" bootstrap -n "$cp" 2>&1); then break; fi
     if grep -q AlreadyExists <<<"$out"; then log "etcd already bootstrapped"; break; fi
     grep -qE 'not available yet|Unavailable|connection refused|deadline' <<<"$out" || die "bootstrap: $out"
     [[ $i -lt 120 ]] || die "bootstrap: $out"
@@ -209,7 +238,7 @@ bootstrap() {
   done
   log "waiting for the Kubernetes API on $cp"
   for i in $(seq 120); do
-    talosctl kubeconfig "$state/kubeconfig" -n "$cp" --force >/dev/null 2>&1 &&
+    "$TALOSCTL" kubeconfig "$state/kubeconfig" -n "$cp" --force >/dev/null 2>&1 &&
       kubectl --kubeconfig "$state/kubeconfig" get --raw /readyz >/dev/null 2>&1 && break
     [[ $i -lt 120 ]] || die "Kubernetes API on $cp did not come up"
     sleep 5

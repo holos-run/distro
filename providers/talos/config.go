@@ -55,7 +55,7 @@ type Pool struct {
 // addresses, and the control plane and pools. It is read from a JSON file,
 // since YAML would need a dependency, which also holds the compute
 // provider's own settings; every field but the cluster name has a default,
-// so the file only says what differs from the garage. Nothing in it is
+// so a file need only say what differs from the garage. Nothing in it is
 // secret.
 type Config struct {
 	// Cluster names the Talos cluster. It prefixes every VM name and is the
@@ -132,6 +132,13 @@ var label = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 // version is a Talos release tag such as v1.14.4.
 var version = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
 
+// ValidClusterName reports whether name can name a cluster. It decides what
+// Validate accepts, and it keeps a name from reaching a path as anything but
+// one path element, since a valid name holds no dot or slash.
+func ValidClusterName(name string) bool {
+	return label.MatchString(name) && len(name) <= 30
+}
+
 // Validate reports every problem in the config at once, so one run shows
 // everything to fix. It includes the address rules, with checkAddress the
 // compute provider's rule for a node address, so a bad address is refused
@@ -144,7 +151,7 @@ func (c Config) Validate(checkAddress func(netip.Addr) error) error {
 	switch {
 	case c.Cluster == "":
 		add("cluster is required: name the cluster with -cluster or in the config")
-	case !label.MatchString(c.Cluster) || len(c.Cluster) > 30:
+	case !ValidClusterName(c.Cluster):
 		add("cluster %q: want a lowercase DNS label of at most 30 characters", c.Cluster)
 	}
 	if !version.MatchString(c.TalosVersion) {
