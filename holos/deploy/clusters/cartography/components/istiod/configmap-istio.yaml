@@ -1,0 +1,50 @@
+# Source: istiod/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio
+  namespace: "istio-system"
+  labels:
+    istio.io/rev: "default"
+    install.operator.istio.io/owning-resource: unknown
+    operator.istio.io/component: "Pilot"
+    release: istiod
+    app.kubernetes.io/name: "istiod"
+    app.kubernetes.io/managed-by: "Helm"
+    app.kubernetes.io/instance: "istiod"
+    app.kubernetes.io/part-of: "istio"
+    app.kubernetes.io/version: "1.31.3"
+    helm.sh/chart: istiod-1.31.3
+data:
+
+  # Configuration file for the mesh networks to be used by the Split Horizon EDS.
+  meshNetworks: |-
+    networks: {}
+
+  mesh: |-
+    defaultConfig:
+      discoveryAddress: istiod.istio-system.svc:15012
+      image:
+        imageType: distroless
+      proxyMetadata:
+        ISTIO_META_ENABLE_HBONE: "true"
+    defaultProviders:
+      metrics:
+      - prometheus
+    enablePrometheusMerge: true
+    extensionProviders:
+    - envoyExtAuthzGrpc:
+        port: 9000
+        service: seabank-authenticator.seabank-authenticator.svc.cluster.local
+        timeout: 2s
+      name: seabank-authenticator
+    rootNamespace: istio-system
+    serviceScopeConfigs:
+    - scope: GLOBAL
+      servicesSelector:
+        matchExpressions:
+        - key: istio.io/global
+          operator: In
+          values:
+          - "true"
+    trustDomain: cluster.local

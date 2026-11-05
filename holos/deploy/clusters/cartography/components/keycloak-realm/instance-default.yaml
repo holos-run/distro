@@ -1,0 +1,10 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Instance
+metadata:
+    name: default
+    namespace: keycloak
+spec:
+    credentialsSecretRef:
+        name: seabank-controller-keycloak-creds
+    realm: default
+    url: https://keycloak.cartography.bank.internal

@@ -1,0 +1,12 @@
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+    name: cartography
+spec:
+    blocks:
+        - start: 10.20.0.34
+          stop: 10.20.0.34
+    serviceSelector:
+        matchLabels:
+            gateway.networking.k8s.io/gateway-name: ingress
+            io.kubernetes.service.namespace: istio-ingress

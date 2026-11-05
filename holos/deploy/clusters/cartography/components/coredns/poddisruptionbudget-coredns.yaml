@@ -1,0 +1,21 @@
+# Source: coredns/templates/poddisruptionbudget.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: coredns
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/managed-by: "Helm"
+    app.kubernetes.io/instance: "coredns"
+    helm.sh/chart: "coredns-1.49.0"
+    k8s-app: kube-dns
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: "CoreDNS"
+    app.kubernetes.io/name: coredns
+spec:
+  selector:
+    matchLabels:
+        app.kubernetes.io/instance: "coredns"
+        k8s-app: kube-dns
+        app.kubernetes.io/name: coredns
+  maxUnavailable: 1

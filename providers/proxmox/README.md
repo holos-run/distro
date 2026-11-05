@@ -20,7 +20,12 @@ the config file are in [its README](../talos/README.md#talosvm).
 
 Block storage, the infrastructure layer's second contract, is the Ceph cluster
 the hosts already run, which ceph-csi uses directly, and the bucket is RustFS
-inside the cluster; this provider implements neither.
+inside the cluster; this provider implements neither. Each cluster's pool and
+user are made by hand ([Ceph pool and user](#ceph-pool-and-user)).
+
+A new cluster's steps here, its addresses, its Ceph pool and user and its
+router line, are in order in [Adding a
+cluster](../../holos/README.md#adding-a-cluster).
 
 ## What the VMs are
 
@@ -203,7 +208,7 @@ broadcast or gateway address, or inside a reserved range:
 | Name | Range | Purpose |
 | --- | --- | --- |
 | `manual` | 10.20.0.20 – 10.20.0.29 | Jeff's hand-made VMs for manual testing |
-| `ingress` | 10.20.0.30 – 10.20.0.49 | Ingress Gateway LoadBalancer addresses, about six clusters with three or four gateways each |
+| `ingress` | 10.20.0.30 – 10.20.0.49 | Ingress Gateway LoadBalancer addresses, five blocks of four, one per cluster |
 
 The table is `Reservations` in [`network.go`](network.go); validation uses
 it, and this table must match it. The Kubernetes layer checks its addresses
@@ -224,9 +229,9 @@ is one more reason to keep to the table below.
 | 10.20.0.1 | Anycast gateway on every node |
 | 10.20.0.2 – .19 | Other garage VMs; .4, .5 and .10 were in use on 2026-10-23 |
 | 10.20.0.20 – .29 | **Reserved** (`manual`): Jeff's hand-made VMs for manual testing |
-| 10.20.0.30 – .49 | **Reserved** (`ingress`): ingress Gateway LoadBalancer addresses. Suggested: three per cluster slot, slot n at .30+3(n−1), with .48 and .49 spare for a fourth. |
-| 10.20.0.50 – .59 | Cluster slot 1 (the first cluster, `firstAddress` default .50, `FirstNodeAddress`) |
-| 10.20.0.60 – .69 | Cluster slot 2 |
+| 10.20.0.30 – .49 | **Reserved** (`ingress`): ingress Gateway LoadBalancer addresses. Five blocks of four, block n at .30+4(n−1): .30 to .33 is `treasury`'s, .34 to .37 `cartography`'s, and .38 to .41, .42 to .45 and .46 to .49 are free. |
+| 10.20.0.50 – .59 | Cluster slot 1 (`treasury`, `firstAddress` default .50, `FirstNodeAddress`) |
+| 10.20.0.60 – .69 | Cluster slot 2 (`cartography`) |
 | 10.20.0.70 – .79 | Cluster slot 3 |
 | 10.20.0.80 – .89 | Cluster slot 4 |
 | 10.20.0.90 – .99 | Unassigned; .99 was in use on 2026-10-23 |
@@ -237,7 +242,9 @@ is one more reason to keep to the table below.
 
 Ten addresses per slot fit one control plane and up to nine workers, or three
 control planes and seven workers. A cluster takes its slot with
-`firstAddress` in its committed `providers/talos/clusters/<cluster>/talosvm.json`.
+`firstAddress` in its committed `providers/talos/clusters/<cluster>/talosvm.json`,
+and its block with `loadBalancer` in `holos/clusters.cue`. Block n goes with
+slot n, so the blocks run out first: slot 6 has none.
 
 ## Before the first run
 
@@ -355,6 +362,42 @@ scp root@r620a.lan:/etc/pve/pve-root-ca.pem ~/.config/holos/pve-root-ca.pem
 
 `-insecure` skips verification instead. It is never the default.
 
+## Ceph pool and user
+
+Each cluster has an RBD pool and a Ceph user of its own, `ceph.pool` and
+`ceph.user` in [`holos/clusters.cue`](../../holos/clusters.cue), so a cluster's
+key reaches its own volumes and no other's. ceph-csi creates no pool and no
+user, so these commands make them, once per cluster, before its bootstrap reads
+the key. They run as root on any one host, with `ceph_pool` and
+`ceph_user` set as in [Before you
+start](../../holos/README.md#before-you-start). The names are `<cluster>-rbd`
+and `<cluster>`; treasury's, `k8s-rbd` and `k8s`, are a recorded exception.
+
+```sh
+ssh root@r620a ceph osd pool create $ceph_pool
+ssh root@r620a rbd pool init $ceph_pool
+# The quotes are the remote shell's. get-or-create prints the key, which stays
+# off the terminal; bootstrap reads it with ceph auth get-key.
+ssh root@r620a "ceph auth get-or-create client.$ceph_user mon 'profile rbd' osd 'profile rbd pool=$ceph_pool' mgr 'profile rbd pool=$ceph_pool'" > /dev/null
+```
+
+The user's OSD and manager caps are limited to that pool; a monitor cap cannot
+be limited to a pool. Check the pool's replication and the caps, where `grep` keeps the key off the terminal:
+
+```sh
+ssh root@r620a ceph osd pool get $ceph_pool size     # size: 3
+ssh root@r620a ceph auth get client.$ceph_user | grep caps
+```
+
+```text
+	caps mgr = "profile rbd pool=cartography-rbd"
+	caps mon = "profile rbd"
+	caps osd = "profile rbd pool=cartography-rbd"
+```
+
+These commands have not been run on the garage yet: treasury's pool and user
+were made before any README recorded how.
+
 ## What talosvm sends
 
 `talosvm` ([Usage](../talos/README.md#usage)) is how this provider runs. These
@@ -465,8 +508,16 @@ lists `/bank.internal/10.20.0.30` and remove it by hand if it does.
 The zone's line is dnsmasq's `local=/bank.internal/`, set through the
 `server` list, of which `local` is a synonym: OpenWRT's `local` option holds
 one value and already holds `/lan/`. In LuCI the two are Network, DHCP and
-DNS, General tab, Addresses and DNS forwardings. A new cluster adds its own
-line, such as `/example.bank.internal/10.20.0.34`, and touches no other.
+DNS, General tab, Addresses and DNS forwardings.
+
+A new cluster adds its own line, at its Gateway's address, and touches no
+other. On the router, for cartography:
+
+```sh
+uci add_list dhcp.@dnsmasq[0].address='/cartography.bank.internal/10.20.0.34'
+uci commit dhcp
+/etc/init.d/dnsmasq restart
+```
 
 From the laptop, the cluster's names answer and a bare name does not:
 

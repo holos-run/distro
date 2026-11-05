@@ -1,0 +1,9 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    name: private-ca
+spec:
+    ca:
+        secretName: private-ca-root

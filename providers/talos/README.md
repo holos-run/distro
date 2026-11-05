@@ -405,6 +405,12 @@ can no longer be administered.
 
 ### Bringing a cluster up
 
+This section is steps 7 and 8 of [Adding a
+cluster](../../holos/README.md#adding-a-cluster), the whole procedure for a
+new cluster. A rebuild is [Tearing a cluster
+down](../../holos/README.md#tearing-a-cluster-down), then that procedure from
+step 8.
+
 `kubectl`, `jq`, Go and the `talosctl` of the cluster's `talosVersion` are
 needed, and `gen` and `apply` read the inventory with `talosvm list`, which
 needs the Proxmox credentials and the snippets mount described in the [Proxmox
@@ -431,26 +437,26 @@ install -m 0755 "$asset" ~/.local/bin/"talosctl-$version"
 The `talosctl` commands run by hand below mean that binary, under its own name
 or a link named `talosctl`.
 
-Then, from the repository root, with the Proxmox credentials loaded for
-`talosvm list`:
+Then, from the repository root, with `cluster` set and the Proxmox
+credentials loaded for `talosvm list`:
 
 ```sh
 set -a; . ~/.config/holos/proxmox.env; set +a
 
-go run ./providers/talos/cmd/talosvm create -cluster treasury
+go run ./providers/talos/cmd/talosvm create -cluster "$cluster"
 
 # create returns once Proxmox has started the VMs, before Talos is up. Wait
 # until every node answers in maintenance mode (under a minute on the garage).
 # Only for new VMs: a configured node never answers --insecure, so the loop
 # would wait forever on a cluster that is already up.
-for a in $(go run ./providers/talos/cmd/talosvm list -cluster treasury -json | jq -r '.[].address'); do
+for a in $(go run ./providers/talos/cmd/talosvm list -cluster "$cluster" -json | jq -r '.[].address'); do
   until talosctl get machinestatus -n "$a" --insecure >/dev/null 2>&1; do sleep 5; done
 done
 
-providers/talos/cluster.sh up treasury
+providers/talos/cluster.sh up "$cluster"
 
-export TALOSCONFIG=~/.config/holos/talos/treasury/talosconfig
-export KUBECONFIG=~/.config/holos/talos/treasury/kubeconfig
+export TALOSCONFIG=~/.config/holos/talos/$cluster/talosconfig
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 talosctl health
 kubectl get nodes -o wide --show-labels
 ```

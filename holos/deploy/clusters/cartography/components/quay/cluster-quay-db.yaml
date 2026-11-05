@@ -1,0 +1,27 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    name: quay-db
+    namespace: quay
+spec:
+    bootstrap:
+        initdb:
+            database: quay
+            owner: quay
+            postInitApplicationSQL:
+                - CREATE EXTENSION IF NOT EXISTS pg_trgm
+            secret:
+                name: quay-db
+    enablePDB: false
+    imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+    instances: 1
+    resources:
+        limits:
+            memory: 1Gi
+        requests:
+            cpu: 100m
+            memory: 256Mi
+    storage:
+        size: 10Gi

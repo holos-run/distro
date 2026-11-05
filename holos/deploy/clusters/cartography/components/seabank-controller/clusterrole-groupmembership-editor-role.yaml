@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: groupmembership-editor-role
+rules:
+- apiGroups:
+  - keycloak.holos.run
+  resources:
+  - groupmemberships
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

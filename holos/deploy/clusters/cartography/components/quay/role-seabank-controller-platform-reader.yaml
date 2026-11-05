@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    name: seabank-controller-platform-reader
+    namespace: seabank-prj-platform
+rules:
+    - apiGroups:
+        - ""
+      resourceNames:
+        - quay-controller-token
+      resources:
+        - secrets
+      verbs:
+        - get

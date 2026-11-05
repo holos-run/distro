@@ -1,0 +1,110 @@
+# Source: trust-manager/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trust-manager
+  namespace: cert-manager
+  labels:
+    app.kubernetes.io/name: trust-manager
+    helm.sh/chart: trust-manager-v0.25.0
+    app.kubernetes.io/instance: trust-manager
+    app.kubernetes.io/version: "v0.25.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: trust-manager
+  template:
+    metadata:
+      labels:
+        app: trust-manager
+        app.kubernetes.io/name: trust-manager
+        helm.sh/chart: trust-manager-v0.25.0
+        app.kubernetes.io/instance: trust-manager
+        app.kubernetes.io/version: "v0.25.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: trust-manager
+      automountServiceAccountToken: true
+      initContainers:
+      - name: cert-manager-package-debian
+        image: "quay.io/jetstack/trust-pkg-debian-trixie:20250419.2@sha256:3093d4f6634fbd9eaf6a70a06d809132850d7cae30da82396d3b1f884c1135e7"
+        imagePullPolicy: IfNotPresent
+        args:
+          - "/copyandmaybepause"
+          - "/debian-package"
+          - "/packages"
+        volumeMounts:
+        - mountPath: /packages
+          name: packages
+          readOnly: false
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      containers:
+      - name: trust-manager
+        image: "quay.io/jetstack/trust-manager:v0.25.0@sha256:0521921c2a46d14d0417336b20bcde69215ef3164f2977cc939d53c6e5224a17"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6443
+          name: webhook # for the PodMonitor port field
+        - containerPort: 9402
+          name: metrics # for the PodMonitor port field
+        readinessProbe:
+          httpGet:
+            port: 6060
+            path: /readyz
+          initialDelaySeconds: 3
+          periodSeconds: 7
+        args:
+          - "--log-format=text"
+          - "--log-level=1"
+          - "--metrics-port=9402"
+          - "--readiness-probe-port=6060"
+          - "--readiness-probe-path=/readyz"
+          - "--leader-elect=true"
+          - "--leader-election-lease-duration=15s"
+          - "--leader-election-renew-deadline=10s"
+            # trust
+          - "--trust-namespace=cert-manager"
+            # webhook
+          - "--webhook-host=0.0.0.0"
+          - "--webhook-port=6443"
+          - "--webhook-certificate-dir=/tls"
+          - "--default-package-location=/packages/cert-manager-package-debian.json"
+        volumeMounts:
+        - mountPath: /tls
+          name: tls
+          readOnly: true
+        - mountPath: /packages
+          name: packages
+          readOnly: true
+        resources:
+            {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/os: linux
+      volumes:
+      - name: packages
+        emptyDir:
+          sizeLimit: 50M
+      - name: tls
+        secret:
+          defaultMode: 420
+          secretName: trust-manager-tls
