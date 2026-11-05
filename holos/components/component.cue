@@ -17,6 +17,19 @@ BuildContext:  core.#BuildContext & json.Unmarshal(_BuildContext)
 // Cluster is the cluster this instance renders for, from clusters.cue.
 Cluster: clusters[clusterName]
 
+// Takes says, for each optional entry, whether this cluster names it in
+// #Cluster.components: Takes.toolhive, Takes["substrate-shim"]. An object in a
+// component at standard or beneath it that serves an optional entry is
+// conditional on it, so a cluster that does not name the entry renders nothing
+// for it. The object stays in its component, so the Application that owns it
+// does not change. A claim is not here: it selects its clusters, and no
+// cluster names one.
+Takes: {
+	for NAME in #OptionalComponents {
+		(NAME): list.Contains(Cluster.components, NAME)
+	}
+}
+
 // ComponentName is the component's name in the platform registry.
 ComponentName: _Tags.component.name
 

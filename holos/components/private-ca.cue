@@ -10,7 +10,10 @@ package holos
 // CertificateRequestPolicy, and each Certificate below takes its fields
 // from its entry. A component that adds a Certificate
 // from the ClusterIssuer adds its entry here; without one its first request
-// is denied, by deny-all, the first time it syncs.
+// is denied, by deny-all, the first time it syncs. An entry for an optional
+// component says whether the cluster names it (_rendered, Takes), so its names
+// are in no policy elsewhere. The entry itself stays: its component reads it,
+// and cue vet evaluates that component for every cluster.
 //
 // The names are made from each component's shared names, so they follow
 // the components' own. A field the Certificate sets that its entry does not
@@ -50,12 +53,14 @@ PrivateCA: requesters: {
 	// which no client uses; CloudNativePG's operator dials the pods by IP
 	// and checks no name. It asks for server auth alone.
 	(Substrate.namespace): "\(DB.cluster)-server": {
+		_rendered: Takes.substrate
 		dnsNames: [
 			DB.host,
 			"\(DB.host).\(Cluster.network.dnsDomain)",
 		]
 		usages: ["server auth"]
 	}
+
 	// The webhooks' serving certificates (components/cloudnative-pg,
 	// components/external-secrets): the Service's cluster name, which the
 	// API server dials by the configurations' service: reference (ADR 0003).
@@ -70,7 +75,10 @@ PrivateCA: requesters: {
 	// Gateway (components/substrate-shim).
 	(AteGateway.namespace): {
 		for A in AteGateway.atespaces {
-			"\(A.name)-wildcard": dnsNames: [A.hostname]
+			"\(A.name)-wildcard": {
+				_rendered: Takes["substrate-shim"] && A.rendered
+				dnsNames: [A.hostname]
+			}
 		}
 	}
 }

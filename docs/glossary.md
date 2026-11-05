@@ -97,17 +97,19 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 **ProjectClaim**
 : A CUE collection in which a team claims a project, and from which its namespace, RoleBinding,
-  Keycloak groups, Quay organization, Argo CD project and Substrate atespace are rendered on the
-  clusters its required `clusterSelector` selects, a Kubernetes LabelSelector over each cluster's
-  `metadata.labels` ([Projects](../holos/README.md#projects)).
+  Keycloak groups, Quay organization and Argo CD project are rendered on the clusters its required
+  `clusterSelector` selects, a Kubernetes LabelSelector over each cluster's `metadata.labels`, and
+  its Substrate atespace on those that name `substrate` and `substrate-shim`
+  ([Projects](../holos/README.md#projects)).
 
 ## Identity and tokens
 
 **ksa**
 : A Kubernetes service account. "The `ate-client` ksa" is the ServiceAccount `ate-client` in
   namespace `ate-system`, and its principal is `system:serviceaccount:ate-system:ate-client`. A
-  project's namespace has a ServiceAccount of the same name, which owns that project's atespace
-  and nothing else; the documents call it `<project>/ate-client`, never the `ate-client` ksa.
+  project with an atespace has a ServiceAccount of the same name in its namespace, which owns that
+  atespace and nothing else; the documents call it `<project>/ate-client`, never the `ate-client`
+  ksa.
 
 **ksa token**
 : A standard Kubernetes service account token: a short-lived JWT, signed by the cluster's API
@@ -174,7 +176,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 **atespace**
 : Substrate's tenant: a named group of actor templates and actors, such as `demo` or `kagent`. It
   is an object in Substrate's database, not a Kubernetes namespace. A ProjectClaim makes one of the
-  project's name ([Projects](../holos/README.md#projects)).
+  project's name, on a cluster that names `substrate` and `substrate-shim`
+  ([Projects](../holos/README.md#projects)).
 
 **actor template**
 : The immutable recipe for an actor: its image, by digest, and its environment.

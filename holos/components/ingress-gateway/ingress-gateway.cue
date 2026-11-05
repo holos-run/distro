@@ -12,9 +12,9 @@ import "encoding/yaml"
 // so that each of those can still be applied by hand at bootstrap: Argo CD's.
 // And two TLS passthrough listeners: the one the Substrate shim's hosts pass
 // through to its own Gateway (AteGateway), whose TLSRoute substrate-shim
-// renders, and the one the Kubernetes API's host passes through to
-// holos-authenticator's Gateway (PlatformAuthenticator), whose TLSRoute
-// holos-authenticator renders.
+// renders, on a cluster that names it, and the one the Kubernetes API's host
+// passes through to holos-authenticator's Gateway (PlatformAuthenticator),
+// whose TLSRoute holos-authenticator renders.
 //
 // Applied once istiod is running (it owns the istio GatewayClass) and the
 // private CA issues.
@@ -105,7 +105,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 						// Only the redirect below.
 						allowedRoutes: namespaces: from: "Same"
 					},
-					{
+					if Takes["substrate-shim"] {
 						name:     IG.listeners.ate
 						hostname: AteGateway.wildcard
 						port:     443

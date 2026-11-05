@@ -126,7 +126,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// ingress Gateway's, renewed by cert-manager, which istiod hands to
 		// the gateway as it changes. Each takes its name from its entry in
 		// PrivateCA.requesters (components/private-ca.cue).
-		for A in AG.atespaces {
+		for A in AG.atespaces if A.rendered {
 			Certificate: "\(A.name)-wildcard": {
 				metadata: namespace: AG.namespace
 				spec: A.certificate & PrivateCA.requesters[AG.namespace]["\(A.name)-wildcard"]
@@ -208,7 +208,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				// git writes.
 				allowedListeners: namespaces: from: "Same"
 				// One listener per atespace of the platform's.
-				listeners: [for A in AG.atespaces {A.listener}]
+				listeners: [for A in AG.atespaces if A.rendered {A.listener}]
 			}
 		}
 
@@ -234,7 +234,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// One route per atespace to the router, in the router's namespace,
 		// so it needs no ReferenceGrant, on the atespace's listener.
-		for A in AG.atespaces {
+		for A in AG.atespaces if A.rendered {
 			HTTPRoute: "\(AG.name)-\(A.name)": {
 				metadata: namespace: S.namespace
 				spec: {
@@ -298,7 +298,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			spec: {
 				targetRefs: [GatewayRef]
 				action: "ALLOW"
-				rules: [for A in AG.atespaces {A.rule}]
+				rules: [for A in AG.atespaces if A.rendered {A.rule}]
 			}
 		}
 

@@ -16,11 +16,11 @@ import "strings"
 // it through ztunnel, over HBONE from the mesh and in plaintext from outside.
 //
 // Every credential is generated in the cluster (#GeneratedSecret): rustfs-root,
-// the root user RustFS starts with, and rustfs-substrate and rustfs-quay, an
-// access key and a secret key for each consumer. The rustfs-register Job reads
-// all three and registers the consumers' buckets, users and policies; it mints
-// nothing. The consumers' copies, in their own namespaces, are made by the
-// per-namespace stores, not here.
+// the root user RustFS starts with, and rustfs-quay and, on a cluster that
+// names substrate, rustfs-substrate, an access key and a secret key for each
+// consumer. The rustfs-register Job reads them all and registers the consumers'
+// buckets, users and policies; it mints nothing. The consumers' copies, in
+// their own namespaces, are made by the per-namespace stores, not here.
 RustFSVersion: "1.0.4"
 
 // Name is the namespace and the Helm release, so the chart names its objects
@@ -34,8 +34,8 @@ let Endpoint = "http://rustfs-svc.\(Name).svc:9000"
 // Consumers are the buckets the Job registers, one per consumer, each with a
 // user whose keys are Secret rustfs-<bucket> and a policy of the same name
 // that allows that user to list, read, write and delete objects in that
-// bucket and nothing else.
-let Consumers = ["substrate", "quay"]
+// bucket and nothing else. substrate is one on a cluster that names it.
+let Consumers = [if Takes.substrate {"substrate"}, "quay"]
 
 // RootKeys are the variables RustFS reads its root user from; the chart
 // passes the root Secret to the container whole, with envFrom.
