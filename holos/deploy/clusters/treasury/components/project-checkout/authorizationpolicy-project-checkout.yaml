@@ -1,0 +1,28 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: checkout
+    name: project-checkout
+    namespace: substrate-shim
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.treasury.bank.internal/realms/default/*
+          to:
+            - operation:
+                hosts:
+                    - '*.checkout.ate.treasury.bank.internal'
+                    - '*.checkout.ate.treasury.bank.internal:443'
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+                - /projects/checkout/roles/owner
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate

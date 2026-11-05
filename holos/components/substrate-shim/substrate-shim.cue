@@ -1,9 +1,6 @@
 package holos
 
-import (
-	"encoding/yaml"
-	"list"
-)
+import "encoding/yaml"
 
 // substrate-shim is the Istio shim in front of Substrate's router (overview
 // §5): the only way a person reaches an actor, at
@@ -37,6 +34,12 @@ import (
 // only client besides kagent's controller. The per-atespace listeners admit
 // routes only from ate-system, and no ReferenceGrant into ate-system exists,
 // so no other route can reach the router through this Gateway.
+//
+// This component renders the platform's atespaces, AteGateway.atespaces. A
+// ProjectClaim's reaches the same Gateway from the claim's own component
+// (components/project), with the listener, certificate and rule
+// AteGateway.#Atespace defines for both. This component renders nothing per
+// claim, so a claim changes nothing here.
 //
 // It comes after substrate in the registry: the gateway's pods project a
 // certificate from the pod identity signer, so they start only once
@@ -126,19 +129,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		for A in AG.atespaces {
 			Certificate: "\(A.name)-wildcard": {
 				metadata: namespace: AG.namespace
-				spec: {
-					PrivateCA.requesters[AG.namespace]["\(A.name)-wildcard"]
-					secretName: "\(A.name)-wildcard-tls"
-					privateKey: {
-						algorithm: "ECDSA"
-						size:      256
-					}
-					issuerRef: {
-						group: "cert-manager.io"
-						kind:  "ClusterIssuer"
-						name:  PrivateCA.issuer
-					}
-				}
+				spec: A.certificate & PrivateCA.requesters[AG.namespace]["\(A.name)-wildcard"]
 			}
 		}
 
@@ -212,32 +203,12 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					kind:  "ConfigMap"
 					name:  AG.parameters
 				}
-				// Claimed atespaces add their listeners as ListenerSets,
-				// from this namespace alone, which only git writes.
+				// Claimed atespaces add their listeners as ListenerSets
+				// (components/project), from this namespace alone, which only
+				// git writes.
 				allowedListeners: namespaces: from: "Same"
-				// One HTTPS listener per atespace, named after it, which
-				// admits only HTTPRoutes from the router's namespace.
-				listeners: [for A in AG.atespaces {
-					name:     A.name
-					hostname: A.hostname
-					port:     443
-					protocol: "HTTPS"
-					tls: {
-						mode: "Terminate"
-						certificateRefs: [{kind: "Secret", name: "\(A.name)-wildcard-tls"}]
-					}
-					allowedRoutes: {
-						kinds: [{group: "gateway.networking.k8s.io", kind: "HTTPRoute"}]
-						namespaces: {
-							from: "Selector"
-							selector: matchExpressions: [{
-								key:      "kubernetes.io/metadata.name"
-								operator: "In"
-								values: [S.namespace]
-							}]
-						}
-					}
-				}]
+				// One listener per atespace of the platform's.
+				listeners: [for A in AG.atespaces {A.listener}]
 			}
 		}
 
@@ -318,23 +289,16 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			}
 		}
 
-		// One rule per atespace: its hosts, with or without the port, a
-		// verified token from the realm, and one of the atespace's groups in
-		// the token's groups claim. A host with no rule, and a request
-		// matching no rule, is 403.
+		// One rule per atespace of the platform's. A claimed atespace has a
+		// policy of its own (components/project), and Istio allows what any
+		// ALLOW policy allows. A host with no rule, and a request matching no
+		// rule, is 403.
 		AuthorizationPolicy: (AG.name): {
 			metadata: namespace: AG.namespace
 			spec: {
 				targetRefs: [GatewayRef]
 				action: "ALLOW"
-				rules: [for A in AG.atespaces {
-					from: [{source: requestPrincipals: ["\(Keycloak.issuer)/*"]}]
-					to: [{operation: hosts: [A.hostname, "\(A.hostname):443"]}]
-					when: [{
-						key:    "request.auth.claims[\(Keycloak.groupsClaim)]"
-						values: list.SortStrings(A.groups)
-					}]
-				}]
+				rules: [for A in AG.atespaces {A.rule}]
 			}
 		}
 

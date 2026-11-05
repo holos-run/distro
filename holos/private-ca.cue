@@ -1,6 +1,8 @@
 package holos
 
 import (
+	"encoding/json"
+	"list"
 	"regexp"
 	"strings"
 )
@@ -26,6 +28,21 @@ PrivateCA: {
 	root: "private-ca-root"
 	// issuer is the ClusterIssuer every component issues from.
 	issuer: "private-ca"
+	// issuerRef selects the ClusterIssuer, in a Certificate or in a
+	// CertificateRequestPolicy's selector.
+	issuerRef: {
+		group: "cert-manager.io"
+		kind:  "ClusterIssuer"
+		name:  issuer
+	}
+	// certManager is cert-manager's controller's ServiceAccount, the
+	// requester of every request made from a Certificate (spec.username,
+	// which cert-manager's webhook stamps), whom a policy's use is granted
+	// to. Its namespace is cert-manager's, which is namespace.
+	certManager: {
+		name:        "cert-manager"
+		"namespace": namespace
+	}
 	// bundle is the trust-manager Bundle and the ConfigMap it writes to every
 	// namespace, holding the root in PEM under bundleKey.
 	bundle:    "private-ca"
@@ -51,10 +68,15 @@ PrivateCA: {
 	// The entries are in components/private-ca.cue, beside the other
 	// components' shared names, which they are made from; only a component
 	// knows the cluster it renders for.
+	//
+	// A ProjectClaim's wildcard is not here. The claim renders a policy of
+	// its own, ahead of its Certificate (components/project), since an entry
+	// here would reach the cluster on private-ca's sync, which nothing orders
+	// against the claim's.
 	requesters: [Namespace=string]: [Certificate=string]: {
-		dnsNames: [Within, ...Within]
+		dnsNames: [#Within, ...#Within]
 		usages?: [string, ...string]
-		commonName?: Within
+		commonName?: #Within
 	}
 
 	// permittedDNSDomains are the DNS subtrees the root's name constraints
@@ -65,10 +87,29 @@ PrivateCA: {
 	// outside any component, where there is no cluster to make them from.
 	permittedDNSDomains?: [string, ...string]
 
-	// Within is a DNS name in one of permittedDNSDomains: equal to one, or
+	// #Within is a DNS name in one of permittedDNSDomains: equal to one, or
 	// ending in a dot and one, which allows a leading *. label as well. The
 	// match is by whole labels, as the root's is: with svc.cluster.local
 	// permitted, foo.svc.cluster.local is within it, but foo.cluster.local
 	// and xsvc are not.
-	let Within = =~"^(.+\\.)?(\(strings.Join([for D in permittedDNSDomains {regexp.QuoteMeta(D)}], "|")))$"
+	#Within: =~"^(.+\\.)?(\(strings.Join([for D in permittedDNSDomains {regexp.QuoteMeta(D)}], "|")))$"
+}
+
+// #Exactly is an allowed string list of approver-policy's that permits
+// exactly the names given. values are patterns, in which * matches any
+// string, so *.treasury.bank.internal would also allow
+// keycloak.treasury.bank.internal; where a name has a *, a CEL rule also
+// requires each value to be one of the names as written.
+#Exactly: {
+	names: [...string]
+	out: {
+		required: true
+		values:   names
+		if list.Contains([for N in names {strings.Contains(N, "*")}], true) {
+			validations: [{
+				rule:    "self in \(json.Marshal(names))"
+				message: "must be one of these exactly, * included: \(strings.Join(names, ", "))"
+			}]
+		}
+	}
 }

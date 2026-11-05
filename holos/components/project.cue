@@ -130,8 +130,10 @@ Projects: {
 		for U in Quay.superUsers {(U): true}
 		for U, _ in people {(U): true}
 
-		// The Substrate shim's atespaces, which
-		// atespace-from-the-projectclaim will make from projects.
+		// The atespaces the platform lists for the shim. A claim makes an
+		// atespace of its own name (AteGateway.claimed), so one with the name
+		// of a listed atespace would be handed that atespace and its actors,
+		// and its listener would collide with the Gateway's.
 		for A in AteGateway.atespaces {(A.name): true}
 	}
 

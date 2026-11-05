@@ -262,13 +262,16 @@ registry: [
 	{name: "quay"},
 	// The ProjectClaim collection's components, project-<name>, one per
 	// claim in projects/ (collections.cue), each the project's namespace,
-	// Keycloak groups, users and memberships, Quay organization, RBAC and
-	// Argo CD AppProject and Application (components/project). They need
+	// Keycloak groups, users and memberships, Quay organization, RBAC,
+	// Argo CD AppProject and Application, and Substrate atespace with its
+	// route through the shim (components/project). They need
 	// holos-controller's CRDs, the Instance from keycloak-realm, Quay's
 	// credential from quay, and holos-authenticator, whose allowlist names
-	// their owners, so they come after all of them. None is in the
-	// repository's tree: the collection is empty until a pull request adds
-	// a claim (interview Q67).
+	// their owners. Their atespace Jobs need substrate's API server and the
+	// NetworkPolicy that admits them, their ListenerSets the shim's Gateway
+	// from substrate-shim, and their wildcards the ClusterIssuer from
+	// private-ca and approver-policy to approve their own policies. So they
+	// come after all of them.
 	for R in #ProjectRegistrations {R},
 	// kagent-crds is kagent's CRDs, from the fork's kagent-crds chart, which
 	// Argo CD neither prunes nor deletes. It needs nothing, but comes

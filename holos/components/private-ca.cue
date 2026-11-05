@@ -3,9 +3,10 @@ package holos
 // The private CA's permitted subtrees and its requesters
 // (PrivateCA.permittedDNSDomains and PrivateCA.requesters, private-ca.cue):
 // the domains the root may sign names in, and every Certificate in the
-// cluster that the private-ca ClusterIssuer signs, by namespace and name,
-// with what it asks for. The private-ca component puts the subtrees in the
-// root's name constraints and turns each namespace into a
+// cluster that the private-ca ClusterIssuer signs, but for a ProjectClaim's
+// wildcard, which renders its own policy (components/project), by namespace
+// and name, with what it asks for. The private-ca component puts the subtrees
+// in the root's name constraints and turns each namespace into a
 // CertificateRequestPolicy, and each Certificate below takes its fields
 // from its entry. A component that adds a Certificate
 // from the ClusterIssuer adds its entry here; without one its first request
@@ -65,8 +66,8 @@ PrivateCA: requesters: {
 	(PlatformAuthenticator.namespace): (PlatformAuthenticator.gateway.name): dnsNames: [PlatformAuthenticator.host]
 	// The ingress Gateway's wildcard (components/ingress-gateway).
 	(IngressGateway.namespace): wildcard: dnsNames: [IngressGateway.wildcard]
-	// One wildcard per atespace on the Substrate shim's Gateway
-	// (components/substrate-shim).
+	// One wildcard per atespace of the platform's on the Substrate shim's
+	// Gateway (components/substrate-shim).
 	(AteGateway.namespace): {
 		for A in AteGateway.atespaces {
 			"\(A.name)-wildcard": dnsNames: [A.hostname]
