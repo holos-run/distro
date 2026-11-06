@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: splunk
+    namespace: argocd
+spec:
+    destination:
+        namespace: splunk
+        server: https://kubernetes.default.svc
+    project: splunk
+    source:
+        path: holos/deploy/clusters/cartography/projects/splunk
+        repoURL: https://github.com/holos-run/distro.git
+        targetRevision: main
+    syncPolicy:
+        automated:
+            prune: true
+            selfHeal: true
+        retry:
+            backoff:
+                duration: 5s
+                factor: 2
+                maxDuration: 3m
+            limit: 10
+        syncOptions:
+            - ServerSideApply=true
