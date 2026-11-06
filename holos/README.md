@@ -251,6 +251,9 @@ This is the whole procedure for a new cluster, in order. It crosses this
 README, [`providers/proxmox/README.md`](../providers/proxmox/README.md) and
 [`providers/talos/README.md`](../providers/talos/README.md), which link here
 rather than repeat it, and each step points at the section with its commands.
+A rebuild of a cluster that exists is not this procedure from the top: start
+at Rebuilding a cluster, below, which saves the cluster's state first and uses
+these steps from step 8.
 Steps 1 to 3 are a pull request, which merges before anything boots, since
 Argo CD syncs a cluster's tree from `main`. The rest are by hand.
 
@@ -299,12 +302,16 @@ optional entries have no hand step.
    mode and `cluster.sh up`, under [Bringing a cluster
    up](../providers/talos/README.md#bringing-a-cluster-up).
 9. **Bootstrap Argo CD.** The hand applies, the Ceph key and the root, under
-   Bootstrap Argo CD, below. The steps after this one are the hand steps that
-   section names, in the order the root reaches them.
+   Bootstrap Argo CD, below. On a rebuild, `state restore` runs in this step,
+   after the Ceph key and before the root (Rebuilding a cluster, below). The
+   steps after this one are the hand steps that section names, in the order
+   the root reaches them.
 10. **Trust the new root.** Once `private-ca-bundle` is `Healthy`, restart
     `argocd-server` (Bootstrap Argo CD, below) and export the cluster's root for
     the laptop (The private CA, below). It goes beside any other cluster's
-    root, which stays.
+    root, which stays. A rebuild that restored the root restarts `argocd-server`
+    and checks the fingerprint instead of exporting anything: the laptop already
+    trusts it (Rebuilding a cluster, below).
 11. *Only with `substrate`.* **The key pools**, with `ate-setup`, within ten
     minutes of the namespaces syncing (Bringing Substrate up, under Substrate,
     below).
@@ -314,12 +321,15 @@ optional entries have no hand step.
     `svc-quay-controller` was added, so a new cluster skips it. Every run passes
     `-quay-url`, whose default is treasury's.
 13. **The workers' trust.** The `TrustedRootsConfig` patch and `talosvm restart`
-    (Trusting the root on the workers, under Quay, below).
+    (Trusting the root on the workers, under Quay, below). A rebuild does this
+    even when it restored the root, since the patch went with the old nodes.
 14. *Only with `substrate`.* **The demo atespace and its actors** (Bringing
     Substrate up, under Substrate, below). Their image is copied into Quay, so
     this comes after step 12.
 15. *Only with `kagent`.* **The Anthropic key** (Adding the Anthropic key, under
-    kagent, below).
+    kagent, below). A rebuild skips this only if `state restore` listed
+    the key as created or left as is. If it skipped the key, this step stands:
+    `kagent` stays `Degraded` until the key is in.
 16. **Finish the root's sync.** If its retries ran out during these steps, sync
     it again (Bootstrap Argo CD, below). Every `Application` the cluster takes
     is then `Synced` and `Healthy`; on `cartography` the last before the root is
@@ -587,9 +597,11 @@ one that is not. approver-policy cannot check the constraints: it approves
 the root's request whatever constraints it carries, so only the root's
 `Certificate` in git sets them.
 
-A recreated cluster has a new root. Export it for the laptop, and for the
-kubectl plugin, from any namespace's ConfigMap, and check it carries the
-name constraints:
+A new cluster has a new root. A rebuild keeps the old one when it saves and
+restores it with `cmd/state` (Rebuilding a cluster, below), and then nothing
+here is needed. Otherwise, export the root for the laptop, and for the kubectl
+plugin, from any namespace's ConfigMap, and check it carries the name
+constraints:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -630,8 +642,8 @@ root without installing it, `--cacert "$root_ca"`.
 
 #### Renewing the root in place
 
-A rebuild with a new root needs none of this beyond the steps above for a
-recreated cluster. cert-manager does not reissue a certificate whose only
+A rebuild needs none of this: it restores the root, or it takes a new one by
+the steps above. cert-manager does not reissue a certificate whose only
 change is its name constraints, so a change to them reaches a running
 cluster only when the root is renewed by hand. With `rotationPolicy` `Never`
 the renew keeps the key and subject, so every certificate already issued
@@ -2513,7 +2525,7 @@ store does not reach it: the component mounts the namespace's `private-ca`
 ConfigMap into atelet at `/etc/ssl/private-ca` and sets `SSL_CERT_DIR` to
 `/etc/ssl/certs:/etc/ssl/private-ca`, as argocd-server and the platform controller
 do, which keeps the image's public roots. Go reads them once, at start, so
-after a rebuild, whose root is new, restart atelet
+after a rebuild with a new root, restart atelet
 (`kubectl -n ate-system rollout restart ds/atelet`).
 
 ```sh
@@ -2523,8 +2535,8 @@ kubectl ate create atespace demo
 
 # Into Quay, with the controller's token. buildx copies from the client, so
 # neither the daemon nor docker login is involved: the credential goes
-# straight into a throwaway config, and the cluster's root, new on every
-# rebuild, is trusted through SSL_CERT_DIR.
+# straight into a throwaway config, and the cluster's root is trusted through
+# SSL_CERT_DIR.
 digest=sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
 export DOCKER_CONFIG=$(mktemp -d)
 kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' > $DOCKER_CONFIG/root.pem
@@ -3034,8 +3046,11 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
 
 #### Adding the Anthropic key
 
-A cluster that does not name `kagent` skips this (Adding a cluster, above).
-The model key is the platform secret `anthropic-api-key`, key
+A cluster that does not name `kagent` skips this (Adding a cluster, above), and
+so does a rebuild whose `state restore` put the key back, which happens before
+`kagent` exists (Rebuilding a cluster, under Bootstrap Argo CD, below). A
+rebuild that skipped the key enters it here. The model key is the platform
+secret `anthropic-api-key`, key
 `ANTHROPIC_API_KEY` (Adding a platform secret, under Secrets Manager,
 above). The `ExternalSecret` `kagent/kagent-anthropic` copies it within the
 hour, or at once with:
@@ -3425,8 +3440,9 @@ for n in $(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' \
 done
 ```
 
-`certificates` is a string, so patching again replaces it: after a
-rebuild, run the same loop with the new root. containerd reads the trust store once, when it starts, so the
+`certificates` is a string, so patching again replaces it: after a rebuild,
+run the same loop, even with a restored root, since the new nodes do not have
+it. containerd reads the trust store once, when it starts, so the
 patch alone does not reach it: restart the workers with `talosvm restart`,
 after the first patch and after every rebuild's. It reboots them one at a
 time, each cordoned while it goes down, and moves to the next only once the
@@ -3923,8 +3939,9 @@ annotation is listed as an exception instead; none has one.
 ## Bootstrap Argo CD
 
 A cluster is built with its webhooks failing closed from the start
-(Admission webhooks, above). To rebuild one, tear the old one down first
-(Tearing a cluster down, below). Argo CD needs pod networking, and DNS to
+(Admission webhooks, above). To rebuild one, follow Rebuilding a cluster, below,
+which saves its state, tears it down and restores the state in this section.
+Argo CD needs pod networking, and DNS to
 reach GitHub, before it can sync anything, so a new cluster gets four
 components by hand: `cilium`, `coredns`, `argocd` and the root
 `Application` with its `AppProject`. It also gets `management-namespaces`
@@ -3970,7 +3987,24 @@ printf %s "$key" |
     'holos.run/share-roles=[{"principal":"/platform/owners","role":"owner"}]' -o yaml |
   kubectl create -f -
 unset key
+```
 
+On a rebuild, restore the cluster's state now (Rebuilding a cluster, below). A
+new cluster has none and skips this block. The command takes the cluster's own
+kubeconfig, and creates any namespace it needs, `cert-manager` among them. On
+a cluster without `kagent`, add `-skip seabank-prj-platform/anthropic-api-key`.
+
+```sh
+go run ../cmd/state restore -cluster "${cluster:?set cluster first}"
+```
+
+**Do not go on until it has exited cleanly, printing `Restored`, or `Nothing
+restored` if you skipped every resource on purpose. The next block starts
+cert-manager's path to a new root, so a restore that comes after it finds a
+different root on the cluster and refuses.** Once that has happened, see What
+goes wrong, under Rebuilding a cluster, below.
+
+```sh
 # The AppProject and the root alone: the root creates the other
 # Applications wave by wave. Applying the whole directory would create them
 # all at once, and they would sync in parallel.
@@ -4048,6 +4082,125 @@ Argo CD manages itself, `cilium` and `coredns`, so a bad commit to any of the
 three can cut its own path to GitHub; recover by applying them by hand as
 above from a fixed checkout.
 
+### Rebuilding a cluster
+
+A rebuild destroys a cluster's VMs and brings up a new cluster with the same
+name. Git brings nearly everything back. What it cannot bring back is the
+cluster's state, the things the cluster holds that a rebuild cannot make again
+or read from somewhere else. Today that is two Secrets:
+
+| State | Why it needs saving |
+| --- | --- |
+| `cert-manager/private-ca-root` | The private root is generated in the cluster and never enters git. A new one means trusting it again on the laptop and the claude VM. |
+| `seabank-prj-platform/anthropic-api-key` | A person typed it into the Secrets Manager. |
+
+The Ceph key is not state, since Ceph keeps it and the bootstrap reads it
+again. Every other generated Secret, the Keycloak passwords among them, is
+made anew, so `jeff`'s password changes (Logging in, below).
+
+`cmd/state` carries the state across. `state save` writes it, encrypted, to
+`~/$cluster-state.json.gpg`, and `state restore` puts it on the new cluster.
+A rebuild is these steps, in this order, from the repository's root on the
+claude VM unless a step says otherwise:
+
+1. **Open an `attach-gpg` tmux pane, and set the variables.** Both verbs need
+   the secret key unlocked: `state save` decrypts what it wrote before it
+   installs the file, and `state restore` decrypts it. Set all five variables
+   under Before you start. The file is encrypted to the key that signs your
+   commits, `git config user.signingkey`, or to `-recipient`.
+2. **Save, as the last step before destroying the cluster.** Tearing a cluster
+   down, below, has the command at the point it belongs: after everything else
+   that needs the cluster, right before `talosvm destroy -yes`. Anything that
+   changes on the cluster after it is lost. Do not destroy anything until it
+   has printed `Saved`.
+3. **Destroy the cluster.** The rest of Tearing a cluster down, below.
+4. **Bring the cluster up.** Adding a cluster, above, steps 8 and 9, in the
+   order they are written.
+5. **Restore, inside step 9.** Bootstrap Argo CD, above, has the command at the
+   point it belongs: after the management namespaces and the Ceph key, and
+   before the root `Application`. Do not apply the root until it has exited
+   cleanly, printing `Restored`, or `Nothing restored` if you skipped every
+   resource on purpose.
+6. **Check the root came through.** Once `private-ca-bundle` is `Healthy`,
+   compare the root the cluster serves with `$root_ca`, the copy exported the
+   last time the root was new (The private CA, above). Neither verb writes that
+   file, so the two agreeing means the cluster has the root your clients trust.
+
+   ```sh
+   export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+   kubectl -n default get configmap private-ca -o jsonpath='{.data.ca\.crt}' |
+     openssl x509 -noout -subject -fingerprint -sha256
+   openssl x509 -in "$root_ca" -noout -subject -fingerprint -sha256
+   ```
+
+   Different means cert-manager made a new root, or the state file held the
+   wrong one (What goes wrong, below). Comparing with the fingerprint
+   `state restore` printed proves less: that came from the file, so it shows
+   the restore took effect, not that the file held the right root.
+
+7. **Finish Adding a cluster, from step 10.** The restore changes three of its
+   steps:
+
+   | Step | With the state restored |
+   | --- | --- |
+   | 10, Trust the new root | Restart `argocd-server`. Export nothing: the laptop and the claude VM keep the root they trust. |
+   | 13, The workers' trust | Still needed. The patch went with the old nodes. |
+   | 15, The Anthropic key | Skipped if `state restore` listed the key as created or left as is: `kagent/kagent-anthropic` copies it. If it skipped the key, enter it here. |
+
+8. **Keep the file.** `~/$cluster-state.json.gpg` holds the cluster's root key.
+   It stays on the claude VM beside the only secret key that opens it, so
+   losing the VM loses both: a copy of the file and an export of the key
+   somewhere else are yours to make.
+
+Every resource is required, and a missing one fails the verb and writes
+nothing. `-skip <namespace>/<name>`, repeatable, on both verbs, is the only way
+past that, and each verb prints what it skipped:
+
+- A cluster without `kagent`, such as `cartography`, has no Anthropic key, so
+  it passes `-skip seabank-prj-platform/anthropic-api-key` to both verbs.
+- A rebuild that changes the cluster's domain wants a new root, since the
+  root's subject and name constraints come from it. Pass `-skip
+  cert-manager/private-ca-root` to `state restore`, and do steps 10 and 13 of
+  Adding a cluster as for a new cluster.
+- A rebuild that changes the brand wants a new root for the same reason, and
+  moves the platform namespace too, so the saved key belongs to a namespace
+  nothing reads. Name the old namespace as saved, and skip both: `state restore
+  -platform-namespace seabank-prj-platform -skip cert-manager/private-ca-root
+  -skip seabank-prj-platform/anthropic-api-key`. It prints `Nothing restored`,
+  which here is right. Do steps 10 and 13 as for a new cluster, and enter the
+  key by hand at step 15.
+
+After either, the file holds the old root, so the next `state save -force`
+refuses: move the file aside yourself first.
+
+#### What goes wrong
+
+- **The save says the file exists.** On a cluster that was restored from that
+  file, or saved to it before, pass `-force`. No save deletes a file: the old
+  one stays as `~/$cluster-state.json.gpg.<UTC timestamp>`. `-force` refuses if
+  the file cannot be decrypted, or if it holds a different root from the
+  cluster's. That refusal means the cluster was rebuilt without a restore, and
+  the file holds the root your clients trust: do not save, and follow the root
+  recovery below. To take the cluster's new root on purpose, move the file
+  aside yourself, then save.
+- **The save cannot decrypt what it wrote.** The key is locked or the file is
+  encrypted to a key that is not yours. It installs nothing. Run it in an
+  `attach-gpg` pane, and check `-recipient`.
+- **A resource is missing.** The save names it and writes nothing. Fix it, such
+  as by entering the Anthropic key, or skip it by name if the cluster really
+  does not have it.
+- **The root was applied before the restore. Tear down WITHOUT saving.** The
+  existing file holds the good root, and this cluster holds a new one, so there
+  is nothing here to keep. cert-manager has signed certificates from the new
+  root, and `state restore` refuses. Follow Tearing a cluster down, below, and
+  leave out its save block. Then bring the cluster up from step 8 of Adding a
+  cluster, and restore the existing file inside step 9. Do not reach for
+  `state restore -force`: it swaps the root under certificates already signed
+  by the other one, and cert-manager does not reissue them.
+- **Someone entered the key before the restore.** `state restore` refuses a
+  Secret with different data. Delete it to restore the saved one, or skip it to
+  keep the one on the cluster. A rerun leaves identical Secrets alone.
+
 ### Tearing a cluster down
 
 Destroying the VMs leaves two things behind. `cluster.sh gen` reuses a
@@ -4063,7 +4216,23 @@ images=$(kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeAttribute
 echo "$images"   # csi-vol-..., one per volume
 
 set -a; . ~/.config/holos/proxmox.env; set +a
-go run ./providers/talos/cmd/talosvm destroy -cluster "${cluster:?set cluster first}"        # prints the calls only
+go run ./providers/talos/cmd/talosvm destroy -cluster "${cluster:?set cluster first}"   # prints the calls only
+```
+
+The cluster still answers here, and this is the last time it will. Save its
+state now, as the last step before destroying it, in an `attach-gpg` pane
+(Rebuilding a cluster, above). A cluster that is going for good, with nothing
+to carry over, skips this block. On a cluster without `kagent`, add `-skip
+seabank-prj-platform/anthropic-api-key`.
+
+```sh
+go run ./cmd/state save -cluster "${cluster:?set cluster first}"
+```
+
+**Do not go on until it has printed `Saved`. Anything it did not save is lost
+with the VMs.**
+
+```sh
 go run ./providers/talos/cmd/talosvm destroy -cluster "${cluster:?set cluster first}" -yes
 mv ~/.config/holos/talos/$cluster ~/.config/holos/talos/$cluster.old-$(date +%FT%H%M)
 
@@ -4076,8 +4245,10 @@ ssh root@r620a rbd ls "${ceph_pool:?set ceph_pool first}"   # empty: the pool is
 expires within about 30 seconds, so retry once if it refuses. Keep the old
 state directory until the new cluster is up, then delete it, since it holds
 the old cluster's secrets. The new cluster comes up by Adding a cluster, above,
-from step 8. Its private root is new (The private CA, above). The pool and the Ceph
-user stay, so a rebuild keeps both, and the key.
+from step 8, with `state restore` inside step 9 (Rebuilding a cluster, above),
+which brings the private root back. Without it the root is new (The private
+CA, above). The pool and the Ceph user stay, so a rebuild keeps both, and the
+key.
 
 ### Logging in
 

@@ -14,8 +14,10 @@ import (
 // A self-signed bootstrap Issuer signs the root, stored as a Secret; the
 // ClusterIssuer issues every certificate in the cluster from that Secret;
 // trust-manager copies the root into a ConfigMap in every namespace. The root
-// is generated in the cluster and never enters git: a recreated cluster has a
-// new root, which the laptop must import again (README.md, "The private CA").
+// is generated in the cluster and never enters git: a new cluster has a new
+// root, which the laptop must import (README.md, "The private CA"), and a
+// rebuild keeps the old one by saving and restoring it with cmd/state
+// (README.md, "Rebuilding a cluster").
 PrivateCA: {
 	// namespace holds the root's Secret. It is cert-manager's cluster
 	// resource namespace, where a ClusterIssuer reads its CA Secret, and

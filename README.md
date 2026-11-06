@@ -95,7 +95,10 @@ under `providers/<provider>/cmd/<name>` and run from a checkout with
 `go run ./providers/<provider>/cmd/<name>`. Programs that work on the platform
 rather than a provider live under `cmd/<name>`, such as `cmd/quay-bootstrap`,
 which mints the platform controller's Quay token
-([holos/README.md](holos/README.md), Quay). See [the Go module](docs/go-module.md)
+([holos/README.md](holos/README.md), Quay), and `cmd/state`, which saves what a
+cluster holds before it is destroyed and restores it to the cluster that
+replaces it ([holos/README.md](holos/README.md), Rebuilding a cluster). See
+[the Go module](docs/go-module.md)
 for how `go.holos.run/distro` resolves to this repository.
 
 The platform, its components and the rendered manifests live under

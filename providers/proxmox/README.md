@@ -439,6 +439,10 @@ snippet, which it leaves blank when the snippets mount is not there to read.
 `destroy-unreferenced-disks`, which would scan every storage, including other
 tenants', for disks carrying the same VMID.
 
+A cluster's state goes with its VMs. To rebuild one, follow [Rebuilding a
+cluster](../../holos/README.md#rebuilding-a-cluster), which runs `cmd/state
+save` as the last step before `destroy -yes`.
+
 `resize` reads each VM's cores and memory, now and pending, from
 `GET /nodes/{node}/qemu/{vmid}/pending`, and for each VM to change sends
 `PUT /nodes/{node}/qemu/{vmid}/config` with `memory`, `cores` or both,
