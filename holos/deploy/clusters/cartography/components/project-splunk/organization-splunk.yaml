@@ -1,0 +1,28 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: splunk
+    namespace: splunk
+spec:
+    credentialsSecretRef:
+        name: seabank-controller-quay-creds
+    deletionPolicy: Orphan
+    email: quay+splunk@bank.internal
+    name: splunk
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin
+        - name: projectowners
+          oidcGroup: /projects/splunk/roles/owner
+          role: admin
+        - name: projecteditors
+          oidcGroup: /projects/splunk/roles/editor
+          repositoryPermission: write
+          role: creator
+        - name: projectviewers
+          oidcGroup: /projects/splunk/roles/viewer
+          repositoryPermission: read
+          role: member

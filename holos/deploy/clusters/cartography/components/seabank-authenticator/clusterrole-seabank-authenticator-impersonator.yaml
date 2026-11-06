@@ -7,6 +7,7 @@ rules:
   - ""
   resourceNames:
   - oidc:jeff
+  - oidc:alex
   resources:
   - users
   verbs:
@@ -15,6 +16,7 @@ rules:
   - ""
   resourceNames:
   - /platform/owners
+  - /projects/splunk/roles/owner
   resources:
   - groups
   verbs:

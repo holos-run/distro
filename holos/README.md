@@ -333,7 +333,7 @@ optional entries have no hand step.
 16. **Finish the root's sync.** If its retries ran out during these steps, sync
     it again (Bootstrap Argo CD, below). Every `Application` the cluster takes
     is then `Synced` and `Healthy`; on `cartography` the last before the root is
-    `quay`.
+    `project-splunk`.
 17. **Log in and check.** As `jeff`, with the password from Secret
     `keycloak/seabank-user-jeff`, generated per cluster (Logging in, below), and
     with `kubectl` as `$cluster-oidc` (Logging in with kubectl, under
@@ -3411,8 +3411,10 @@ cd ..   # the repository's root
 go run ./cmd/quay-bootstrap token -quay-url https://quay.$domain
 kubectl -n seabank-controller annotate externalsecret seabank-controller-quay-creds force-sync=$(date +%s) --overwrite
 
-# 3. Only on a cluster with substrate or a claim: nothing else renders an
-#    organization or repository, and a wait on none is an error, not a pass.
+# 3. Only on a cluster with substrate: nothing else renders an organization or
+#    repository in quay, and a wait on none is an error, not a pass. A claim's
+#    organization is in its own namespace, once the root reaches its
+#    Application: Checking a project, below.
 kubectl -n quay wait --for=condition=Ready organization --all --timeout=5m
 kubectl -n quay wait --for=condition=Ready repository --all --timeout=5m
 ```
@@ -3678,8 +3680,9 @@ Q66), and on any other cluster it renders nothing:
   the privileged Pod Security level.
 
 No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
-editor and viewer groups. `projects/` holds three claims, `payments`, `ledger`
-and `checkout`, each selecting `treasury`.
+editor and viewer groups. `projects/` holds four claims: `payments`, `ledger`
+and `checkout`, each selecting `treasury`, and `splunk`, selecting
+`cartography`.
 
 ### Adding a project
 

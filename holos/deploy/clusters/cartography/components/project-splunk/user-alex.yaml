@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: alex
+    namespace: splunk
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: alex@bank.internal
+    instanceRef:
+        name: default
+        namespace: keycloak
+    username: alex
