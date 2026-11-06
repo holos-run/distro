@@ -56,6 +56,11 @@ kernel arguments at its console.
 
 ### Usage
 
+`destroy -yes` takes the cluster's private root and the Anthropic key with it.
+To rebuild a cluster, do not run it on its own: follow [Rebuilding a
+cluster](../../holos/README.md#rebuilding-a-cluster), which runs `cmd/state
+save` as the last step before it.
+
 ```sh
 set -a; . ~/.config/holos/proxmox.env; set +a
 
@@ -407,9 +412,10 @@ can no longer be administered.
 
 This section is steps 7 and 8 of [Adding a
 cluster](../../holos/README.md#adding-a-cluster), the whole procedure for a
-new cluster. A rebuild is [Tearing a cluster
-down](../../holos/README.md#tearing-a-cluster-down), then that procedure from
-step 8.
+new cluster. A rebuild is [Rebuilding a
+cluster](../../holos/README.md#rebuilding-a-cluster), which saves the cluster's
+state with `cmd/state` before tearing it down, then uses that procedure from
+step 8 and restores the state inside step 9.
 
 `kubectl`, `jq`, Go and the `talosctl` of the cluster's `talosVersion` are
 needed, and `gen` and `apply` read the inventory with `talosvm list`, which

@@ -543,8 +543,8 @@ let Patches = [
 	// reads every file in each SSL_CERT_DIR directory, after its bundle
 	// file, which SSL_CERT_FILE, unset, leaves in place. So an actor image
 	// in Quay, at quay.treasury.bank.internal behind the gateway's private
-	// wildcard, pulls. Go reads the pool once, at start: a new root, after a
-	// rebuild, needs atelet restarted.
+	// wildcard, pulls. Go reads the pool once, at start: a new root needs
+	// atelet restarted.
 	(#StrategicPatch & {
 		apiVersion: "apps/v1"
 		kind:       "DaemonSet"
