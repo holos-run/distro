@@ -1,0 +1,16 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Client
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-splunk
+    namespace: splunk
+spec:
+    clientId: planboard-splunk
+    description: Planboard for the project splunk
+    instanceRef:
+        name: default
+        namespace: keycloak
+    redirectUris:
+        - https://planboard.splunk.cartography.bank.internal/oauth2/callback
+    type: public

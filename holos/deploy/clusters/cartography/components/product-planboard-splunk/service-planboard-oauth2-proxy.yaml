@@ -12,4 +12,5 @@ spec:
           protocol: TCP
           targetPort: 4180
     selector:
-        holos.run/placeholder: planboard-oauth2-proxy
+        app.kubernetes.io/instance: planboard
+        app.kubernetes.io/name: oauth2-proxy

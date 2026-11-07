@@ -1,0 +1,22 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-oauth2-proxy
+    namespace: splunk
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                principals:
+                    - cluster.local/ns/istio-ingress/sa/ingress-gateway
+          to:
+            - operation:
+                ports:
+                    - "4180"
+    selector:
+        matchLabels:
+            app.kubernetes.io/instance: planboard
+            app.kubernetes.io/name: oauth2-proxy
