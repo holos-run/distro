@@ -133,6 +133,16 @@ let AG = AteGateway
 let IG = IngressGateway
 let Zone = IG.claimed[NAME]
 
+// Bound is whether the claim has a binding on this cluster (clusterBindings,
+// collections.cue), and KeycloakKinds the kinds of keycloak.holos.run the
+// claim's namespace may make in the realm (the ReferenceGrant, below): the
+// claim's own Group, User and GroupMembership, and, where it is bound,
+// Client, which a bound product makes for its login, as Planboard's does
+// (components/product-planboard). Only there, so a cluster with no binding
+// renders as it did (Second_Cluster Q6).
+let Bound = len([for B in clusterBindings[Cluster.name] if B.project == NAME {B}]) > 0
+let KeycloakKinds = ["Group", "User", "GroupMembership", if Bound {"Client"}]
+
 // ProjectClient is the ServiceAccount the claim makes in its namespace, the
 // one principal of the atespace's access policy. A token for it owns this
 // atespace and nothing else, so an owner of the project, who may mint one,
@@ -272,18 +282,20 @@ if ProjectName != "" {holos: spec: artifacts: [
 				}
 			}
 
-			// The Keycloak resources above name the Instance in keycloak,
-			// another namespace, which holos-controller allows only with a
-			// ReferenceGrant there, from these kinds in the project's
-			// namespace to that one Instance. Nothing else in the namespace may
-			// create or change one: the admin ClusterRole the owners hold has
-			// no write verb on holos-controller's kinds (only get, list and
-			// watch on GroupMemberships, which the controller's
+			// The Keycloak resources above, and a bound product's Client,
+			// name the Instance in keycloak, another namespace, which
+			// holos-controller allows only with a ReferenceGrant there, from
+			// these kinds (KeycloakKinds) in the project's namespace to that
+			// one Instance. Nothing else in the namespace may create or change
+			// one: the admin ClusterRole the owners hold has no write verb on
+			// holos-controller's kinds (only get, list and watch on
+			// GroupMemberships, which the controller's
 			// groupmembership-viewer-role aggregates to view), and the
-			// project's AppProject refuses them. Wave -1, so it exists before the resources that
-			// need it: a Group reconciled first reports ReferenceNotGranted
-			// until its retry. It must also outlive them: their finalizers
-			// need it to reach the Instance (README.md, Removing a project).
+			// project's AppProject refuses them. Wave -1, so it exists before
+			// the resources that need it: a Group reconciled first reports
+			// ReferenceNotGranted until its retry. It must also outlive them:
+			// their finalizers need it to reach the Instance (README.md,
+			// Removing a project).
 			ReferenceGrant: "project-\(NAME)": {
 				apiVersion: "security.holos.run/v1alpha1"
 				metadata: {
@@ -292,7 +304,7 @@ if ProjectName != "" {holos: spec: artifacts: [
 					annotations: "argocd.argoproj.io/sync-wave": "-1"
 				}
 				spec: {
-					from: [for KIND in ["Group", "User", "GroupMembership"] {
+					from: [for KIND in KeycloakKinds {
 						group:     "keycloak.holos.run"
 						kind:      KIND
 						namespace: NAME

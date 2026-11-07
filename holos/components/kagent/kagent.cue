@@ -258,7 +258,9 @@ let Values = {
 
 	"oauth2-proxy": {
 		enabled: true
-		image: tag: "v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048"
+		// The pin is shared with each Planboard binding's proxy
+		// (OAuth2Proxy, components/oauth2-proxy.cue).
+		image: tag: OAuth2Proxy.tag
 		// client-id, client-secret and cookie-secret, from the
 		// ExternalSecret below.
 		config: existingSecret: Secrets.oidc

@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-oauth2-proxy
+    namespace: splunk
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app.kubernetes.io/instance: planboard
+            app.kubernetes.io/name: oauth2-proxy
+    template:
+        metadata:
+            labels:
+                app.kubernetes.io/instance: planboard
+                app.kubernetes.io/name: oauth2-proxy
+                holos.run/project: splunk
+        spec:
+            automountServiceAccountToken: false
+            containers:
+                - args:
+                    - --http-address=0.0.0.0:4180
+                    - --provider=oidc
+                    - --oidc-issuer-url=https://keycloak.cartography.bank.internal/realms/default
+                    - --client-id=planboard-splunk
+                    - --client-secret-file=/dev/null
+                    - --code-challenge-method=S256
+                    - --scope=openid profile email groups
+                    - --redirect-url=https://planboard.splunk.cartography.bank.internal/oauth2/callback
+                    - --upstream=http://planboard.splunk.ate.cartography.bank.internal
+                    - --pass-authorization-header=true
+                    - --set-authorization-header=false
+                    - --pass-access-token=false
+                    - --pass-user-headers=false
+                    - --pass-basic-auth=false
+                    - --pass-host-header=false
+                    - --cookie-refresh=1m
+                    - --cookie-secure=true
+                    - --cookie-samesite=lax
+                    - --email-domain=*
+                    - --skip-provider-button=true
+                  env:
+                    - name: OAUTH2_PROXY_COOKIE_SECRET
+                      valueFrom:
+                        secretKeyRef:
+                            key: cookie-secret
+                            name: planboard-oauth2-proxy-cookie
+                    - name: SSL_CERT_FILE
+                      value: /etc/private-ca/ca.crt
+                  image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048
+                  livenessProbe:
+                    httpGet:
+                        path: /ping
+                        port: http
+                  name: oauth2-proxy
+                  ports:
+                    - containerPort: 4180
+                      name: http
+                      protocol: TCP
+                  readinessProbe:
+                    httpGet:
+                        path: /ready
+                        port: http
+                  resources:
+                    limits:
+                        memory: 128Mi
+                    requests:
+                        cpu: 10m
+                        memory: 32Mi
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                        drop:
+                            - ALL
+                    readOnlyRootFilesystem: true
+                  volumeMounts:
+                    - mountPath: /etc/private-ca
+                      name: private-ca
+                      readOnly: true
+            securityContext:
+                runAsGroup: 2000
+                runAsNonRoot: true
+                runAsUser: 2000
+                seccompProfile:
+                    type: RuntimeDefault
+            serviceAccountName: planboard-oauth2-proxy
+            volumes:
+                - configMap:
+                    name: private-ca
+                  name: private-ca

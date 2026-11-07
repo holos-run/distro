@@ -37,10 +37,15 @@ import (
 //     difference, so the automated sync runs it;
 //   - the board's hostname on the ingress Gateway,
 //     planboard.<claim>.<domain>, an HTTPRoute in the claim's namespace on the
-//     claim's zone (IngressGateway.#Claim), to a placeholder Service where the
-//     login in front of the board will be.
+//     claim's zone (IngressGateway.#Claim), to the board's login;
+//   - the login: oauth2-proxy in the claim's namespace, its ServiceAccount,
+//     Service and generated cookie secret, an Istio AuthorizationPolicy that
+//     admits the ingress Gateway to it and nothing else, and the Keycloak
+//     public client planboard-<claim> (Planboard.#Client) it logs in through
+//     with PKCE, so no client secret exists anywhere.
 //
-// README.md, The board as an actor, has what the owner does by hand.
+// README.md, The board as an actor, has what the owner does by hand, and The
+// board's login what the login does.
 
 // ProjectName and ProductName are the binding this instance renders, the
 // parameters its registry entry passes. Without them, as `cue vet ./...`
@@ -325,17 +330,113 @@ if ProjectName != "" {
 	let Zone = IngressGateway.claimed[CLAIM]
 	let Host = "planboard.\(Zone.domain)"
 
-	// Proxy is the Service the board's route goes to: oauth2-proxy's, once the
-	// binding renders it in the claim's namespace (in the Planboard_On_Holos
-	// planning project, a-pkce-client-and-oauth2-proxy-per-binding). Until
-	// then it is a placeholder. The name and port are the ones kagent's
-	// oauth2-proxy has (Kagent.proxy), <release>-oauth2-proxy on 4180, with
-	// the release planboard, so the chart's Service can take this one over in
-	// place and the route need not change.
+	// ActorHost is the board's hostname through the Substrate shim, which
+	// the claim's members reach with an ID token, and the login's upstream.
+	let ActorHost = "\(Actor).\(CLAIM).\(AteGateway.domain)"
+
+	// Proxy is the login, oauth2-proxy, in the claim's namespace: its
+	// Deployment, ServiceAccount and Service all have the name, which is the
+	// one kagent's chart gives its own (Kagent.proxy), <release>-oauth2-proxy
+	// on 4180, with the release planboard. pods are its pods' labels, which
+	// the Service and the Istio AuthorizationPolicy select on, named as the
+	// chart names kagent's. cookie is the generated Secret holding its cookie
+	// secret.
 	let Proxy = {
 		service: "planboard-oauth2-proxy"
 		port:    4180
+		pods: {
+			"app.kubernetes.io/name":     "oauth2-proxy"
+			"app.kubernetes.io/instance": "planboard"
+		}
+		cookie: "\(service)-cookie"
 	}
+
+	// Login is the board's Keycloak client, planboard-<claim>, and its one
+	// redirect URI, oauth2-proxy's callback on the board's hostname.
+	let Login = {
+		client: (Planboard.#Client & {project: CLAIM}).id
+		callback: "https://\(Host)/oauth2/callback"
+	}
+
+	// CAMount is where the private-ca ConfigMap is mounted in the proxy.
+	let CAMount = "/etc/private-ca"
+
+	// ProxyArgs are oauth2-proxy's arguments, every one stated, with no
+	// configuration file.
+	//
+	// The client is public and the flow PKCE, so there is no client secret
+	// to hold in a namespace the owner is admin in. oauth2-proxy refuses to
+	// start with no secret; a secret file of /dev/null reads as an empty one,
+	// which is the way past that check oauth2-proxy's issue 1714 documents,
+	// and Keycloak skips the secret for a public client. The scopes are the
+	// realm's defaults, as kagent's chart asks for them, groups among them,
+	// so the ID token carries the full group paths the shim's rule reads.
+	//
+	// Upstream, oauth2-proxy sends the session's ID token as a bearer token,
+	// which the shim verifies again, and nothing else of the user: not the
+	// access token, and no X-Forwarded-User, -Email, -Groups or
+	// -Preferred-Username, which pass-user-headers and pass-basic-auth would
+	// each set. With both off oauth2-proxy also leaves a client's own copies
+	// in place, so the route removes them (HTTPRoute, below). The ID token is
+	// not set on the browser's response. The Host is the upstream's, the
+	// actor's hostname, the only one the shim's Lua takes. The upstream is
+	// plain HTTP, so a waypoint in the claim's namespace can read the
+	// request's headers and originate TLS to the shim (in the
+	// Planboard_On_Holos planning project,
+	// the-project-waypoint-and-the-shim-hop); until it is there, the name
+	// resolves to the ingress Gateway, whose port 80 redirects to https.
+	//
+	// cookie-refresh: Keycloak's ID token lives five minutes, so oauth2-proxy
+	// redeems the session's refresh token for a new one on a request once
+	// the session is a minute old, as kagent's does. Any user of the realm may
+	// log in: the shim decides who reaches the board, by the token's groups.
+	// The provider button is skipped, so a request with no session goes
+	// straight to Keycloak.
+	//
+	// Not skip-jwt-bearer-tokens: a bearer token in a request is not a login
+	// here, and a token for the board's client is the shim's to take. Not
+	// reverse-proxy: with it oauth2-proxy would read X-Forwarded-Uri, which
+	// the ingress Gateway passes through from the client, for its skip-auth
+	// rules and redirects. The metrics port stays off, since nothing scrapes
+	// it.
+	let ProxyArgs = [
+		"--http-address=0.0.0.0:\(Proxy.port)",
+		"--provider=oidc",
+		"--oidc-issuer-url=\(Keycloak.issuer)",
+		"--client-id=\(Login.client)",
+		"--client-secret-file=/dev/null",
+		"--code-challenge-method=S256",
+		"--scope=openid profile email groups",
+		"--redirect-url=\(Login.callback)",
+		"--upstream=http://\(ActorHost)",
+		"--pass-authorization-header=true",
+		"--set-authorization-header=false",
+		"--pass-access-token=false",
+		"--pass-user-headers=false",
+		"--pass-basic-auth=false",
+		"--pass-host-header=false",
+		"--cookie-refresh=1m",
+		"--cookie-secure=true",
+		"--cookie-samesite=lax",
+		"--email-domain=*",
+		"--skip-provider-button=true",
+	]
+
+	// IdentityHeaders are the request headers an auth proxy uses to name the
+	// user, which the board's route removes from every request before it
+	// reaches oauth2-proxy (ProxyArgs).
+	let IdentityHeaders = [
+		"X-Forwarded-User",
+		"X-Forwarded-Email",
+		"X-Forwarded-Groups",
+		"X-Forwarded-Preferred-Username",
+		"X-Auth-Request-User",
+		"X-Auth-Request-Email",
+		"X-Auth-Request-Groups",
+		"X-Auth-Request-Preferred-Username",
+		"X-Auth-Request-Access-Token",
+		"X-Forwarded-Access-Token",
+	]
 
 	// Hook is held here because two objects read it, the Job and its ConfigMap.
 	let Hook = #AteAPIJob & {
@@ -408,7 +509,10 @@ if ProjectName != "" {
 			// Gateway add up: the claim's own (components/project) stays the owners',
 			// on every host of the atespace, and another actor there stays closed to
 			// editors and viewers. Owners are named again so that this rule can take
-			// an audience the claim's cannot.
+			// an audience the claim's cannot: the board's client, whose tokens the
+			// login forwards, beside kubectl's. Every other rule on the Gateway
+			// takes kubectl's alone (AteGateway.#Rule), so a token of the board's
+			// client is good on this host and on no other actor of any atespace.
 			AuthorizationPolicy: "product-planboard-\(CLAIM)": {
 				metadata: {
 					namespace: AteGateway.namespace
@@ -422,11 +526,12 @@ if ProjectName != "" {
 					}]
 					action: "ALLOW"
 					rules: [(AteGateway.#Rule & {
-						hostname: "\(Actor).\(CLAIM).\(AteGateway.domain)"
+						hostname: ActorHost
 						groups: list.Concat([
 							[for ROLE in #ProjectRoles {(#ProjectRoleGroupPath & {project: CLAIM, role: ROLE}).claim}],
 							[Keycloak.groups.owners.path],
 						])
+						audiences: [Keycloak.clients.kubectl, Login.client]
 					}).out]
 				}
 			}
@@ -462,6 +567,9 @@ if ProjectName != "" {
 			// alone. The platform's, not the owner's: the route decides what is
 			// in front of the board. Every path goes to the proxy, as kagent's
 			// do, and none to the board itself, which would bypass the login.
+			// The gateway removes a client's identity headers first, which
+			// oauth2-proxy, setting none of its own, would pass on
+			// (ProxyArgs).
 			HTTPRoute: planboard: {
 				metadata: {
 					namespace: CLAIM
@@ -470,24 +578,119 @@ if ProjectName != "" {
 				spec: {
 					parentRefs: [Zone.parentRef]
 					hostnames: [Host]
-					rules: [{backendRefs: [{name: Proxy.service, port: Proxy.port}]}]
+					rules: [{
+						filters: [{
+							type: "RequestHeaderModifier"
+							requestHeaderModifier: remove: IdentityHeaders
+						}]
+						backendRefs: [{name: Proxy.service, port: Proxy.port}]
+					}]
 				}
 			}
 
-			// The placeholder for oauth2-proxy's Service (Proxy), so the route
-			// resolves: with no endpoints the gateway answers 503, which is
-			// what the board's hostname should do until the login is there.
-			// The selector is a label nothing in the platform puts on a pod.
-			// The owner, admin in the namespace, could make a pod that has it,
-			// and so could serve their own hostname; nothing else of the board
-			// or its users' sessions passes through here yet.
+			// The board's client: public, so it has no secret, and standard
+			// flow to oauth2-proxy's one callback, with PKCE. It gets the
+			// realm's default scopes, which oauth2-proxy asks for by name. In
+			// the claim's namespace, naming the Instance in keycloak, which
+			// the claim's ReferenceGrant there allows for Client where the
+			// claim has a binding (components/project).
+			Client: (Login.client): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					clientId:    Login.client
+					type:        "public"
+					description: "Planboard for the project \(CLAIM)"
+					instanceRef: PlatformController.instance
+					redirectUris: [Login.callback]
+				}
+			}
+
+			// oauth2-proxy's own identity: the mesh's for this workload, which
+			// no other pod in the namespace shares unless the owner makes one
+			// with it. It calls no Kubernetes API, so it mounts no token.
+			ServiceAccount: (Proxy.service): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				automountServiceAccountToken: false
+			}
+
+			// oauth2-proxy, one replica, with the image kagent's runs
+			// (OAuth2Proxy) and the chart's user, probes and security
+			// context, and kagent's resources. The cookie secret comes from
+			// the generated Secret (below) and the private root from
+			// trust-manager's ConfigMap, which every namespace has: Keycloak
+			// is reached at its public name through the ingress Gateway, whose
+			// certificate the private CA issues. The kubelet's probes reach an
+			// ambient pod from 169.254.7.127, which ztunnel's policy does not
+			// see.
+			Deployment: (Proxy.service): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					replicas: 1
+					selector: matchLabels: Proxy.pods
+					template: {
+						metadata: labels: Proxy.pods & Labels
+						spec: {
+							serviceAccountName:           Proxy.service
+							automountServiceAccountToken: false
+							securityContext: {
+								runAsNonRoot: true
+								runAsUser:    2000
+								runAsGroup:   2000
+								seccompProfile: type: "RuntimeDefault"
+							}
+							containers: [{
+								name:  "oauth2-proxy"
+								image: OAuth2Proxy.image
+								args:  ProxyArgs
+								env: [
+									{
+										name: "OAUTH2_PROXY_COOKIE_SECRET"
+										valueFrom: secretKeyRef: {name: Proxy.cookie, key: "cookie-secret"}
+									},
+									{name: "SSL_CERT_FILE", value: "\(CAMount)/\(PrivateCA.bundleKey)"},
+								]
+								ports: [{name: "http", containerPort: Proxy.port, protocol: "TCP"}]
+								livenessProbe: httpGet: {path: "/ping", port: "http"}
+								readinessProbe: httpGet: {path: "/ready", port: "http"}
+								volumeMounts: [{name: "private-ca", mountPath: CAMount, readOnly: true}]
+								resources: {
+									requests: {cpu: "10m", memory: "32Mi"}
+									limits: memory: "128Mi"
+								}
+								securityContext: {
+									allowPrivilegeEscalation: false
+									readOnlyRootFilesystem:   true
+									capabilities: drop: ["ALL"]
+								}
+							}]
+							volumes: [{name: "private-ca", configMap: name: PrivateCA.bundle}]
+						}
+					}
+				}
+			}
+
+			// The route's backend, oauth2-proxy on 4180. The owner is admin in
+			// the namespace, so a pod of theirs with the proxy's labels would
+			// join the Service and receive the board's traffic, viewers'
+			// session cookies included; nothing in Kubernetes stops it short of
+			// taking pod create away from the owner, and the gap is accepted
+			// for now.
 			Service: (Proxy.service): {
 				metadata: {
 					namespace: CLAIM
 					labels:    Labels
 				}
 				spec: {
-					selector: "holos.run/placeholder": Proxy.service
+					selector: Proxy.pods
 					ports: [{
 						name:       "http"
 						port:       Proxy.port
@@ -496,6 +699,40 @@ if ProjectName != "" {
 					}]
 				}
 			}
+
+			// The claim's namespace is in ambient, so the ingress Gateway
+			// reaches oauth2-proxy over HBONE, where a NetworkPolicy would see
+			// port 15008 and not 4180. ztunnel enforces this instead: the
+			// gateway's mesh identity, on 4180 alone, and nothing else, as
+			// holos-authenticator admits its gateway. The proxy's own egress
+			// is the waypoint's to narrow (in the Planboard_On_Holos planning
+			// project, the-project-waypoint-and-the-shim-hop).
+			AuthorizationPolicy: (Proxy.service): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					selector: matchLabels: Proxy.pods
+					action: "ALLOW"
+					rules: [{
+						from: [{source: principals: [IngressGateway.principal]}]
+						to: [{operation: ports: ["\(Proxy.port)"]}]
+					}]
+				}
+			}
+
+			// The cookie secret, 32 letters and digits, which oauth2-proxy
+			// decodes as base64url to 24 bytes, an AES-192 key, generated in the claim's namespace as
+			// kagent's is. The owner, admin there, can read it, and so could
+			// decrypt a viewer's session cookie, which holds that viewer's
+			// tokens for the board's client: good for the board and nothing
+			// else, whose content the owner already decides. Accepted.
+			(#GeneratedSecret & {
+				name:      Proxy.cookie
+				namespace: CLAIM
+				generator: spec: secretKeys: ["cookie-secret"]
+			}).resources
 		}
 		project: {}
 	}).artifacts

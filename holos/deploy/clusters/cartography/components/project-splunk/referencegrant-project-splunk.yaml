@@ -18,6 +18,9 @@ spec:
         - group: keycloak.holos.run
           kind: GroupMembership
           namespace: splunk
+        - group: keycloak.holos.run
+          kind: Client
+          namespace: splunk
     to:
         - group: keycloak.holos.run
           kind: Instance

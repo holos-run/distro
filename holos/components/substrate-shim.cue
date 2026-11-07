@@ -51,17 +51,20 @@ AteGateway: {
 	// with or without the port, a verified token from the realm, and one of its
 	// groups in the token's groups claim.
 	//
-	// On a cluster with a binding, it also pins the token's audience. The
-	// RequestAuthentication takes only the kubectl client today, so the clause
-	// changes nothing yet, but a board's login adds the claim's client to that
-	// one shared list (a-pkce-client-and-oauth2-proxy-per-binding, in the
-	// Planboard_On_Holos planning project), and a token of that audience would
-	// then be good on every atespace its groups reach. Pinned here, each rule
-	// names the audiences its hosts take. The gate keeps a cluster with no
-	// binding byte-identical until after Ate Con (Second_Cluster Q6).
+	// On a cluster with a binding, it also pins the token's audience to
+	// audiences, kubectl's unless the rule says otherwise. The
+	// RequestAuthentication is one list for the whole Gateway: kubectl and
+	// each bound board's client (Planboard.clients), so without the pin a
+	// board's token would be good on every atespace its groups reach. Pinned
+	// here, each rule names the audiences its hosts take, and only a board's
+	// own rule names its client (components/product-planboard). The gate keeps
+	// a cluster with no binding byte-identical until after Ate Con
+	// (Second_Cluster Q6); such a cluster's RequestAuthentication takes
+	// kubectl alone, so the clause would change nothing there.
 	#Rule: {
 		hostname: string
 		groups: [...string]
+		audiences: [...string] | *[Keycloak.clients.kubectl]
 
 		out: {
 			from: [{source: requestPrincipals: ["\(Keycloak.issuer)/*"]}]
@@ -72,8 +75,8 @@ AteGateway: {
 					values: list.SortStrings(groups)
 				},
 				if len(clusterBindings[Cluster.name]) > 0 {
-					key: "request.auth.audiences"
-					values: [Keycloak.clients.kubectl]
+					key:    "request.auth.audiences"
+					values: list.SortStrings(audiences)
 				},
 			]
 		}

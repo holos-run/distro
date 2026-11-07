@@ -20,6 +20,10 @@ IngressGateway: {
 	// Substrate router does not admit it: only the shim's gateway
 	// (AteGateway), behind the ate listener, reaches the router.
 	serviceAccount: "ingress-gateway"
+	// principal is that mesh identity as an Istio AuthorizationPolicy names
+	// it, which an ambient workload behind the gateway admits, as a Planboard
+	// binding's login does (components/product-planboard).
+	principal: "\(Istio.trustDomain)/ns/\(Self.namespace)/sa/\(serviceAccount)"
 	// parameters is the ConfigMap the Gateway's infrastructure.parametersRef
 	// names: istiod merges its deployment key into the Deployment it
 	// generates.

@@ -1,6 +1,9 @@
 package holos
 
-import "encoding/yaml"
+import (
+	"encoding/yaml"
+	"list"
+)
 
 // substrate-shim is the Istio shim in front of Substrate's router (overview
 // §5): the only way a person reaches an actor, at
@@ -18,7 +21,8 @@ import "encoding/yaml"
 //	  -> the shim Gateway's listener for the atespace, which terminates TLS
 //	     with the atespace's wildcard certificate
 //	  -> RequestAuthentication: a bearer token, if any, must be a Keycloak ID
-//	     token for the kubectl client; Envoy drops it once verified
+//	     token for the kubectl client or a bound board's; Envoy drops it once
+//	     verified
 //	  -> AuthorizationPolicy: the host's atespace must have a rule, the
 //	     request a token, and the token's groups claim one of the
 //	     atespace's groups; everything else is 403
@@ -270,8 +274,12 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 
 		// A bearer token, if the request carries one, must be a Keycloak ID
 		// token from the platform's realm for the kubectl client (ADR 0002),
-		// the token kubectl oidc-login prints; anything else is 401. A
-		// request without one passes here and is refused by the
+		// the token kubectl oidc-login prints, or for the client of a board
+		// bound on this cluster (Planboard.clients), the token that board's
+		// login forwards; anything else is 401. The list is the Gateway's
+		// whole, so each rule pins the audiences its hosts take
+		// (AteGateway.#Rule), and a board's token is good on its board's host
+		// alone. A request without one passes here and is refused by the
 		// AuthorizationPolicy. Only the Authorization header is read, not
 		// Istio's default access_token query parameter, so a token never
 		// rides in a URL. Envoy removes the token once it is verified, so an
@@ -282,7 +290,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 				targetRefs: [GatewayRef]
 				jwtRules: [{
 					issuer: Keycloak.issuer
-					audiences: [Keycloak.clients.kubectl]
+					audiences: list.Concat([[Keycloak.clients.kubectl], Planboard.clients])
 					fromHeaders: [{name: "Authorization", prefix: "Bearer "}]
 					forwardOriginalToken: false
 				}]

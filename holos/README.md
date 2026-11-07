@@ -402,7 +402,7 @@ entries have no hand step.
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
 | `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim; and on a cluster where a binding names it, its zone on the ingress Gateway, a `ListenerSet` with a wildcard of its own |
-| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), and the board's `HTTPRoute` on the ingress Gateway with the placeholder `Service` it routes to (The board's hostname, below) |
+| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>` (The board's hostname and The board's login, below) |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -2942,7 +2942,9 @@ component reads the same definition for the router's allowed list.
   add an atespace, as each ProjectClaim does (Adding an atespace, below).
 - **Authentication.** `RequestAuthentication` `keycloak` accepts an ID token
   from the realm's issuer for the `kubectl` client (ADR 0002), the token
-  `kubectl oidc-login get-token` prints; any other bearer token gets 401.
+  `kubectl oidc-login get-token` prints, or, on a cluster with a board, for
+  a bound board's client (The board's login, below); any other bearer token
+  gets 401.
   `forwardOriginalToken` is false, so Envoy removes the `Authorization`
   header once the token is verified and the actor never holds it. A request
   with no token passes this step.
@@ -3109,7 +3111,8 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   The catalog's fourth key, `release`, stays unset: the controller refuses to
   start when it is set and differs from its own version, which is the
   fork's tag. The tool server and oauth2-proxy images are the subcharts'
-  defaults, by digest.
+  defaults, by digest; oauth2-proxy's pin is `OAuth2Proxy`
+  (`components/oauth2-proxy.cue`), which each board's login reads too.
 - **Substrate.** `controller.substrateClientCertificate` mounts the pod
   identity certificate and the servicedns trust bundle; the controller dials
   `api.ate-system.svc:443` and `https://atenet-router.ate-system.svc:443`
@@ -4512,13 +4515,13 @@ The next request wakes it from `/data`.
 
 #### The board's hostname
 
-The board has a second hostname, on the ingress Gateway, where a browser will
-reach it once a login is in front of it. The actor's hostname through the shim
-stays as it is, for a client with an ID token:
+The board has a second hostname, on the ingress Gateway, where a browser
+reaches it through a login (The board's login, below). The actor's hostname
+through the shim stays as it is, for a client with an ID token:
 
 | Hostname | Gateway | Route | What answers |
 | --- | --- | --- | --- |
-| `https://planboard.<claim>.<cluster>.bank.internal` | `istio-ingress/ingress`, the `ListenerSet` `ingress-project-<claim>` | `HTTPRoute` `planboard` in `<claim>` | The `Service` `planboard-oauth2-proxy` in `<claim>`, a placeholder with no endpoints, so the gateway answers 503 |
+| `https://planboard.<claim>.<cluster>.bank.internal` | `istio-ingress/ingress`, the `ListenerSet` `ingress-project-<claim>` | `HTTPRoute` `planboard` in `<claim>` | oauth2-proxy, the `Service` `planboard-oauth2-proxy` in `<claim>`, which logs the browser in and forwards to the actor's hostname below |
 | `https://planboard.<claim>.ate.<cluster>.bank.internal` | `substrate-shim/ate`, through the ingress Gateway's `ate` listener | `HTTPRoute` `ate-<claim>` in `ate-system` | The actor, through Substrate's router, for a bearer ID token the claim's rules admit (above) |
 
 The first is in the claim's zone, `*.<claim>.<cluster>.bank.internal`, which a
@@ -4548,10 +4551,7 @@ the policy is cluster-scoped, where `project-<claim>-ingress` would be the
 atespace's policy of a claim named `<claim>-ingress`. A claim may not be named
 `ate`, whose zone would be the `ate` listener's hostname (`Projects.reserved`).
 
-The route and the placeholder are the product's, in `product-planboard-<claim>`.
-The placeholder has the name and port of oauth2-proxy's `Service`, which the
-login (`a-pkce-client-and-oauth2-proxy-per-binding` in the planning board) takes
-over in place, and a selector nothing in the platform matches.
+The route and the login are the product's, in `product-planboard-<claim>`.
 
 Argo CD has no health check for a `ListenerSet`, so `project-<claim>` reads
 `Healthy` whatever the gateway made of it. Read its status instead, listener by
@@ -4566,11 +4566,84 @@ kubectl -n istio-ingress get listenerset ingress-project-$claim \
 kubectl -n $claim get httproute planboard \
   -o jsonpath='{range .status.parents[*].conditions[*]}{.type}={.status} {end}{"\n"}'
     # Accepted=True ResolvedRefs=True
-curl -s -o /dev/null -w '%{http_code}\n' https://planboard.$claim.$domain/   # 503, until the login
+curl -s -o /dev/null -w '%{http_code}\n' https://planboard.$claim.$domain/   # 302, to Keycloak
 ```
 
 The `curl` is the certificate's check too: it verifies the chain and the name
 against the private root, which the laptop trusts (The private CA, above).
+
+#### The board's login
+
+A browser reaches the board through oauth2-proxy, which `product-planboard-<claim>`
+renders in the claim's namespace in plain CUE, with the image kagent's chart runs
+(`OAuth2Proxy` in `components/oauth2-proxy.cue`, which both read):
+
+| Object | Name | What it is |
+| --- | --- | --- |
+| Keycloak `Client` | `planboard-<claim>`, in `<claim>` | A public client, so no client secret exists anywhere, with the one redirect URI `https://planboard.<claim>.<domain>/oauth2/callback`. The claim's `ReferenceGrant` `project-<claim>` in `keycloak` admits `Client` from the namespace where the claim has a binding, and nowhere else |
+| `Deployment`, `ServiceAccount`, `Service` | `planboard-oauth2-proxy`, in `<claim>` | oauth2-proxy on 4180: PKCE (`--code-challenge-method=S256`, with `--client-secret-file=/dev/null` to get past its check for a secret), the ID token upstream as a bearer token and not to the browser, no identity header and not the client's `Host`, a session refreshed every minute, since an ID token lives five, and no provider button |
+| `Password`, `ExternalSecret` | `planboard-oauth2-proxy-cookie`, in `<claim>` | The cookie secret, generated once (External Secrets, above) |
+| Istio `AuthorizationPolicy` | `planboard-oauth2-proxy`, in `<claim>` | ztunnel admits the ingress Gateway's mesh identity to the proxy, on 4180, and nothing else. The namespace is in ambient, where a NetworkPolicy would see HBONE's 15008 |
+
+The `HTTPRoute` `planboard` removes `X-Forwarded-User`, `-Email`, `-Groups` and
+`-Preferred-Username`, and their `X-Auth-Request-` forms with
+`X-Auth-Request-Access-Token`, and `X-Forwarded-Access-Token`, before the proxy:
+with `--pass-user-headers`, `--pass-basic-auth` and `--pass-access-token` off,
+oauth2-proxy sets none of them and leaves a client's copies in place.
+
+The proxy's upstream is the actor's hostname, `http://planboard.<claim>.ate.<domain>`,
+in plain HTTP, so a waypoint in the claim's namespace can read the request's
+headers and originate TLS to the shim (`the-project-waypoint-and-the-shim-hop` in
+the planning board). Until it is there, the name resolves to the ingress Gateway,
+whose port 80 redirects to https, so a logged-in browser is sent on to the
+actor's hostname, where it has no token and gets 403. Until then, too, each
+logged-in request carries the viewer's ID token in plain HTTP across the pod
+network to the ingress Gateway's port 80, which answers only with that redirect.
+
+Removing a binding while its claim stays: delete the `Client` `planboard-<claim>`
+first and wait for it to go, then merge. No Application has Argo CD's resources
+finalizer, so the root drops `product-planboard-<claim>` and leaves its objects,
+and the same render narrows `project-<claim>`'s `ReferenceGrant`, without
+which the `Client`'s finalizer cannot reach the `Instance`, so a `Client` left
+behind hangs in Terminating once deleted.
+
+The shim's `RequestAuthentication` takes `kubectl` and each bound board's
+client (`Planboard.clients` in `components/planboard.cue`). On a cluster with a
+binding every rule on the shim's `Gateway` pins the audiences its hosts take
+(`AteGateway.#Rule`): the board's rule `product-planboard-<claim>` takes
+`kubectl` and `planboard-<claim>`, and every other rule `kubectl` alone, so a
+board's token is good for its board and nothing else.
+
+The owner is admin in the namespace, so they can read the cookie secret, which
+decrypts a viewer's session and the viewer's tokens for the board's client, and
+can make a pod with the proxy's labels, which joins the `Service`. Both are
+accepted: the tokens are good for the board alone, whose content the owner
+already decides.
+
+To check it, log in as a member of the claim, such as `alex` on cartography, at
+`https://planboard.splunk.cartography.bank.internal/`: the browser goes straight
+to Keycloak's login, and after it to the actor's hostname, with the session
+cookie `_oauth2_proxy` set on the board's. Then take a token of the board's
+client and try it on the shim. The client has the standard flow alone, so the
+token comes from the flow by hand: open the authorization URL in the browser,
+log in, and copy `code` from the callback URL it lands on, which oauth2-proxy
+refuses, since it did not start that flow:
+
+```sh
+kc=https://keycloak.$domain/realms/default/protocol/openid-connect
+cb=https://planboard.$claim.$domain/oauth2/callback
+verifier=$(openssl rand -hex 32)
+challenge=$(printf %s "$verifier" | openssl dgst -sha256 -binary | basenc --base64url | tr -d =)
+echo "$kc/auth?client_id=planboard-$claim&response_type=code&scope=openid%20groups&redirect_uri=$cb&code_challenge=$challenge&code_challenge_method=S256"
+BOARD=$(curl -s "$kc/token" -d grant_type=authorization_code -d client_id=planboard-$claim \
+  -d code_verifier="$verifier" --data-urlencode redirect_uri="$cb" -d code=<code> | jq -r .id_token)
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $BOARD" https://planboard.$claim.ate.$domain/  # 200, or 504 while it wakes
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $BOARD" https://echo.$claim.ate.$domain/      # 403
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $BOARD" https://echo.demo.ate.$domain/        # 403
+```
+
+A `kubectl` token still reaches the board's actor hostname, as before (The
+board as an actor, above).
 
 ### Building the Planboard images
 

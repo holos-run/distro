@@ -27,6 +27,7 @@ spec:
             - key: request.auth.audiences
               values:
                 - kubectl
+                - planboard-splunk
     targetRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway
