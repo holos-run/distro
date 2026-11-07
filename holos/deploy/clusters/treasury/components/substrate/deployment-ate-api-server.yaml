@@ -42,7 +42,7 @@ spec:
         - --objectstore-plugin-socket=/run/objectstore-plugin/control.sock
         - --snapshot-location=@env
         - --authz-bootstrap-owners=system:serviceaccount:ate-system:ate-client,spiffe://cluster.local/ns/kagent/sa/kagent-controller
-        - --preview=PerTemplateSnapshotLocation
+        - --preview=PerTemplateSnapshotLocation,GoldenEgressPolicy
         env:
         - name: POD_NAME
           valueFrom:
@@ -67,7 +67,7 @@ spec:
         - secretRef:
             name: ate-api-server-secret-envvars
             optional: true
-        image: ghcr.io/holos-run/substrate/ateapi@sha256:743244e3ac1886310f47355e69a3c0e9274564351e9e9da83b3361a50fecbb43
+        image: ghcr.io/holos-run/substrate/ateapi@sha256:e8c0071e6327f7c689ee332af5b5ec302f9b4f385acf9f3240a421344a124cd6
         livenessProbe:
           httpGet:
             path: /healthz
@@ -169,7 +169,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:fbf8d4ed43a4ef1fb14db699133e07c6fe0d7e935a7639b7b18f55c05ad707fb
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1648297ceac9200739fde63a702f2879809f82b6364b1dbaeb0196e445ce36a5
         name: objectstore-plugin
         ports:
         - containerPort: 8445
@@ -197,9 +197,6 @@ spec:
           readOnly: true
         - mountPath: /run/podidentity.podcert.ate.dev
           name: podidentity
-          readOnly: true
-        - mountPath: /run/actor-id-jwt-jwks
-          name: actor-id-jwt-jwks
           readOnly: true
       serviceAccountName: ate-api-server
       terminationGracePeriodSeconds: 40
@@ -260,14 +257,6 @@ spec:
               items:
               - key: pool
                 path: pool.json
-              name: actor-id-jwt-pool
-      - name: actor-id-jwt-jwks
-        projected:
-          sources:
-          - secret:
-              items:
-              - key: jwks
-                path: jwks.json
               name: actor-id-jwt-pool
       - name: actor-id-ca-pool
         projected:

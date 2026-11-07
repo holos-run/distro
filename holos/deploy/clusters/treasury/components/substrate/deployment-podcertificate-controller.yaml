@@ -42,7 +42,7 @@ spec:
               fieldPath: metadata.uid
         - name: WORKERS_PER_SIGNER
           value: "1"
-        image: ghcr.io/holos-run/substrate/podcertcontroller@sha256:6efa8af09d7390f73b5c8e5917e9cb0f679b427cf6f8883afc4b6897c86bd828
+        image: ghcr.io/holos-run/substrate/podcertcontroller@sha256:c0be27d91dd46b107f0e632aa3421585175af51fc83d6bdc8f20f9cb1c49d078
         name: controller
         securityContext:
           allowPrivilegeEscalation: false

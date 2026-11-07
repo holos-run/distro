@@ -50,7 +50,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/atelet@sha256:a61b4b21078ae2e640e23bad20c18a209c46d2a76c2aa8a0c02147d573588d47
+        image: ghcr.io/holos-run/substrate/atelet@sha256:13057dbc2346c8b67dac2fb6ba0c820ff21d1ceb36d0a205a6875dea144cd744
         livenessProbe:
           httpGet:
             path: /healthz
@@ -144,7 +144,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:fbf8d4ed43a4ef1fb14db699133e07c6fe0d7e935a7639b7b18f55c05ad707fb
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1648297ceac9200739fde63a702f2879809f82b6364b1dbaeb0196e445ce36a5
         name: objectstore-plugin
         resources:
           requests:
@@ -177,7 +177,7 @@ spec:
           readOnly: true
         - mountPath: /var/lib/objectstore-plugin/asset-staging
           name: asset-staging
-      priorityClassName: ate-node-critical
+      priorityClassName: system-cluster-critical
       serviceAccountName: atelet
       terminationGracePeriodSeconds: 330
       tolerations:
@@ -193,8 +193,7 @@ spec:
         name: private-ca
       - emptyDir: {}
         name: objectstore-plugin
-      - emptyDir:
-          sizeLimit: 9Gi
+      - emptyDir: {}
         name: asset-staging
       - hostPath:
           path: /var/lib/ate

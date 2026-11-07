@@ -6,9 +6,9 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: kagent
     app.kubernetes.io/part-of: kagent
-    app.kubernetes.io/version: 0.0.0-holos.20261030.e1696d8
-    helm.sh/chart: kagent-0.0.0-holos.20261030.e1696d8
-  name: kagent-writer-role
+    app.kubernetes.io/version: 0.0.0-holos.20261107.3af6ae5
+    helm.sh/chart: kagent-0.0.0-holos.20261107.3af6ae5
+  name: kagent-reconciliation-role
   namespace: kagent
 rules:
 - apiGroups:
@@ -16,23 +16,16 @@ rules:
   resources:
   - harnesses
   - agents
+  - egresspolicies
   - sandboxtemplates
   - agenttemplates
   - modelconfigs
   - modelproviderconfigs
   - remotemcpservers
   verbs:
-  - create
-  - update
-  - patch
-  - delete
-- apiGroups:
-  - api.kagent.dev
-  resources:
-  - sandboxtemplates/status
-  verbs:
-  - update
-  - patch
+  - get
+  - list
+  - watch
 - apiGroups:
   - api.kagent.dev
   resources:
@@ -45,47 +38,44 @@ rules:
   verbs:
   - update
 - apiGroups:
+  - api.kagent.dev
+  resources:
+  - agents/status
+  - modelconfigs/status
+  - modelproviderconfigs/status
+  - remotemcpservers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - sandboxtemplates/status
+  verbs:
+  - update
+  - patch
+- apiGroups:
+  - api.kagent.dev
+  resources:
+  - sandboxtemplates
+  verbs:
+  - update
+- apiGroups:
   - ""
   resources:
-  - '*'
+  - secrets
+  - configmaps
+  - services
   verbs:
-  - create
-  - update
-  - patch
-  - delete
+  - get
+  - list
+  - watch
 - apiGroups:
-  - apps
+  - ate.dev
   resources:
-  - '*'
+  - workerpools
   verbs:
-  - create
-  - update
-  - patch
-  - delete
-- apiGroups:
-  - batch
-  resources:
-  - '*'
-  verbs:
-  - create
-  - update
-  - patch
-  - delete
-- apiGroups:
-  - gateway.networking.k8s.io
-  resources:
-  - '*'
-  verbs:
-  - create
-  - update
-  - patch
-  - delete
-- apiGroups:
-  - agents.x-k8s.io
-  resources:
-  - sandboxes
-  verbs:
-  - create
-  - update
-  - patch
-  - delete
+  - get
+  - list
+  - watch

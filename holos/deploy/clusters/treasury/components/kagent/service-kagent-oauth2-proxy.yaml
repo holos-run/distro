@@ -8,8 +8,8 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: oauth2-proxy
     app.kubernetes.io/part-of: oauth2-proxy
-    app.kubernetes.io/version: 7.15.5
-    helm.sh/chart: oauth2-proxy-10.7.1
+    app.kubernetes.io/version: 7.15.6
+    helm.sh/chart: oauth2-proxy-10.7.2
   name: kagent-oauth2-proxy
   namespace: kagent
 spec:

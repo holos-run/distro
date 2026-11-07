@@ -2586,7 +2586,8 @@ A kagent bump goes with it, since kagent's replace names the Substrate
 pin ([docs/forks.md](../docs/forks.md), Rebasing on upstream):
 
 ```sh
-# kagent.cue: commit, version, the two chart digests and the two image digests
+# kagent.cue: commit, version, the two chart digests and the two image digests,
+# and upstream.release with the harness and guest images, from that release's chart
 # components/kagent/setup.sql: re-copy go/core/pkg/postgressetup/setup.sql if it changed
 rm -rf components/kagent/vendor components/kagent-crds/vendor   # the render pulls both charts at Kagent.version
 cue vet ./... && rm -rf deploy/clusters && holos render platform
@@ -2609,19 +2610,67 @@ keep the root paused until the merge: the root renders the children's
 `syncPolicy`, so restoring it alone re-applies `automated` to the three and
 `selfHeal` puts the old pins back within a poll. Apply the three renders
 server-side as `argocd-controller` with Argo CD's tracking-id annotations,
-then restore all four after the merge.
+then restore all four after the merge. Substrate's skew policy
+(`docs/reference/version-skew-policy.md`) fixes the order within its render,
+which one Argo CD sync does not keep: the pod certificate controller, then
+`ds/atelet` and its rollout, then `WorkerPool` `gvisor` and its workers, then
+ate-controller and everything else, and `kagent-crds` and `kagent` after that.
+A worker must not be newer than its node's atelet, and ate-api-server not
+newer than any worker. The two role Jobs are Sync hooks, so a hand apply leaves
+them out and they run at the first sync after the merge. While it is paused,
+each Application reads `OutOfSync`. One whose last sync operation failed reads
+`Degraded` as well, and the root with it, however long ago that failure was:
+`kagent`'s stale one did this on the 2026-11-06 bump, from the moment the
+placeholder `WorkerPool` moved. It clears with that Application's next
+successful sync.
+
+The workers roll twice when a bump changes their pod template: once on the
+image, and again when ate-controller is upgraded, since ate-controller renders
+the template. The 2026-11-06 bump does, with new capability sets (upstream
+#2428), so the pools, `kagent/gvisor` included, move to the new image before
+ate-controller. Anything that checks a worker or touches an actor waits for the
+second roll. `rollout status` says done until ate-controller reaches the pool,
+so read the pods. A gVisor worker then lists 9 capabilities, with no `MKNOD`,
+`SETPCAP`, `SYS_CHROOT` or `SYS_PTRACE`:
+
+```sh
+kubectl -n ate-workers get pod <worker> \
+  -o jsonpath='{.spec.containers[0].securityContext.capabilities.add}'
+```
 
 A Substrate bump rolls every worker, and an actor whose worker goes away is
-`ACTOR_STATE_CRASHED`, which the router does not resume: `kubectl ate
-revert actor <name> -a <atespace>` puts it back to its latest snapshot,
-suspended, and the next request resumes it. Suspend what matters first.
+`ACTOR_STATE_CRASHED`, which the router does not resume. On a bump that keeps
+old snapshots restorable, `kubectl ate revert actor <name> -a <atespace>` puts
+it back to its latest snapshot, suspended, and the next request resumes it, so
+suspend what matters first.
+
+A bump can break that, which its upstream `Breaking change` notes say. The
+2026-11-06 bump does: upstream #3533 and #3457 change a gVisor sandbox's mounts,
+so a MEMORY snapshot taken before them, a golden included, does not restore.
+`runsc restore` fails, the actor goes `CRASHED`, and no API restores such a
+snapshot without its memory. So `revert actor` only returns to the same
+snapshot, suspending first only writes another, and a new actor from an old
+template restores the old golden and crashes. Recut instead, after the last
+worker roll: delete the actors and their templates, re-create the templates,
+wait for each one's golden, and re-create the actors. Whatever an actor held
+is lost. Moving back to `holos-2026-10-30` needs the same recut, since a
+snapshot taken on the new workers does not restore on the old ones. For the
+demo actors, which Substrate, above, then re-creates:
+
+```sh
+for a in echo other; do
+  kubectl ate delete actor $a -a demo
+  kubectl ate delete actor-template $a -a demo
+done
+```
 
 atelet keeps an image cache under `/var/lib/ate/image-cache` on each node
 with a layout version, and refuses to start on an older layout ("image
 cache ... has layout version "2" and this atelet supports "3", so delete it
 once no actor runs on this node"). The 2026-10-30 bump moved it from 2 to
-3 (upstream #2392). The DaemonSet then stalls, one node at a time, on a
-crash-looping atelet. On each such node, with no actor running there,
+3 (upstream #2392), and the 2026-11-06 bump left it there. When it moves, the
+DaemonSet stalls, one node at a time, on a crash-looping atelet. On each such
+node, with no actor running there,
 delete the directory from a privileged pod with the host path mounted and
 delete the atelet pod; atelet re-creates the cache and pulls what it needs:
 
@@ -2655,13 +2704,14 @@ ConfigMap key does not fail the render; only the re-read finds it. A
 schema change is migrated by ate-api-server on start, through the owner's
 connection.
 
-kagent's schema is not always. Before its RC, kagent changes
-`go/core/pkg/migrations/core/000001_initial.sql`, its one migration, in
-place rather than adding a second: the 2026-10-30 bump added four columns
+kagent's schema is not always. A new file under
+`go/core/pkg/migrations/core/` is migrated by the controller on start, as
+`000002_runtime_bootstrap.sql` is on the 2026-11-06 bump, but kagent has also
+changed `000001_initial.sql` in place: the 2026-10-30 bump added four columns
 to `runtime_revision` there (`actor_template_spec_digest`, `golden_retries`,
 `golden_failure_uid`, `golden_failed_at`). A schema migrated by the old
 controller is at version 1 already, so the new controller runs nothing and
-the columns stay missing. Compare the fork's migration with the old
+the columns stay missing. Compare the fork's `000001_initial.sql` with the old
 pin's on every kagent bump; when it changed, drop and re-create the
 `kagent` schema and sync `kagent`: the `kagent-db-setup` Job, a Sync hook,
 re-creates the roles and the schema (every statement converges), and the
@@ -2964,10 +3014,10 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   `ghcr.io/holos-run/kagent`, by digest. The fork builds nothing else, so
   `config.harnessImages` (`kagent`, `claude`, `codex`) and
   `config.sandboxes.guestImage` are upstream kagent-dev's
-  `v1.0.0-alpha17`, the release nearest the fork's base: the harnesses by
+  `v1.0.0-rc3`, the release the fork is cut from: the harnesses by
   the index digests that release's chart lists in
   `files/builtin-harness-images.json`, and the guest, which that file does
-  not list, by the index digest of its `sandbox-guest:1.0.0-alpha17` tag.
+  not list, by the index digest of its `sandbox-guest:1.0.0-rc3` tag.
   The catalog's fourth key, `release`, stays unset: the controller refuses to
   start when it is set and differs from its own version, which is the
   fork's tag. The tool server and oauth2-proxy images are the subcharts'
@@ -3032,9 +3082,8 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   bypasses this.
 - **The controller's RBAC** is `Role`s in `kagent` alone (the chart's
   `rbac.namespaces`), and it watches only `kagent`: whoever reaches it acts
-  with its rights, so the chart's `ClusterRole`s, which read every core
-  resource and write core, apps and batch in every namespace, would be
-  theirs. Agents, Harnesses, ModelConfigs, Secrets and the placeholder pool
+  with its rights, so the chart's `ClusterRole`s, which read and write
+  Secrets and ConfigMaps in every namespace, would be theirs. Agents, Harnesses, ModelConfigs, Secrets and the placeholder pool
   are all in `kagent`. The tool server's subchart is not scoped: its
   read-only role covers the cluster, so agents can read it.
 - **Exposure.** `kagent.treasury.bank.internal` is under the Gateway's
@@ -3091,8 +3140,6 @@ kind: Harness
 metadata: {name: kagent, namespace: kagent}
 spec:
   kagent: {}
-  workload:
-    args: ["--filepath", "/data/config"]
   substrate:
     workerPoolRef: {name: gvisor}
     snapshotPolicy: {location: "s3://substrate/kagent/"}
@@ -3105,14 +3152,15 @@ gate; the substrate component enables it (`PreviewGates` in
 `components/substrate/substrate.cue`), and an agent's snapshots then go
 under this location instead of the cluster's `s3://substrate/`.
 
-`workload.args` is needed since Substrate runs an actor as its image's
-`USER` and `WORKDIR` (upstream #2392, in the 2026-10-30 pin). kagent's
-`golang-adk` harness image is user 65532 at `/`, and the harness writes its
-agent config to `/config` by default, which that user cannot create, so the
-golden build fails with `GoldenActorCrashed` and `mkdir /config: permission
-denied` in the worker's log. `/data` is the user's own in the image. Drop
-the field once an upstream harness image allows for a non-root config
-directory.
+The controller keeps an agent's configuration in a bootstrap bundle in its
+database, and every ActorTemplate names that bundle. A golden actor fetches
+it from the controller over the egress gateway and saves it under `/data`,
+so a session and a restart never fetch it again. The template carries a
+`golden_egress_policy` that allows the controller alone, which
+ate-api-server accepts only with its `GoldenEgressPolicy` preview gate, which
+the substrate component enables too. There is no fallback: a harness image
+older than v1.0.0-rc3 cannot start, so `Kagent.upstream.release` follows
+the fork's base.
 
 #### Checking kagent
 

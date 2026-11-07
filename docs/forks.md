@@ -16,16 +16,22 @@ Both forks are public, since a fork of a public repository cannot be private.
 
 | Fork | Branch | Commit |
 | --- | --- | --- |
-| holos-run/substrate | `holos-2026-10-30` | `f475d8b4cc8ad071bac7ba8fcace30212f1b56b0` |
-| holos-run/kagent | `holos-2026-10-30` | `e1696d861ac609c3e7ae8c5f294623ade261cffd` |
+| holos-run/substrate | `holos-2026-11-06` | `94e0a26ac90151886a76410568aaac2664a54d90` |
+| holos-run/kagent | `holos-2026-11-06` | `3af6ae590abcaaf4235006185ba47b82427a13bf` |
 
-The Substrate pin is upstream `main` on 2026-10-30 with nothing added. It is
+The Substrate pin is upstream `main` on 2026-11-06 with nothing added. It is
 also the submodule commit the platform vendors Substrate from
-(`holos/vendor/substrate`, `Substrate.commit` in `holos/substrate.cue`).
+(`holos/vendor/substrate`, `Substrate.commit` in `holos/substrate.cue`). It is
+not the tag v1.0.0, commit `b34fbee7`, which sits on upstream's `release-1.0`
+branch with 54 unsigned commits since the last pin, which the ruleset below
+refuses.
+`main` differs from that tag only in site, docs, demo and benchmark files, so
+what runs is v1.0.0.
 
-The kagent pin is the commit kagent's images are built from. It is upstream
-`main` at `8f6910c8bdf0a4fd0aa5a747c9c241594666409f` with the two commits
-described below.
+The kagent pin is the commit kagent's images are built from. It is upstream's
+tag v1.0.0-rc3, `3548b7aaf4d91ec86b0565df2bd8a9950e9a276d`, with the one
+commit described below. This one is cut from a tag rather than the upstream
+head: rc3 is what upstream built and tested against Substrate v1.0.0.
 
 A pin is always a full commit SHA in a fork, never a tag or a branch name. A
 branch moves and a tag can be moved, so neither says what was built.
@@ -37,27 +43,23 @@ needs to run on Talos, such as a `certificates.k8s.io/v1beta1` fallback or an
 optional credential provider mount, and the branch a pull request to upstream
 starts from.
 
-The kagent fork carries two commits on top of upstream:
+The kagent fork carries one commit on top of upstream:
 
-- **The router dialers do mutual TLS.** Substrate's Atenet router has accepted
-  only mutual TLS since October 21, but kagent's two router dialers, the A2A
-  gateway's and the sandbox guest's, built an `https` TLS config with no roots
-  and no client certificate. The commit shares the ate-api client's TLS config
-  as `substrate.ClientTLSConfig` and uses it in both dialers with the existing
-  `substrate.caFile` and `substrate.clientCertFile` settings. The CA file
-  verifies the router, and the pod certificate is read at each handshake, so
-  a rotated certificate is used without a restart. An `http` router URL works
-  as before. This change is meant to go upstream.
 - **kagent builds against the Substrate fork.** Upstream kagent's `go/go.mod`
   replaces `go.ate.dev/substrate` with kagent-dev's own Substrate fork at a
-  sync tag, `v0.7.0-alpha2` at the pin. The commit points the replace at
+  sync tag, `v1.0.0` at the pin. The commit points the replace at
   `github.com/holos-run/substrate` at the Substrate pin, so kagent's ate-api
-  client and the Substrate it talks to come from one tree. Upstream Substrate
-  renamed `SnapshotStorage.status` to `state`, which kagent-dev's fork does
-  not have yet, so the commit also follows that rename in kagent's Go code.
-  The field numbers did not change, so the vendored `proto/` copy and the
-  UI's generated TypeScript, which still use the old names, decode the new
-  messages correctly over binary protobuf.
+  client and the Substrate it talks to come from one tree. The two trees' `api/`
+  are identical, and kagent's Go code needs no change. kagent-dev's fork also
+  carries patches of its own, such as `--actor-workflow-deadline` on
+  ate-api-server and an insecure mode for local clusters. kagent's code uses
+  none of them, and the distro runs without them.
+
+The fork used to carry the router dialers' mutual TLS as well. Upstream took
+that change as `substrate.RouterTransport`, which both dialers use and which
+verifies the router against `substrate.caFile` and reads the
+`substrate.clientCertFile` pod certificate at each handshake, so the commit
+was dropped at the 2026-11-06 rebase.
 
 The replace commit leaves one thing stale. kagent's `Makefile` and
 `go/Makefile` derive `SUBSTRATE_VERSION` from the `kagent-dev/substrate` line
@@ -70,7 +72,8 @@ rather than through `kagent install`.
 ## Branches
 
 Each fork has dated branches named `holos-<date>`, such as
-`holos-2026-10-30`. A dated branch is cut from the upstream head on that date
+`holos-2026-11-06`. A dated branch is cut from the upstream head on that date,
+or from an upstream release when that is what the platform should run,
 and carries the distro's commits on top. Once pushed, it is never rewritten,
 force pushed or deleted, and no tag is moved to it. A rebase makes a new
 dated branch instead.
@@ -98,7 +101,9 @@ commits. Older upstream history has unsigned commits: about 330 in Substrate,
 the latest on 2026-09-15, and 232 in kagent, the latest on 2026-09-02. Those
 were copied in when the forks were made, so they do not count. Every upstream
 commit since mid-September is a squash merge that GitHub signed with its
-web-flow key, so rebases pass for now. If an upstream lands an unsigned
+web-flow key, so rebases pass for now. Upstream Substrate's `release-1.0`
+branch is the exception: most of its commits are unsigned, so a fork pin has
+to come from `main` until the rule is revisited. If `main` lands an unsigned
 commit again, pushing the next dated branch fails, and the rule has to be
 revisited.
 
@@ -233,7 +238,7 @@ Each fork's images and charts are tagged
 `0.0.0-holos.<YYYYMMDD>.<7-character SHA>`, with a `v` in front for
 Substrate, whose publish command accepts only a `vMAJOR.MINOR.PATCH[-PRERELEASE]`
 tag. Helm wants a chart version without the `v`. At the pins above they are
-`v0.0.0-holos.20261030.f475d8b` and `0.0.0-holos.20261030.e1696d8`.
+`v0.0.0-holos.20261105.94e0a26` and `0.0.0-holos.20261107.3af6ae5`.
 
 The date is the commit's committer date in UTC, not the day of the run, so
 publishing one pin again gives the same tag. SemVer forbids a leading zero in
@@ -255,8 +260,8 @@ branch of its fork:
 
 ```sh
 gh workflow run publish-images.yaml --repo holos-run/distro \
-  -f substrate_sha=f475d8b4cc8ad071bac7ba8fcace30212f1b56b0 \
-  -f kagent_sha=e1696d861ac609c3e7ae8c5f294623ade261cffd
+  -f substrate_sha=94e0a26ac90151886a76410568aaac2664a54d90 \
+  -f kagent_sha=3af6ae590abcaaf4235006185ba47b82427a13bf
 gh run watch --repo holos-run/distro \
   "$(gh run list --repo holos-run/distro --workflow publish-images.yaml --limit 1 --json databaseId --jq '.[0].databaseId')"
 ```
