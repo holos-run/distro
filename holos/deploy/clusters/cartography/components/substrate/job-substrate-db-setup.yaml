@@ -1,0 +1,106 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+  labels:
+    app.kubernetes.io/name: substrate-db-setup
+  name: substrate-db-setup
+  namespace: ate-system
+spec:
+  activeDeadlineSeconds: 900
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: substrate-db-setup
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          until pg_isready --quiet; do
+            echo "waiting for $PGHOST"
+            sleep 5
+          done
+          exec psql --no-psqlrc --set=ON_ERROR_STOP=1 --single-transaction \
+            --set=substrate_schema=substrate \
+            --set=substrate_owner_role=substrate_owner \
+            --set=substrate_owner_user=substrate_owner_user \
+            --set=substrate_owner_password="$OWNER_PASSWORD" \
+            --set=substrate_readwrite_role=substrate_readwrite \
+            --set=substrate_readwrite_user=substrate_readwrite_user \
+            --set=substrate_readwrite_password="$READWRITE_PASSWORD" \
+            --file=/sql/setup.sql
+        env:
+        - name: PGHOST
+          value: substrate-db-rw.ate-system.svc
+        - name: PGPORT
+          value: "5432"
+        - name: PGDATABASE
+          value: substrate
+        - name: PGSSLMODE
+          value: verify-full
+        - name: PGSSLROOTCERT
+          value: /etc/private-ca/ca.crt
+        - name: PGCONNECT_TIMEOUT
+          value: "5"
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: substrate-db-superuser
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: substrate-db-superuser
+        - name: OWNER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: substrate_owner_user
+              name: substrate-db-users
+        - name: READWRITE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: substrate_readwrite_user
+              name: substrate-db-users
+        image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+        name: setup
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /sql
+          name: sql
+          readOnly: true
+        - mountPath: /etc/private-ca
+          name: private-ca
+          readOnly: true
+      restartPolicy: OnFailure
+      securityContext:
+        runAsGroup: 26
+        runAsNonRoot: true
+        runAsUser: 26
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - configMap:
+          name: substrate-db-setup
+        name: sql
+      - configMap:
+          name: private-ca
+        name: private-ca

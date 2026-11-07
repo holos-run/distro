@@ -206,10 +206,19 @@ clusters: treasury: {
 
 // cartography is the second garage cluster, in slot 2: cartography-cp-1 at
 // 10.20.0.60 and cartography-general-1 to -3 at .61 to .63 on the k8s vnet. It
-// takes the second block of the ingress range, names no optional component, and
+// takes the second block of the ingress range and every optional component, and
 // shares only the site with treasury.
 clusters: cartography: {
 	site: sites.garage
+	components: [
+		"substrate",
+		"substrate-shim",
+		"kagent-crds",
+		"kagent",
+		"toolhive-crds",
+		"toolhive-operator",
+		"toolhive",
+	]
 	loadBalancer: {
 		start: "10.20.0.34"
 		stop:  "10.20.0.37"

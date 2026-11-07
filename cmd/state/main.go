@@ -25,11 +25,10 @@
 //
 // Every resource is required. A missing one fails the verb and writes
 // nothing, and -skip <namespace>/<name>, repeatable, is the only way past
-// that. A cluster that does not take kagent has no Anthropic key, so
-// cartography runs both verbs with -skip
-// seabank-prj-platform/anthropic-api-key. A rebuild that changes the cluster's
-// domain or the brand wants a new root, and restores with -skip
-// cert-manager/private-ca-root.
+// that. A cluster that does not take kagent has no Anthropic key, so it runs
+// both verbs with -skip seabank-prj-platform/anthropic-api-key. A rebuild that
+// changes the cluster's domain or the brand wants a new root, and restores with
+// -skip cert-manager/private-ca-root.
 //
 // The file is ~/<cluster>-state.json.gpg, encrypted to the key that signs
 // commits, git config user.signingkey, unless -recipient names another.

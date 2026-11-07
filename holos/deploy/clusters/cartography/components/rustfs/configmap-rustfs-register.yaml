@@ -44,6 +44,7 @@ data:
       echo "registered $bucket"
     }
 
+    register substrate "$SUBSTRATE_ACCESS_KEY" "$SUBSTRATE_SECRET_KEY"
     register quay "$QUAY_ACCESS_KEY" "$QUAY_SECRET_KEY"
 kind: ConfigMap
 metadata:

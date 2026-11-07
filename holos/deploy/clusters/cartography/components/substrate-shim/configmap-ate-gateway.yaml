@@ -1,0 +1,45 @@
+apiVersion: v1
+data:
+    deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              topologySpreadConstraints:
+                - maxSkew: 1
+                  topologyKey: kubernetes.io/hostname
+                  whenUnsatisfiable: ScheduleAnyway
+                  labelSelector:
+                    matchLabels:
+                      gateway.networking.k8s.io/gateway-name: ate
+              containers:
+                - name: istio-proxy
+                  volumeMounts:
+                    - name: router-client
+                      mountPath: /var/run/ate/router-client
+                      readOnly: true
+                    - name: router-ca
+                      mountPath: /var/run/ate/router-ca
+                      readOnly: true
+              volumes:
+                - name: router-client
+                  projected:
+                    sources:
+                      - podCertificate:
+                          signerName: podidentity.podcert.ate.dev/identity
+                          keyType: ECDSAP256
+                          keyPath: key.pem
+                          certificateChainPath: cert-chain.pem
+                - name: router-ca
+                  projected:
+                    sources:
+                      - clusterTrustBundle:
+                          signerName: servicedns.podcert.ate.dev/identity
+                          labelSelector:
+                            matchLabels:
+                              podcert.ate.dev/canarying: live
+                          path: ca.pem
+kind: ConfigMap
+metadata:
+    name: ate-gateway
+    namespace: substrate-shim

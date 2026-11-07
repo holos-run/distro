@@ -46,6 +46,24 @@ spec:
                         - key: kubernetes.io/metadata.name
                           operator: In
                           values:
+                            - substrate-shim
+          hostname: '*.ate.cartography.bank.internal'
+          name: ate
+          port: 443
+          protocol: TLS
+          tls:
+            mode: Passthrough
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: TLSRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
                             - seabank-authenticator
           hostname: k8s.cartography.bank.internal
           name: k8s
