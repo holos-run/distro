@@ -43,7 +43,7 @@ products: planboard: {
 	// plugin, the planboard plugin as an image volume. Build and push them with
 	// README.md, Building the Planboard images.
 	images: {
-		board:  "sha256:b5a72ab690dd0a7e7eed6804765825a846ec04cc54680bdb54322892818dd069"
+		board:  "sha256:3e0e30c72ee4707e7fe4b1447b9902ca8a39fa1c4bffea81366c4bf3dc2c7726"
 		agent:  "sha256:908e537f6f2e3b60ce2504de37ae1ccc9864eba1a82421a7676237d38b317d29"
 		plugin: "sha256:f04a6b7f1680999d7eab2a97c4df14b988ead486fcc520db64e779c82a58e4bf"
 	}
