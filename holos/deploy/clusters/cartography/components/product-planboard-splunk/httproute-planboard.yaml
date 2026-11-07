@@ -1,0 +1,20 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard
+    namespace: splunk
+spec:
+    hostnames:
+        - planboard.splunk.cartography.bank.internal
+    parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: ListenerSet
+          name: ingress-project-splunk
+          namespace: istio-ingress
+          sectionName: splunk
+    rules:
+        - backendRefs:
+            - name: planboard-oauth2-proxy
+              port: 4180

@@ -187,6 +187,16 @@ Projects: {
 		// of a listed atespace would be handed that atespace and its actors,
 		// and its listener would collide with the Gateway's.
 		for A in AteGateway.atespaces {(A.name): true}
+
+		// The shim's zone's label. A claim with a binding gets a zone of its
+		// own on the ingress Gateway, *.<claim>.<ingressDomain>
+		// (IngressGateway.#Claim), and one named ate would have the ate
+		// listener's hostname, *.ate.<ingressDomain>, on the same port, an
+		// HTTPS listener over the shim's passthrough. Istio keeps the
+		// Gateway's own listener and marks the ListenerSet's Conflicted, so
+		// the claim's zone would never be programmed and its board would have
+		// no host.
+		(AteGateway.label): true
 	}
 
 	#Unreserved: !~"^(kube|\(Brand.slug)|project)-" & and([for NAME, _ in reserved {!=NAME}])

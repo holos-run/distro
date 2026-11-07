@@ -1,0 +1,34 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: ingress-project-splunk
+    namespace: istio-ingress
+spec:
+    listeners:
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: HTTPRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
+                            - splunk
+          hostname: '*.splunk.cartography.bank.internal'
+          name: splunk
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+                - kind: Secret
+                  name: ingress-project-splunk-tls
+            mode: Terminate
+    parentRef:
+        group: gateway.networking.k8s.io
+        kind: Gateway
+        name: ingress

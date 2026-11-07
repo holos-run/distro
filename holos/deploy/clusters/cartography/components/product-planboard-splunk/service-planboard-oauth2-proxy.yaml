@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-oauth2-proxy
+    namespace: splunk
+spec:
+    ports:
+        - name: http
+          port: 4180
+          protocol: TCP
+          targetPort: 4180
+    selector:
+        holos.run/placeholder: planboard-oauth2-proxy

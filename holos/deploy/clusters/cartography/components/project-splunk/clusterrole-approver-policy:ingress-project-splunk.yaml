@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: splunk
+    name: approver-policy:ingress-project-splunk
+rules:
+    - apiGroups:
+        - policy.cert-manager.io
+      resourceNames:
+        - ingress-project-splunk
+      resources:
+        - certificaterequestpolicies
+      verbs:
+        - use

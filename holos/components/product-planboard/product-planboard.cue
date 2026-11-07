@@ -34,7 +34,11 @@ import (
 //     EgressPolicy through Substrate's API, since none is a Kubernetes object;
 //   - a ConfigMap beside the hook that nothing reads, since a hook is outside
 //     the Application's comparison and this is what makes a change to it a
-//     difference, so the automated sync runs it.
+//     difference, so the automated sync runs it;
+//   - the board's hostname on the ingress Gateway,
+//     planboard.<claim>.<domain>, an HTTPRoute in the claim's namespace on the
+//     claim's zone (IngressGateway.#Claim), to a placeholder Service where the
+//     login in front of the board will be.
 //
 // README.md, The board as an actor, has what the owner does by hand.
 
@@ -315,6 +319,24 @@ if ProjectName != "" {
 		{name: "DELETE_TEMPLATE", value: json.Marshal({actorTemplate: {atespace: CLAIM, name: "%s"}})},
 	]
 
+	// Zone is the claim's zone on the ingress Gateway, which components/project
+	// renders on a cluster where the claim has a binding, as this one has, and
+	// Host the board's name in it, the product's name under the claim's.
+	let Zone = IngressGateway.claimed[CLAIM]
+	let Host = "planboard.\(Zone.domain)"
+
+	// Proxy is the Service the board's route goes to: oauth2-proxy's, once the
+	// binding renders it in the claim's namespace (in the Planboard_On_Holos
+	// planning project, a-pkce-client-and-oauth2-proxy-per-binding). Until
+	// then it is a placeholder. The name and port are the ones kagent's
+	// oauth2-proxy has (Kagent.proxy), <release>-oauth2-proxy on 4180, with
+	// the release planboard, so the chart's Service can take this one over in
+	// place and the route need not change.
+	let Proxy = {
+		service: "planboard-oauth2-proxy"
+		port:    4180
+	}
+
 	// Hook is held here because two objects read it, the Job and its ConfigMap.
 	let Hook = #AteAPIJob & {
 		labels: Labels
@@ -432,6 +454,46 @@ if ProjectName != "" {
 				data: {
 					template: Template
 					job:      Hook.revision
+				}
+			}
+
+			// The board's hostname on the ingress Gateway, in the claim's zone,
+			// on its ListenerSet, which admits routes from the claim's namespace
+			// alone. The platform's, not the owner's: the route decides what is
+			// in front of the board. Every path goes to the proxy, as kagent's
+			// do, and none to the board itself, which would bypass the login.
+			HTTPRoute: planboard: {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					parentRefs: [Zone.parentRef]
+					hostnames: [Host]
+					rules: [{backendRefs: [{name: Proxy.service, port: Proxy.port}]}]
+				}
+			}
+
+			// The placeholder for oauth2-proxy's Service (Proxy), so the route
+			// resolves: with no endpoints the gateway answers 503, which is
+			// what the board's hostname should do until the login is there.
+			// The selector is a label nothing in the platform puts on a pod.
+			// The owner, admin in the namespace, could make a pod that has it,
+			// and so could serve their own hostname; nothing else of the board
+			// or its users' sessions passes through here yet.
+			Service: (Proxy.service): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					selector: "holos.run/placeholder": Proxy.service
+					ports: [{
+						name:       "http"
+						port:       Proxy.port
+						targetPort: Proxy.port
+						protocol:   "TCP"
+					}]
 				}
 			}
 		}
