@@ -31,6 +31,16 @@ spec:
           value: http://$(RUSTFS_ACCESS_KEY):$(RUSTFS_SECRET_KEY)@rustfs-svc.rustfs.svc:9000
         - name: RC_CONFIG_DIR
           value: /tmp/rc
+        - name: SUBSTRATE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: rustfs-substrate
+        - name: SUBSTRATE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: rustfs-substrate
         - name: QUAY_ACCESS_KEY
           valueFrom:
             secretKeyRef:

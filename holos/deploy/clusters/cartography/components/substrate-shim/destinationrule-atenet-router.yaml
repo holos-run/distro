@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+    name: atenet-router
+    namespace: substrate-shim
+spec:
+    exportTo:
+        - .
+    host: atenet-router.ate-system.svc.cluster.local
+    trafficPolicy:
+        tls:
+            caCertificates: /var/run/ate/router-ca/ca.pem
+            clientCertificate: /var/run/ate/router-client/cert-chain.pem
+            mode: MUTUAL
+            privateKey: /var/run/ate/router-client/key.pem
+            sni: atenet-router.ate-system.svc
+            subjectAltNames:
+                - atenet-router.ate-system.svc

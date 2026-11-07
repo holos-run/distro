@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: splunk-wildcard
+    namespace: substrate-shim
+spec:
+    dnsNames:
+        - '*.splunk.ate.cartography.bank.internal'
+    issuerRef:
+        group: cert-manager.io
+        kind: ClusterIssuer
+        name: private-ca
+    privateKey:
+        algorithm: ECDSA
+        size: 256
+    secretName: splunk-wildcard-tls

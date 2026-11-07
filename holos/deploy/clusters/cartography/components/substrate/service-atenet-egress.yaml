@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: atenet-egress
+  namespace: ate-system
+spec:
+  ipFamilyPolicy: PreferDualStack
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: https
+  selector:
+    app: atenet-egress
+  type: ClusterIP

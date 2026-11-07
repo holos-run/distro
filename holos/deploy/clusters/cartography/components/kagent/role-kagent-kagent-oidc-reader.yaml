@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kagent-kagent-oidc-reader
+  namespace: kagent
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - kagent-oidc-client
+  - kagent-oauth2-proxy-cookie
+  resources:
+  - secrets
+  verbs:
+  - get

@@ -259,9 +259,9 @@ Argo CD syncs a cluster's tree from `main`. The rest are by hand.
 
 A step marked *Only with* an entry belongs to that optional entry. A cluster
 that does not name the entry in `components` skips the step, and nothing on it
-waits for what the step makes. `cartography` names no optional entry, so it
-skips steps 11, 14 and 15: no `ate-setup` and no Anthropic key. The other
-optional entries have no hand step.
+waits for what the step makes. A cluster that names no optional entry skips
+steps 11, 14 and 15: no `ate-setup` and no Anthropic key. The other optional
+entries have no hand step.
 
 1. **Take the addresses.** The next free cluster slot and ingress block, from
    [Address
@@ -332,8 +332,13 @@ optional entries have no hand step.
     `kagent` stays `Degraded` until the key is in.
 16. **Finish the root's sync.** If its retries ran out during these steps, sync
     it again (Bootstrap Argo CD, below). Every `Application` the cluster takes
-    is then `Synced` and `Healthy`; on `cartography` the last before the root is
-    `project-splunk`.
+    is then `Synced` and `Healthy`; `kagent`, on a cluster that takes it, is the
+    last before the root. A running cluster with a claim that takes `substrate`
+    later is the exception: `project-<claim>` syncs at the merge, ahead of
+    `ate-system` and `substrate-shim`, and if its retries run out it stays
+    `Degraded` and stops the root, which re-syncing the root does not fix. Once
+    `substrate-shim` is `Healthy`, sync `project-<claim>` with the same patch
+    under its name, then the root.
 17. **Log in and check.** As `jeff`, with the password from Secret
     `keycloak/seabank-user-jeff`, generated per cluster (Logging in, below), and
     with `kubectl` as `$cluster-oidc` (Logging in with kubectl, under
@@ -4262,8 +4267,8 @@ Every resource is required, and a missing one fails the verb and writes
 nothing. `-skip <namespace>/<name>`, repeatable, on both verbs, is the only way
 past that, and each verb prints what it skipped:
 
-- A cluster without `kagent`, such as `cartography`, has no Anthropic key, so
-  it passes `-skip seabank-prj-platform/anthropic-api-key` to both verbs.
+- A cluster without `kagent` has no Anthropic key, so it passes `-skip
+  seabank-prj-platform/anthropic-api-key` to both verbs.
 - A rebuild that changes the cluster's domain wants a new root, since the
   root's subject and name constraints come from it. Pass `-skip
   cert-manager/private-ca-root` to `state restore`, and do steps 10 and 13 of
