@@ -4,9 +4,9 @@ import "list"
 
 // registry lists the platform's components in sync order. Each has a level in
 // the stack, its priority (#Registration), and a cluster takes the stack up to
-// standard, the optional entries it names (#Cluster.components, clusters.cue)
-// and the claims that select it (collections.cue). clusterRegistry, below, is
-// that list for each cluster:
+// standard, the optional entries it names (#Cluster.components, clusters.cue),
+// the claims that select it and the bindings it takes (collections.cue).
+// clusterRegistry, below, is that list for each cluster:
 // platform/platform.cue renders it, and every entry in it gets an Argo CD
 // Application (components/argocd-apps) whose sync wave is its index there,
 // not here. The waves order the root Application's own syncs: when a cluster
@@ -25,7 +25,8 @@ registry: [...#Registration]
 	name: string
 	// component is its directory under components/: its name, unless one
 	// directory renders several components, as components/project renders
-	// one per ProjectClaim (collections.cue).
+	// one per ProjectClaim and components/product-<product> one per binding
+	// (collections.cue).
 	component: string | *name
 	// priority is the component's level in the stack, in Debian's Priority
 	// vocabulary: required at the bottom, then important, then standard, and
@@ -45,7 +46,7 @@ registry: [...#Registration]
 	priority!: "required" | "important" | "standard" | "optional"
 	// parameters are the component's CUE tags, beside clusterName, which
 	// every component gets (platform/platform.cue): project, for a
-	// ProjectClaim's.
+	// ProjectClaim's, and project and product, for a binding's.
 	parameters: [string]: string
 	// syncOptions are added to the Application's sync options, after the
 	// ones every Application has.
@@ -57,23 +58,27 @@ registry: [...#Registration]
 }
 
 // #OptionalComponents are the names a cluster may list in
-// #Cluster.components: the optional entries, but for the claims. A claim is
-// optional too (#ProjectRegistrations), but it selects its clusters by label
-// rather than being named by them (#Project.clusterSelector), so naming one
-// fails cue vet. A claim's atespace and route render only on a cluster that
-// names both substrate and substrate-shim (AteGateway.servesClaims,
-// components/substrate-shim.cue); on any other cluster it selects, the claim
-// renders the rest of what it stands for.
+// #Cluster.components: the optional entries, but for the claims' and the
+// bindings', which are the ones with a project parameter. A claim is optional
+// too (#ProjectRegistrations), but it selects its clusters by label rather than
+// being named by them (#Project.clusterSelector), and a binding follows its
+// claim onto the clusters that take its products' components
+// (#BindingRegistrations, clusterBindings), so naming either fails cue vet. A
+// claim's atespace and route render only on a cluster that names both substrate
+// and substrate-shim (AteGateway.servesClaims, components/substrate-shim.cue);
+// on any other cluster it selects, the claim renders the rest of what it stands
+// for. A product's components are names from this list too (productComponents,
+// collections.cue).
 #OptionalComponents: [
-	for C in registry if C.priority == "optional" && C.component != "project" {C.name},
+	for C in registry if C.priority == "optional" && C.parameters.project == _|_ {C.name},
 ]
 
 // clusterRegistry is the registry as each cluster takes it, by cluster name,
 // in the registry's order: every entry up to standard, and of the optional
-// ones those the cluster names and the claims that select it
-// (clusterProjects, collections.cue). A cluster's sync waves are indexes into
-// its own list, so an entry it does not take can never move them, and
-// components/argocd-apps is the only place that reads the index.
+// ones those the cluster names, the claims that select it and the bindings it
+// takes (clusterProjects and clusterBindings, collections.cue). A cluster's sync
+// waves are indexes into its own list, so an entry it does not take can never
+// move them, and components/argocd-apps is the only place that reads the index.
 //
 // It is a map in the root, not a filter on Cluster, because the platform reads
 // it too: Cluster is defined in components/component.cue, which the platform
@@ -85,6 +90,7 @@ clusterRegistry: {
 		let Taken = list.Concat([
 			CLUSTER.components,
 			[for PROJECT, _ in clusterProjects[NAME] {"project-\(PROJECT)"}],
+			[for ENTRY, B in productBindings if clusterBindings[NAME][B.binding] != _|_ {ENTRY}],
 		])
 		(NAME): [
 			for C in registry
@@ -358,11 +364,21 @@ registry: [
 	// It cannot be Healthy on a new cluster by itself: the Anthropic key's
 	// ExternalSecret reports Degraded until the key is written by hand,
 	// through the Secrets Manager, as the platform secret anthropic-api-key
-	// (README.md, kagent). So it comes last before argocd-apps, after
-	// everything it needs and after quay and the projects, which need
-	// nothing of it: at a bootstrap only the root Application's own sync
-	// waits on the key, as it already waits on quay's step.
+	// (README.md, kagent). So it comes after everything it needs and after
+	// quay and the projects, which need nothing of it: at a bootstrap only
+	// the root Application's own sync waits on the key, as it already waits
+	// on quay's step.
 	{name: "kagent", priority: "optional"},
+	// The bindings' components, product-<product>-<claim>, one per binding and
+	// product in bindings/ (collections.cue), on the clusters that take the
+	// binding, each what the product renders for the claim that is not the
+	// owner's to change. They need their claim's own entry, for the namespace,
+	// the organization and the atespace, and the components their product
+	// names, so they come after both: after every claim, and after kagent,
+	// the last entry a product can name. Nothing comes after them but
+	// argocd-apps, so none of them moves another component's wave, and each
+	// waits on any step by hand that its components wait on.
+	for R in #BindingRegistrations {R},
 	// argocd-apps is the platform AppProject and the Application of every
 	// component the cluster takes, its own included: its Application is the
 	// root Application. It is last, so the root syncs every other Application

@@ -22,8 +22,8 @@ Cluster: clusters[clusterName]
 // component at standard or beneath it that serves an optional entry is
 // conditional on it, so a cluster that does not name the entry renders nothing
 // for it. The object stays in its component, so the Application that owns it
-// does not change. A claim is not here: it selects its clusters, and no
-// cluster names one.
+// does not change. A claim is not here, nor a binding: a claim selects its
+// clusters, a binding follows its claim, and no cluster names either.
 Takes: {
 	for NAME in #OptionalComponents {
 		(NAME): list.Contains(Cluster.components, NAME)

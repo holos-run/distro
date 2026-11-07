@@ -17,7 +17,7 @@ holos/
 ├── brand.cue       the distribution's brand, Bank of the Salish Sea, which its own names are built from
 ├── clusters.cue    per-site and per-cluster data
 ├── registry.cue    the components, in sync order
-├── collections.cue the ProjectClaim and people collections, bound into the platform, which claims and people each cluster takes, and the owners' group and user definitions
+├── collections.cue the ProjectClaim, people, product and binding collections, bound into the platform, which claims, people and bindings each cluster takes, and the owners' group and user definitions
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── private-ca.cue  the names of the private CA and its trust bundle, and the shape of its requesters
 ├── istio.cue       the mesh's release, namespace, images and trust domain
@@ -26,6 +26,8 @@ holos/
 ├── signing-keys/   the public keys commits on main are signed with
 ├── projects/       the ProjectClaim collection: its schema, and a file per project
 ├── people/         the people collection: its schema, and a file per person
+├── products/       the product collection: its schema, and a file per product
+├── bindings/       the collection of bindings: its schema, and a file per binding
 ├── platform/       the Platform: the registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
 ├── vendor/         git submodules a component renders from: substrate, the Substrate fork
@@ -209,6 +211,9 @@ runs the other way, and selects its clusters by label (Projects, below). A
 claim's atespace and route land in `ate-system` and `substrate-shim`, so they
 render only on a cluster that names both `substrate` and `substrate-shim`. On
 any other cluster it selects, a claim renders the rest of what it stands for.
+A binding's entry is `optional` and named by no cluster either: it follows its
+claim onto the clusters that name its products' components (Products and
+bindings, below).
 
 `clusterRegistry`, in `registry.cue`, is the result: the registry as each
 cluster takes it, keyed by cluster, in the registry's order.
@@ -219,8 +224,8 @@ the root files, not a filter on `Cluster`, because the platform instance does
 not load `components/component.cue`, where `Cluster` is defined, and never
 gets the `clusterName` tag: a filter on that would quietly read its default,
 treasury, for every cluster. `clusterProjects`, in `collections.cue`, is the
-claims each cluster takes, and `clusterPeople` the people, each a map for the
-same reason. `Projects.reserved`
+claims each cluster takes, `clusterPeople` the people and `clusterBindings` the
+bindings, each a map for the same reason. `Projects.reserved`
 reads the whole registry, so a name is reserved whether or not a cluster
 takes it.
 
@@ -335,8 +340,8 @@ entries have no hand step.
 16. **Finish the root's sync.** If its retries ran out during these steps, sync
     it again (Bootstrap Argo CD, below). Every `Application` the cluster takes
     is then `Synced` and `Healthy`; `kagent`, on a cluster that takes it, is the
-    last before the root. A running cluster with a claim that takes `substrate`
-    later is the exception: `project-<claim>` syncs at the merge, ahead of
+    last before the root but for the bindings (Products and bindings, below). A
+    running cluster with a claim that takes `substrate` later is the exception: `project-<claim>` syncs at the merge, ahead of
     `ate-system` and `substrate-shim`. On `cartography` a retry landed between
     the two, applied the `HTTPRoute` without its `ListenerSet`, and then waited
     on the route for good, `Running` with retries left. Out of retries it would
@@ -3184,10 +3189,10 @@ kubectl -n kagent get externalsecret kagent-anthropic   # SecretSynced
 
 Until then that `ExternalSecret`, and so the `kagent` Application, is
 `Degraded`, and an agent's `ResolvedRefs` is False with `secret
-kagent-anthropic not found`. kagent is the last component before
-`argocd-apps` (`registry.cue`), so on a new cluster no other component waits
-on the key, but the root Application's own sync does, as it does on Quay's
-step.
+kagent-anthropic not found`. Only the bindings (Products and bindings, below)
+come between kagent and `argocd-apps` (`registry.cue`), so on a new cluster they
+are all that waits on the key, beside the root Application's own sync, which
+waits as it does on Quay's step.
 
 #### Agents and the worker pool
 
@@ -3763,8 +3768,9 @@ Q66), and on any other cluster it renders nothing:
   repository, at signed commits, into `<name>`, no cluster-scoped kind, and
   neither RBAC nor the platform controller's kinds; and the `Application` `<name>`
   in it, which syncs `deploy/clusters/<cluster>/projects/<name>/`. That
-  directory holds only what the claim renders, one `ConfigMap`, `project`,
-  describing it. Every render removes `deploy/clusters` first, so a file
+  directory holds only what is rendered for the claim: one `ConfigMap`,
+  `project`, describing it, and what a bound product puts in its `project`
+  bucket (Products and bindings, below). Every render removes `deploy/clusters` first, so a file
   added there by hand is gone at the next render and fails CI; a project's
   own manifests are future work, to be rendered from CUE or kept outside
   `deploy/clusters`.
@@ -4303,6 +4309,99 @@ resource, the API server refuses a change to either, and that refusal fails
 `keycloak-realm`'s sync, which holds back its PostSync Job and any root sync
 waiting on its wave. `Orphan` leaves the realm's user, and the new resource
 adopts them by email.
+
+## Products and bindings
+
+A claim says who has a project and where it lands. Two more collections say
+what runs in it: a product is what a vendor delivers, and a binding is an
+owner's decision to run it in their project. Like the ProjectClaim collection
+they are pure CUE collections and not CRDs, shaped after a Kubernetes role and
+RoleBinding. `collections.cue` binds all three into the platform.
+
+| Collection | Whose | What it holds | Where | What renders it |
+| --- | --- | --- | --- | --- |
+| ProjectClaim | The platform's; a product engineer adds a claim | A project: its clusters, by label, and its owners, editors and viewers | `projects/<project>.cue` | `components/project`, as `project-<project>` |
+| Product | The vendor's or the platform's | What it renders, the components a cluster must take for it, the schema of its values with their defaults, and its image digests | `products/<product>.cue` | `components/product-<product>`, once per binding |
+| Binding | The claim's owner's | Which products a claim runs, and the values they leave to it | `bindings/<claim>-<product>.cue` | `components/product-<product>`, as `product-<product>-<claim>` |
+
+A binding is shaped like a RoleBinding. `project` is its namespace,
+`productRefs` is explicit as a `roleRef` is, and `values` is keyed by product
+name and holds only what the claim and the product do not know:
+
+```cue
+// holos/bindings/my-project-planboard.cue
+package bindings
+
+bindings: "my-project-planboard": {
+	project: "my-project"
+	productRefs: [{name: "planboard"}]
+	values: planboard: access: viewers: projects: ["roadmap"]
+}
+```
+
+A `productSelector` could stand beside `productRefs` to bind what a label
+selects. That door is left open, and nothing is built behind it. Each binding
+and product is a registry entry `product-<product>-<claim>`, `optional`, with
+the parameters `project` and `product`, which the platform passes as CUE tags.
+The product's component renders once per entry and reads the whole claim,
+product, binding and cluster from the module, so nothing is copied. The entries
+come after every claim and after `kagent`, the last entry a product can name,
+just before `argocd-apps`, so a binding needs its claim's namespace and its
+product's components before it syncs, and moves no wave but `argocd-apps`'s.
+
+A binding lands on a cluster that takes its claim and names every component of
+every product in it (`clusterBindings`), and lands whole or not at all. On a
+cluster its claim selects that lacks one of them it renders nothing, the claim's
+other clusters render as they would, and the mistake is reported as a
+`priority` left out of the registry is: `cue vet` says only that some instances
+are incomplete and fails, CI's Render job with it, and `cue vet -c` names the
+cluster, binding and component (`bindingGaps`).
+
+`cue vet` also refuses, with the names in the error:
+
+- a `project` that is no claim's, or a `productRefs` entry that is no product's
+  or that repeats one (`bindingRefs`);
+- a key of `values` that is not one of the binding's `productRefs`, which would
+  otherwise do nothing (`bindingRefs`);
+- a `values` body the product's schema refuses (`bindingValues`);
+- two bindings that come to one registry name, whether the same claim and
+  product twice or a name two pairs spell, as product `a-b` with claim `c` and
+  product `a` with claim `b-c` both spell `product-a-b-c` (`productBindings`);
+- a product's `components` entry that is not an optional registry entry
+  (`productComponents`).
+
+Run `cue vet` before a render, as Render, below, does, because a render reports
+few of these. `holos render platform` exits 1 on a product with no component
+directory, on a binding with no `project`, and on a `values` body a component
+reads. Bindings that collide, or a binding of the wrong shape, leave it no
+components at all and it exits 0, as with a malformed claim. The rest pass it
+with exit 0 too, and render as though nothing were wrong.
+
+Two rules are schema, not convention. A product's `#Values` is closed, so a
+binding cannot set an atespace or an image: the atespace comes from the
+binding's `project` and the images from the product. Its fields carry patterns
+too, because a value can reach a shell script or a policy match. And a product's
+component fills two buckets of `#ProductComponent` (`components/product.cue`),
+which are the only source of its artifacts:
+
+| Bucket | What goes in it | Rendered to | Synced by |
+| --- | --- | --- | --- |
+| `platform` | Everything outside the claim's namespace, and what the owner may not change in it | `deploy/clusters/<cluster>/components/product-<product>-<claim>` | The Application `product-<product>-<claim>`, in AppProject `platform` |
+| `project` | What the owner may change live, each object constrained to the claim's namespace, with the kinds the claim's `AppProject` refuses refused at the render | `deploy/clusters/<cluster>/projects/<claim>` | The claim's own Application, in AppProject `<claim>`, whose one destination is that namespace |
+
+That split is what lets an owner hold `update` on their own Applications
+without holding any other namespace.
+
+Claims carry `metadata.labels` for selectors to come: `holos.run/project-name`
+from the name, as a cluster has `holos.run/cluster-name`, and any of their own.
+Nothing reads them yet, and they render nowhere.
+
+The one product so far is `planboard` (`products/planboard.cue`), and its
+component renders nothing yet, so no binding is committed. A product that
+renders nothing leaves no directory in `deploy/`, and its `Application` would
+point at a path that does not exist and report a `ComparisonError`; a claim
+avoids that with its `ConfigMap` `project`, and a product with a binding has to
+render something into `platform` for the same reason.
 
 ## Render
 

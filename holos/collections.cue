@@ -3,12 +3,15 @@ package holos
 import (
 	"list"
 
+	bnd "go.holos.run/distro/holos/bindings"
 	ppl "go.holos.run/distro/holos/people"
+	prod "go.holos.run/distro/holos/products"
 	proj "go.holos.run/distro/holos/projects"
 )
 
-// collections.cue binds the ProjectClaim collection (projects/) and the people
-// collection (people/) into the root of package holos. CUE loads only
+// collections.cue binds the ProjectClaim collection (projects/), the people
+// collection (people/), the product collection (products/) and the collection
+// of bindings (bindings/) into the root of package holos. CUE loads only
 // root-level holos/*.cue files as ancestors of the platform and of each
 // component, so a collection, which is a package of its own in a subdirectory,
 // is visible to them only through this import, as aavis-ops binds its
@@ -21,7 +24,11 @@ import (
 // cluster has, and keycloak-realm renders a User for each. Nothing here gives a
 // person a group or a place on the allowlist: a group is a claim's, for its
 // owners, editors and viewers, and a place on the allowlist a claim's for its
-// owners alone.
+// owners alone. A binding binds products to a claim: the registry adds a
+// component per binding and product (productBindings, below), bindingValues is
+// its values as the product's schema resolves them, clusterBindings is which
+// bindings each cluster takes, and the product's component
+// (components/product-<product>) renders each on those clusters.
 //
 // Only what the platform needs is here: the platform instance loads the
 // root files and platform/, not components/*.cue, so Keycloak, Quay and the
@@ -34,6 +41,12 @@ projects: proj.projects
 
 // people is the collection, keyed by email.
 people: ppl.people
+
+// products is the collection, keyed by name.
+products: prod.products
+
+// bindings is the collection, keyed by name.
+bindings: bnd.bindings
 
 // #ClusterSelected is whether selector selects a cluster with labels, by
 // Kubernetes' rules: every requirement holds, so {} selects every cluster;
@@ -133,6 +146,148 @@ personClusters: {
 	}
 }
 
+// productComponents checks the products' components, by product and then
+// component name: each is an optional entry of the registry, since that is all
+// a cluster can name (#Cluster.components), and anything else, whether a typo,
+// an entry further down the stack or a claim, would keep the product off every
+// cluster with every other check passing. products/ cannot see the registry, so
+// the check is here, and fails cue vet with both names in the error.
+productComponents: {
+	for NAME, P in products {
+		(NAME): {
+			for COMPONENT in P.components {
+				(COMPONENT): true & list.Contains(#OptionalComponents, COMPONENT)
+			}
+		}
+	}
+}
+
+// bindingRefs checks what each binding refers to, by binding name, and fails
+// cue vet with the binding and the offending name in the error: project is a
+// claim, each of productRefs is a product, once, and each key of values is one
+// of productRefs. A claim or product that does not exist would otherwise only
+// leave a reference incomplete, which plain cue vet passes, and a key of values
+// naming no product of the binding's, a typo, would do nothing at all.
+// bindings/ cannot see either collection, so the checks are here.
+bindingRefs: {
+	for NAME, B in bindings {
+		(NAME): {
+			project: (B.project): true & projects[B.project] != _|_
+			productRefs: {
+				for INDEX, R in B.productRefs {
+					(R.name): {
+						exists: true & products[R.name] != _|_
+						index:  INDEX
+					}
+				}
+			}
+			values: {
+				for PRODUCT, _ in B.values {
+					(PRODUCT): true & list.Contains([for R in B.productRefs {R.name}], PRODUCT)
+				}
+			}
+		}
+	}
+}
+
+// productBindings are the bindings by registry name, product-<product>-<claim>,
+// one per binding and product, with the names of the binding, the product and
+// the claim. It holds no more than the names, because the registry reads it and
+// every component and the platform read the registry: a mistake in one
+// binding's values fails only bindingValues, below, where an error here would
+// leave the platform with no components at all, and holos render platform would
+// exit 0 with nothing rendered.
+//
+// Two bindings that come to one name conflict here, and fail cue vet with the
+// name in the error: the same claim and product bound twice, or a name that two
+// pairs spell, as product a-b with claim c and product a with claim b-c both
+// spell product-a-b-c. The registry would otherwise have two entries with one
+// name, and only one would render.
+productBindings: {
+	for BINDING, B in bindings for R in B.productRefs {
+		"product-\(R.name)-\(B.project)": {
+			binding: BINDING
+			product: R.name
+			project: B.project
+		}
+	}
+}
+
+// bindingValues are each binding's values for a product, by registry name,
+// resolved: a product's #Values is closed and parameterised on the claim's
+// name, so this is where a binding's values are refused, failing cue vet with
+// the registry name in the error, and where a default that depends on the claim
+// gets its value. The product's component reads this (#ProductComponent,
+// components/product.cue).
+//
+// It is written as one expression, not through an embedding of #Values, which
+// would reopen the schema, and not with a default of {} for a product the
+// binding has no key for, which would drop values the schema refuses instead of
+// failing.
+bindingValues: {
+	for ENTRY, E in productBindings
+	let VALUES = bindings[E.binding].values {
+		(ENTRY): products[E.product].#Values & {
+			#project: E.project
+			if VALUES[E.product] != _|_ {VALUES[E.product]}
+		}
+	}
+}
+
+// #BindingMissing are the components each binding lacks on each cluster its
+// claim lands on, by cluster and then binding name: the components of the
+// binding's products that the cluster does not name, and for a binding the
+// cluster can take, none. A binding on no claim or a product that does not
+// exist has nothing to look up here, and bindingRefs refuses it.
+#BindingMissing: {
+	for CLUSTER, C in clusters {
+		(CLUSTER): {
+			for NAME, B in bindings
+			if clusterProjects[CLUSTER][B.project] != _|_ {
+				(NAME): [
+					for R in B.productRefs
+					if products[R.name] != _|_
+					for COMPONENT in products[R.name].components
+					if !list.Contains(C.components, COMPONENT) {COMPONENT},
+				]
+			}
+		}
+	}
+}
+
+// clusterBindings are the bindings each cluster takes, by cluster and then
+// binding name: the ones whose claim lands on it and whose products' components
+// it names, all of them, so a binding of two products lands whole or not at
+// all. Whatever reads the collection for a cluster reads this, clusterRegistry
+// first, so a binding leaves no trace on a cluster that does not take it. It is
+// a map in the root for the reason clusterProjects is.
+clusterBindings: {
+	for CLUSTER, MISSING in #BindingMissing {
+		(CLUSTER): {
+			for NAME, COMPONENTS in MISSING
+			if len(COMPONENTS) == 0 {
+				(NAME): bindings[NAME]
+			}
+		}
+	}
+}
+
+// bindingGaps reports a binding that does not land on a cluster its claim lands
+// on, by cluster, binding and missing component, each a required field nothing
+// sets. So it fails cue vet the way a registry entry without a priority does:
+// plain cue vet says only that some instances are incomplete, and cue vet -c
+// names the cluster, the binding and the component. It does not stop a render:
+// holos render platform reads platform, not this, and clusterBindings has left
+// the binding out, so the cluster renders nothing for it and the claim's other
+// clusters render as they would.
+bindingGaps: {
+	for CLUSTER, MISSING in #BindingMissing
+	for NAME, COMPONENTS in MISSING
+	for COMPONENT in COMPONENTS {
+		(CLUSTER): (NAME): (COMPONENT)!: string
+	}
+}
+
 // #ProjectRoles are the roles every project has a Keycloak group and a Quay
 // team for, in that order. Only owner is bound to anything in Kubernetes.
 #ProjectRoles: ["owner", "editor", "viewer"]
@@ -217,5 +372,29 @@ personClusters: {
 		component: "project"
 		priority:  "optional"
 		parameters: project: NAME
+	},
+]
+
+// #BindingRegistrations are the registry's entries for the bindings, one per
+// binding and product (productBindings), which registry.cue puts after every
+// claim's own entry and after the components a product can name. Each is the
+// component product-<product>-<claim>, rendered from the directory
+// components/product-<product> with the parameters project and product, so a
+// binding adds a component and an Argo CD Application of its own, as a claim
+// does and for the same reason. They are in name order, and optional, and no
+// cluster names one, for the reasons #ProjectRegistrations gives: this list is
+// every binding, whichever clusters take it (#OptionalComponents,
+// registry.cue). Like that list it reads neither clusters nor anything that
+// does, clusterProjects and clusterBindings among them, since
+// #Cluster.components reads it.
+#BindingRegistrations: [
+	for NAME in list.SortStrings([for NAME, _ in productBindings {NAME}]) {
+		name:      NAME
+		component: "product-\(productBindings[NAME].product)"
+		priority:  "optional"
+		parameters: {
+			project: productBindings[NAME].project
+			product: productBindings[NAME].product
+		}
 	},
 ]
