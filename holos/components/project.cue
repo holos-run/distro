@@ -191,3 +191,15 @@ Projects: {
 
 	#Unreserved: !~"^(kube|\(Brand.slug)|project)-" & and([for NAME, _ in reserved {!=NAME}])
 }
+
+// #ProjectDirectory is the one spelling of a project's own directory in deploy/,
+// which its Application syncs: the project component's second artifact
+// (components/project), and a product's project bucket (#ProductComponent,
+// components/product.cue) renders into the same directory. It is outside
+// deploy/clusters/<cluster>/components, where only the platform's Applications
+// look, and inside deploy/clusters, so a render from a clean deploy/clusters
+// writes it again.
+#ProjectDirectory: {
+	project: string
+	path:    "clusters/\(Cluster.name)/projects/\(project)"
+}

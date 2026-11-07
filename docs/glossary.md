@@ -113,6 +113,19 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   nothing grants them anything until a claim or a group names them. Only what admits any realm user
   lets them in ([People](../holos/README.md#people)).
 
+**product**, **product collection**
+: A CUE collection in `holos/products/`, the vendor's or the platform's, each product declaring the
+  components a cluster must take for it, the closed schema of its per-binding values and its image
+  digests. It renders nothing until a binding binds it to a claim
+  ([Products and bindings](../holos/README.md#products-and-bindings)).
+
+**binding**
+: A CUE collection in `holos/bindings/`, each binding its claim owner's, shaped like a RoleBinding:
+  a `project`, explicit `productRefs`, and `values` keyed by product. Each binding and product is
+  the component and Argo CD Application `product-<product>-<claim>`, on the clusters that take the
+  claim and name the products' components
+  ([Products and bindings](../holos/README.md#products-and-bindings)).
+
 ## Identity and tokens
 
 **ksa**

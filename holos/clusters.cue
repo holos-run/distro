@@ -53,8 +53,8 @@ import (
 	// components names the optional entries of the registry the cluster
 	// takes, beside the stack up to standard, which every cluster takes
 	// (#Registration.priority). A name outside #OptionalComponents, whether a
-	// typo, an entry further down the stack or a claim, fails cue vet. The
-	// order here does not matter: a cluster syncs them in the registry's
+	// typo, an entry further down the stack, a claim or a binding, fails cue
+	// vet. The order here does not matter: a cluster syncs them in the registry's
 	// order (clusterRegistry, registry.cue).
 	components: [...or(#OptionalComponents)]
 

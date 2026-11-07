@@ -160,6 +160,15 @@ let DNSLabel = "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
 	// named exactly this, with nothing added or derived.
 	name: #Name
 
+	// metadata.labels are the claim's labels, under Kubernetes' rules for a
+	// label, for what comes to select claims. holos.run/project-name is set from
+	// name, as #Cluster sets holos.run/cluster-name, so any claim can be named
+	// without declaring anything; a claim adds its own here. Nothing reads them
+	// yet, and they render nowhere.
+	metadata: labels: #Labels & {
+		"holos.run/project-name": name
+	}
+
 	// clusterSelector selects the clusters the claim lands on, by their
 	// labels. It is required: a field with a default would make a forgotten
 	// selector {} and land the claim on every cluster. A claim without one,

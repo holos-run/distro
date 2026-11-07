@@ -180,15 +180,12 @@ let SetupPolicy = {
 	}
 }
 
-// Directory is the project's own directory in deploy/, which its
-// Application syncs: the second artifact, outside
-// deploy/clusters/<cluster>/components, where only the platform's
-// Applications look, and inside deploy/clusters, so a render from a clean
-// deploy/clusters writes it again. It holds only what this component
-// renders: the render removes deploy/clusters first, so a file put there by
-// hand would be gone at the next render, and CI would fail the pull request
-// that committed it.
-let Directory = "clusters/\(Cluster.name)/projects/\(NAME)"
+// Directory is the project's own directory in deploy/ (#ProjectDirectory),
+// which its Application syncs: the second artifact. It holds only what this
+// component and the products bound to the claim render: the render removes
+// deploy/clusters first, so a file put there by hand would be gone at the next
+// render, and CI would fail the pull request that committed it.
+let Directory = (#ProjectDirectory & {project: NAME}).path
 
 if ProjectName != "" {holos: spec: artifacts: [
 	(#ResourcesArtifact & {
@@ -696,12 +693,13 @@ if ProjectName != "" {holos: spec: artifacts: [
 		}
 	}).artifact,
 
-	// The project's own directory, which its Application syncs. It holds only
+	// The project's own directory, which its Application syncs. It holds
 	// the one ConfigMap project, describing the claim, so the Application has
-	// something to be Synced and Healthy with. A project's own manifests are
-	// future work: they would have to be rendered from CUE here, or live
-	// outside deploy/clusters, since this directory is rewritten by every
-	// render.
+	// something to be Synced and Healthy with, beside what the products bound
+	// to the claim leave to its owner (#ProductComponent). A project's own
+	// manifests are future work: they would have to be rendered from CUE here,
+	// or live outside deploy/clusters, since this directory is rewritten by
+	// every render.
 	(#ResourcesArtifact & {
 		directory: Directory
 		generated: "project-resources.yaml"
