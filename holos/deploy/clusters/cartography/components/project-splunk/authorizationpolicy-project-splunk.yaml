@@ -22,6 +22,9 @@ spec:
               values:
                 - /platform/owners
                 - /projects/splunk/roles/owner
+            - key: request.auth.audiences
+              values:
+                - kubectl
     targetRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

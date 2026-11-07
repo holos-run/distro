@@ -72,12 +72,16 @@ Substrate: {
 		access: "ate.dev/api-access": "true"
 	}
 	// atespaceSetup is the Job each ProjectClaim's atespace is made by
-	// (components/project). No image Substrate publishes carries kubectl ate,
+	// (components/project), and any other that calls the API. No image Substrate publishes carries kubectl ate,
 	// so it calls the API with grpcurl, which reads the methods from the
 	// server's gRPC reflection. labels are what the substrate component's
-	// NetworkPolicy admits it to the API server by.
+	// NetworkPolicy admits it to the API server by, and dir is where its pod
+	// has its credential: a projected token for the API server, and the trust
+	// bundle of the signer of the server's certificate, the live one, as the
+	// shim projects it (#AteAPIJob, components/ate-api-job.cue).
 	atespaceSetup: {
 		labels: "app.kubernetes.io/name": "atespace-setup"
+		dir:   "/var/run/ate/api"
 		image: "docker.io/fullstorydev/grpcurl:v1.9.3-alpine@sha256:4614424ed58e9b9837c48b6b8eadb9ef40491d5af3499bcc8b378e9c64a9e4a9"
 	}
 	// issuer is the IdP's, the iss of every actor JWT, which ate-setup

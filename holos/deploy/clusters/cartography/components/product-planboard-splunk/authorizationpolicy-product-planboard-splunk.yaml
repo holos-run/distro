@@ -1,0 +1,33 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: product-planboard-splunk
+    namespace: substrate-shim
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.cartography.bank.internal/realms/default/*
+          to:
+            - operation:
+                hosts:
+                    - planboard.splunk.ate.cartography.bank.internal
+                    - planboard.splunk.ate.cartography.bank.internal:443
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+                - /projects/splunk/roles/editor
+                - /projects/splunk/roles/owner
+                - /projects/splunk/roles/viewer
+            - key: request.auth.audiences
+              values:
+                - kubectl
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate

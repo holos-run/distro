@@ -35,7 +35,8 @@ import (
 // full group paths in the groups claim (interview Q65). No Secrets Manager
 // project, seabank-prj-<project>, yet (Q64). No ResourceQuota, and no RBAC
 // for the editor and viewer groups, which nothing in Kubernetes binds: their
-// members reach the project's Quay organization and nothing else of it, and
+// members reach the project's Quay organization, and what a product bound to the
+// claim opens to them, such as the Planboard's board, and nothing else of it, and
 // neither group joins the allowlist (#ProjectOwnerGroupClaims, collections.cue).
 //
 // Every kind's CRD comes from an earlier component: Group, User,
@@ -128,14 +129,8 @@ let AG = AteGateway
 // gets no more than the claim gave them.
 let ProjectClient = "system:serviceaccount:\(NAME):\(S.client.serviceAccount)"
 
-// SetupLabels mark the Job's pod as the claim's, and as what the substrate
-// component's NetworkPolicy admits to the API server.
-let SetupLabels = Labels & S.atespaceSetup.labels
-
-// SetupDir is where the Job's pod has its credential: a projected token for
-// the API server, and the trust bundle of the signer of the server's
-// certificate, the live one, as the shim projects it.
-let SetupDir = "/var/run/ate/api"
+// SetupDir is where the Job's pod has its credential (#AteAPIJob).
+let SetupDir = S.atespaceSetup.dir
 
 // SetupScript calls the two RPCs kubectl ate create atespace and kubectl ate
 // create access-policy do. grpcurl exits with 64 plus a call's gRPC status
@@ -385,100 +380,13 @@ if ProjectName != "" {holos: spec: artifacts: [
 
 				// The atespace and its access policy, made through Substrate's API.
 				//
-				// In ate-system, under the ate-client ksa, not in the project's
-				// namespace. can_create_atespace is global owner's alone (Substrate's
-				// model.fga has no narrower role), and the claim's owner is admin in
-				// the project's namespace, who reads every Secret there and may run
-				// a pod under any ServiceAccount there: a token the Job held in that
-				// namespace would hand each project's owner the whole install. A
-				// claim's owner has no access to ate-system, and nothing is stored:
-				// the token is the pod's own, projected, for the API's audience, for
-				// the ten minutes that are the shortest the API server issues.
-				//
-				// An Argo CD Sync hook, so it runs on every sync of the claim,
-				// deleted and re-created each time (BeforeHookCreation), since a
-				// Job's template cannot change in place. Unlike substrate-db's role
-				// Job, it holds no password, so the finished Job stays, for its log.
-				// It runs alongside the claim's other objects and depends on none:
-				// the ServiceAccount in the policy need not exist yet.
-				//
-				// A failure fails this Application's sync, after those objects are
-				// applied, and Argo CD retries the sync (components/argocd-apps), each
-				// time with a new Job, up to its limit, and then stops. Nothing
-				// reports it after that: a hook is outside an Application's health
-				// and its comparison, so the Application reads Synced and Healthy
-				// with operationState.phase Failed, the root's health check passes
-				// it, and an automated sync does not run it again. So the limits
-				// here are short, as the API server is up by this wave, and the check
-				// and the recovery, a sync by hand, are in README.md, Checking a
-				// project.
-				Job: "atespace-\(NAME)": {
-					metadata: {
-						namespace: S.namespace
-						labels:    SetupLabels
-						annotations: {
-							"argocd.argoproj.io/hook":               "Sync"
-							"argocd.argoproj.io/hook-delete-policy": "BeforeHookCreation"
-						}
-					}
-					spec: {
-						// A failing call is retried with the kubelet's back-off, as
-						// when the claim's first sync beats substrate's to the
-						// NetworkPolicy, on the limits above.
-						backoffLimit:          3
-						activeDeadlineSeconds: 300
-						template: {
-							metadata: labels: SetupLabels
-							spec: {
-								restartPolicy:                "OnFailure"
-								serviceAccountName:           S.client.serviceAccount
-								automountServiceAccountToken: false
-								// The image's grpcurl user, by number, which
-								// runAsNonRoot can check.
-								securityContext: {
-									runAsNonRoot: true
-									runAsUser:    100
-									runAsGroup:   101
-									seccompProfile: type: "RuntimeDefault"
-								}
-								containers: [{
-									name:  "setup"
-									image: S.atespaceSetup.image
-									command: ["/bin/sh", "-c", SetupScript]
-									volumeMounts: [{name: "api", mountPath: SetupDir, readOnly: true}]
-									resources: {
-										requests: {cpu: "10m", memory: "32Mi"}
-										limits: memory: "64Mi"
-									}
-									securityContext: {
-										allowPrivilegeEscalation: false
-										readOnlyRootFilesystem:   true
-										capabilities: drop: ["ALL"]
-									}
-								}]
-								volumes: [{
-									name: "api"
-									projected: sources: [
-										{
-											serviceAccountToken: {
-												audience:          S.api.audience
-												expirationSeconds: 600
-												path:              "token"
-											}
-										},
-										{
-											clusterTrustBundle: {
-												signerName: S.signers.serviceDNS
-												labelSelector: matchLabels: "podcert.ate.dev/canarying": "live"
-												path: "ca.pem"
-											}
-										},
-									]
-								}]
-							}
-						}
-					}
-				}
+				// #AteAPIJob holds where it runs, under what credential, and why,
+				// and what a failure does. This one runs on every sync of the
+				// claim, and the ServiceAccount in the policy need not exist yet.
+				Job: "atespace-\(NAME)": (#AteAPIJob & {
+					labels: Labels
+					script: SetupScript
+				}).job
 
 				// The claim's own approval for its wildcard, this one name from the
 				// private CA, in the shim's namespace, and no CA. Not an entry in

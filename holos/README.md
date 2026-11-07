@@ -402,6 +402,7 @@ entries have no hand step.
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
 | `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim |
+| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, and the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor (The board as an actor, below) |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -3812,8 +3813,8 @@ Q66), and on any other cluster it renders nothing:
   the privileged Pod Security level.
 
 No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
-editor and viewer groups, whose members have Quay and nothing else of the
-project. `projects/` holds four claims: `payments`, `ledger`
+editor and viewer groups, whose members have Quay, and what a binding opens to
+them, and nothing else of the project. `projects/` holds four claims: `payments`, `ledger`
 and `checkout`, each selecting `treasury`, and `splunk`, selecting
 `cartography`.
 
@@ -3946,7 +3947,8 @@ is also reserved: no project on the cluster may take it as a name, since they
 can log in to Quay, whose users and organizations share a namespace.
 
 **What they get** is the role's team in the project's Quay organization, and
-nothing else. A member joins it at their next web login to Quay, since a team
+nothing else, but for what a product bound to the claim opens to them (The board
+as an actor, below). A member joins it at their next web login to Quay, since a team
 follows the groups claim at each such login, not before. `docker login` with a
 saved credential does not count. Each team has a role and a default permission,
 which are different grants:
@@ -4193,7 +4195,7 @@ no `User`, since theirs is the one in `keycloak` and a second resource would
 contend for it, and it still puts them in the role's group and, as an owner,
 through the claim, on the allowlist. As an editor or a viewer they get the
 role's Quay team, and `kubectl`, Argo CD and the Substrate shim stay closed to
-them (Editors and viewers, above). A member who is not a person on that cluster
+them, but for a bound product's own host there (Editors and viewers, above). A member who is not a person on that cluster
 renders a `User` in the claim's namespace, as owners always have, so no claim
 needs this collection, and a member can be a person on one cluster and not on
 another. Adding someone who is already in a claim moves their `User`: the
@@ -4396,12 +4398,91 @@ Claims carry `metadata.labels` for selectors to come: `holos.run/project-name`
 from the name, as a cluster has `holos.run/cluster-name`, and any of their own.
 Nothing reads them yet, and they render nowhere.
 
-The one product so far is `planboard` (`products/planboard.cue`), and its
-component renders nothing yet, so no binding is committed. A product that
+The one product so far is `planboard` (`products/planboard.cue`), and the one
+binding is `bindings/splunk-planboard.cue`, on cartography. A product that
 renders nothing leaves no directory in `deploy/`, and its `Application` would
 point at a path that does not exist and report a `ComparisonError`; a claim
 avoids that with its `ConfigMap` `project`, and a product with a binding has to
 render something into `platform` for the same reason.
+
+### The board as an actor
+
+A binding of `planboard` runs the board in the claim's atespace, at
+`https://planboard.<claim>.ate.<domain>`, over the claim's planning repository:
+`https://github.com/holos-run/<claim>-planning` on `main`, with the planning
+root at the top of the repository, unless `values.planboard.repo` says otherwise.
+The repository is private and the owner's to create.
+
+`product-planboard-<claim>` is everything in the table in Components, above,
+and the substrate component adds the claim's atespace to the credential
+provider's namespace policy, for its own namespace alone. The rest are objects
+in Substrate's API, so its Sync hook `planboard-<claim>` makes them, as
+`atespace-<name>` makes the atespace, on every sync:
+
+| Object | Name | What the hook does |
+| --- | --- | --- |
+| `ActorTemplate` | `planboard-<digest12>-<spec8>`: the image's digest, and a hash of the whole template | Creates it. A template is immutable, so a new image or a new value in the binding is a new name |
+| `Actor` | `planboard` | Creates it, suspended; or, if it is on another template, suspends it and moves it. Reverts it first if it is `CRASHED` |
+| `EgressPolicy` | The actor's | Creates it or writes it again: `github.com:443`, `https`, with `authorization` replaced from `planboard-git` |
+| Old templates | `planboard-<hex12>-<hex8>` | Deletes every one but the current, so that shape of name is the hook's alone: Substrate deletes a template an actor still uses. Nothing else in the atespace is touched |
+
+The template has two containers from the `board` image, uid 65532, sharing a
+durable directory at `/data`. `sync` clones the repository to `/data/repo` and
+then fetches and resets to the branch's head every thirty seconds, in place,
+because Planboard opens its root once. `board` waits for the checkout and serves
+it on port 80, the port Substrate's router dials. The actor wakes on its first
+request, and the probe's 120 seconds covers the first clone, though the router
+answers 504 to a request still waiting after ten seconds, and the next one finds
+it awake. A new template boots cold, keeping `/data`; a suspended actor does not
+sync until something wakes it.
+
+The owner does one thing by hand, with the admin their claim gives them: make a
+fine-grained personal access token on the planning repository, with contents
+read and write, and put it in the claim's namespace. The credential never enters
+the sandbox: both images send a placeholder `Authorization`, and the egress
+gateway replaces it on requests to `github.com`. The value is the header's, so it
+is the base64 of `x-access-token:<PAT>`, in a Secret that base64s it again:
+
+```sh
+kubectl -n $claim create secret generic planboard-git \
+  --from-literal=authorization="$(printf 'x-access-token:%s' "$PAT" | base64 -w0)"
+```
+
+The Secret is not in git and `cmd/state` does not carry it, so it is entered again
+after a rebuild, until the claim's Secrets are saved with the rest
+(`bound-claims-secrets-in-cmd-state` in the planning board).
+
+To check it, read the hook's phase, since the `Application` reads Synced and
+Healthy whatever the hook did (Checking a project, above), then the actor:
+
+```sh
+kubectl -n argocd get application product-planboard-$claim \
+  -o jsonpath='{.status.operationState.phase}{"\n"}'   # Succeeded
+kubectl -n ate-system logs job/planboard-$claim
+kubectl ate get actor-templates -a $claim
+kubectl ate get actors -a $claim
+kubectl ate get egress-policy planboard -a $claim
+curl -H "Authorization: Bearer $TOKEN" https://planboard.$claim.ate.$domain/api/projects
+```
+
+`TOKEN` is an ID token (Reaching an actor, above). The hook's policy admits the
+claim's owner, editor and viewer groups and `/platform/owners` to the board's host,
+and only that host, so another actor in the atespace stays closed to editors and
+viewers. Everyone else gets 403. That is every route for every project, for
+anyone admitted: the per-project rule for viewers is not built yet.
+
+An actor woken before `planboard-git` exists fails its clone. The first request
+gets 504 from the router after ten seconds, the probe gives up after 120, and the
+actor is `CRASHED`, which the router cannot wake. A sync of the `Application`
+reverts it, or a platform operator can. The owner cannot do it from a laptop,
+since `kubectl ate` port-forwards in `ate-system` (An actor in a project's
+atespace, above):
+
+```sh
+kubectl ate revert actor planboard -a $claim
+```
+
+The next request wakes it from `/data`.
 
 ### Building the Planboard images
 
@@ -4467,8 +4548,11 @@ To push, once a claim's `Repository` objects exist, run this in the shell that
 ran the build, since it uses `build`, `$ctx`, `$tag` and `SOURCE_DATE_EPOCH`. It
 uses the controller's token as Bringing Substrate up, above, does. The daemon
 pushes here, so it has to trust the cluster's root through
-`/etc/docker/certs.d/quay.$domain/ca.crt`, as Checking Quay, above, sets up, and
-buildx sends it the credential from `DOCKER_CONFIG`:
+`/etc/docker/certs.d/quay.$domain/ca.crt`, as Checking Quay, above, sets up.
+`docker push` honours that file, and BuildKit's own push does not: with
+`push=true` it fails on Quay's token endpoint, `tls: failed to verify
+certificate`. So `build` puts each image in the daemon, and `docker push` sends
+it, with the same digest:
 
 ```sh
 claim=splunk
@@ -4478,9 +4562,11 @@ tok=$(kubectl -n seabank-prj-platform get secret quay-controller-token -o jsonpa
 printf '{"auths":{"%s":{"auth":"%s"}}}' "quay.$domain" \
   "$(printf '%s' "\$oauthtoken:$tok" | base64 -w0)" > $DOCKER_CONFIG/config.json
 unset tok
-build board type=image,name=quay.$domain/$claim/planboard:$tag,push=true
-build agent type=image,name=quay.$domain/$claim/planboard-agent:$tag,push=true
-build plugin type=image,name=quay.$domain/$claim/planboard-plugin:$tag,push=true
+for pair in board:planboard agent:planboard-agent plugin:planboard-plugin; do
+  image=quay.$domain/$claim/${pair#*:}:$tag
+  build ${pair%%:*} type=image,name=$image,push=false
+  docker push $image
+done
 rm -rf $DOCKER_CONFIG $ctx; unset DOCKER_CONFIG
 ```
 

@@ -16,9 +16,9 @@ products: planboard: {
 		// repository, so a binding that follows the convention sets none of it.
 		//
 		// The patterns are the boundary between the owner and the platform:
-		// these strings go into the actor's template, in a Job's shell script
-		// that holds Substrate's global owner token, so no quote or space gets
-		// past here. url is on github.com because that is the host the actor's
+		// these strings go into the actor's template, through the environment
+		// of a Job that holds Substrate's global owner token, so no quote or
+		// space gets past here, whatever becomes of them. url is on github.com because that is the host the actor's
 		// egress rule opens, and a path has no segment starting with a dot, so
 		// none climbs out of the checkout.
 		repo: {

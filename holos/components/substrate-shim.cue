@@ -45,6 +45,38 @@ AteGateway: {
 	domain:   "ate.\(IngressGateway.domain)"
 	wildcard: "*.\(domain)"
 
+	// #Rule is a rule of an AuthorizationPolicy on the Gateway: its hostname,
+	// with or without the port, a verified token from the realm, and one of its
+	// groups in the token's groups claim.
+	//
+	// On a cluster with a binding, it also pins the token's audience. The
+	// RequestAuthentication takes only the kubectl client today, so the clause
+	// changes nothing yet, but a board's login adds the claim's client to that
+	// one shared list (a-pkce-client-and-oauth2-proxy-per-binding, in the
+	// Planboard_On_Holos planning project), and a token of that audience would
+	// then be good on every atespace its groups reach. Pinned here, each rule
+	// names the audiences its hosts take. The gate keeps a cluster with no
+	// binding byte-identical until after Ate Con (Second_Cluster Q6).
+	#Rule: {
+		hostname: string
+		groups: [...string]
+
+		out: {
+			from: [{source: requestPrincipals: ["\(Keycloak.issuer)/*"]}]
+			to: [{operation: hosts: [hostname, "\(hostname):443"]}]
+			when: [
+				{
+					key:    "request.auth.claims[\(Keycloak.groupsClaim)]"
+					values: list.SortStrings(groups)
+				},
+				if len(clusterBindings[Cluster.name]) > 0 {
+					key: "request.auth.audiences"
+					values: [Keycloak.clients.kubectl]
+				},
+			]
+		}
+	}
+
 	// #Atespace is one Substrate atespace the shim serves: a listener with a
 	// wildcard certificate *.<atespace>.<domain>, an HTTPRoute to the router,
 	// and an AuthorizationPolicy rule admitting a Keycloak ID token whose
@@ -100,17 +132,11 @@ AteGateway: {
 			}
 		}
 
-		// rule is the atespace's AuthorizationPolicy rule: its hosts, with or
-		// without the port, a verified token from the realm, and one of its
-		// groups in the token's groups claim.
-		rule: {
-			from: [{source: requestPrincipals: ["\(Keycloak.issuer)/*"]}]
-			to: [{operation: hosts: [hostname, "\(hostname):443"]}]
-			when: [{
-				key:    "request.auth.claims[\(Keycloak.groupsClaim)]"
-				values: list.SortStrings(groups)
-			}]
-		}
+		// rule is the atespace's AuthorizationPolicy rule.
+		rule: (Self.#Rule & {
+			"hostname": hostname
+			"groups":   groups
+		}).out
 	}
 
 	// atespaces are the platform's, each a listener on the Gateway itself. A
