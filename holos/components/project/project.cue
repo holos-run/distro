@@ -14,8 +14,8 @@ import (
 // component:
 //
 //   - the project's namespace, named for it, in the mesh;
-//   - its owner, editor and viewer groups in the realm, each owner's user,
-//     and the owners' membership in the owner group;
+//   - its owner, editor and viewer groups in the realm, the user of each of
+//     its owners, editors and viewers, and their membership in the groups;
 //   - its Quay organization, with a team synced from each group;
 //   - the RoleBinding that gives the owner group ownerAccess, admin by
 //     default, in the namespace, and nowhere else;
@@ -34,7 +34,9 @@ import (
 // teams can sync from its client roles, and Quay here syncs teams from the
 // full group paths in the groups claim (interview Q65). No Secrets Manager
 // project, seabank-prj-<project>, yet (Q64). No ResourceQuota, and no RBAC
-// for the editor and viewer groups, which nothing binds.
+// for the editor and viewer groups, which nothing in Kubernetes binds: their
+// members reach the project's Quay organization and nothing else of it, and
+// neither group joins the allowlist (#ProjectOwnerGroupClaims, collections.cue).
 //
 // Every kind's CRD comes from an earlier component: Group, User,
 // GroupMembership, Organization and the security.holos.run ReferenceGrant
@@ -69,23 +71,34 @@ let Groups = {
 	}
 }
 
-// Owners are the claim's owners, each checked against the realm's people
-// (Projects.people, Projects.usernames and Projects.#Person), so an owner
-// whose username is another person's, who is one of the platform's people
-// under another username, or who is a platform service user, fails the
-// render. The checks are folded into email, which the owner group's
-// membership and the ConfigMap always render, so they hold for an owner
-// with no User too. platform is whether Keycloak already has them, and
-// person whether they are in the people collection on this cluster, whose
-// User keycloak-realm renders; neither has a User rendered here.
-let Owners = {
-	for EMAIL, O in P.owners {
-		(EMAIL): {
-			let USERNAME = O.username & Projects.usernames[EMAIL] & Projects.#Person
-			username: USERNAME
-			email:    EMAIL & Projects.people[USERNAME].email
-			platform: Projects.people[USERNAME].platform
-			person:   Projects.people[USERNAME].person
+// Claimed is the claim's map of each role (#ProjectRoles).
+let Claimed = {
+	owner:  P.owners
+	editor: P.editors
+	viewer: P.viewers
+}
+
+// Members are the claim's members by role and then email, each checked against
+// the realm's people (Projects.people, Projects.usernames and Projects.#Person),
+// so a member whose username is another person's, who is one of the platform's
+// people under another username, or who is a platform service user, fails the
+// render, in whichever role they are named. The checks are folded into email,
+// which the role group's membership and the ConfigMap always render, so they
+// hold for a member with no User too. platform is whether Keycloak already has
+// them, and person whether they are in the people collection on this cluster,
+// whose User keycloak-realm renders; neither has a User rendered here.
+let Members = {
+	for ROLE in #ProjectRoles {
+		(ROLE): {
+			for EMAIL, O in Claimed[ROLE] {
+				(EMAIL): {
+					let USERNAME = O.username & Projects.usernames[EMAIL] & Projects.#Person
+					username: USERNAME
+					email:    EMAIL & Projects.people[USERNAME].email
+					platform: Projects.people[USERNAME].platform
+					person:   Projects.people[USERNAME].person
+				}
+			}
 		}
 	}
 }
@@ -190,10 +203,10 @@ if ProjectName != "" {holos: spec: artifacts: [
 			// parents, /projects, /projects/<project> and its roles, as it
 			// walks a path, so they have no resources of their own; deleting a
 			// Group deletes only its own group, and leaves the parents in the
-			// realm (README.md, Removing a project). Only the
-			// owner group has members, and only it is bound to anything in
-			// Kubernetes; editor and viewer sync Quay teams, and their members
-			// are added in Keycloak by hand.
+			// realm (README.md, Removing a project). Only the owner group is
+			// bound to anything in Kubernetes; editor and viewer sync Quay
+			// teams. Their members are the claim's, below, and whoever was
+			// added in Keycloak by hand, whom the claim leaves alone.
 			for ROLE, G in Groups {
 				Group: (G.resource): {
 					metadata: {
@@ -207,17 +220,18 @@ if ProjectName != "" {holos: spec: artifacts: [
 				}
 			}
 
-			// Each owner's user, unless Keycloak already has them as one of
+			// Each member's user, unless Keycloak already has them as one of
 			// the platform's people, as jeff, whom the realm import creates, or
 			// they are in the people collection on this cluster, whose User is
 			// keycloak-realm's: holos-controller finds a member by email, so the
 			// membership needs no User of the claim's. No password: it is set in
 			// Keycloak by hand (README.md, Projects). adopt, because one person
-			// may own several projects, each with its own resource for them, and
+			// may be in several projects, each with its own resource for them, and
 			// Orphan, because a person is not a project's to delete: removing a
-			// claim, or one of its owners, leaves the user and their password in
-			// the realm, and takes them only out of the group.
-			for O in Owners if !O.platform if !O.person {
+			// claim, or one of its members, leaves the user and their password in
+			// the realm, and takes them only out of the group. Someone in two
+			// roles is one user, and the same fields here unify to one resource.
+			for MEMBERS in Members for O in MEMBERS if !O.platform if !O.person {
 				User: (O.username): {
 					metadata: {
 						namespace: NAME
@@ -233,18 +247,26 @@ if ProjectName != "" {holos: spec: artifacts: [
 				}
 			}
 
-			// The owners in the owner group: at least one, so a claim with
-			// no owners fails the render rather than make a project nobody
-			// may use.
-			GroupMembership: (Groups.owner.resource): {
-				metadata: {
-					namespace: NAME
-					labels:    Labels
-				}
-				spec: {
-					instanceRef: PlatformController.instance
-					groupRef: name: Groups.owner.resource
-					members: [for O in Owners {email: O.email}] & [_, ...]
+			// The members in their role's group. The owner group's membership
+			// always renders and needs at least one member, so a claim with no
+			// owners fails the render rather than make a project nobody may use.
+			// An editor or viewer role nobody is named in renders none, so a
+			// claim that sets neither map renders as it did. Emptying a map
+			// removes the resource, and the controller's finalizer then takes
+			// everyone it added out of the group, since deletionPolicy is unset,
+			// as it does when one email leaves the map (README.md, Editors and
+			// viewers).
+			for ROLE, MEMBERS in Members if ROLE == "owner" || len(MEMBERS) > 0 {
+				GroupMembership: (Groups[ROLE].resource): {
+					metadata: {
+						namespace: NAME
+						labels:    Labels
+					}
+					spec: {
+						instanceRef: PlatformController.instance
+						groupRef: name: Groups[ROLE].resource
+						members: [for O in MEMBERS {email: O.email}] & [_, ...]
+					}
 				}
 			}
 
@@ -690,9 +712,15 @@ if ProjectName != "" {holos: spec: artifacts: [
 			}
 			data: {
 				name: NAME
-				owners: strings.Join([for O in Owners {O.email}], "\n")
+				owners: strings.Join([for O in Members.owner {O.email}], "\n")
 				ownerAccess: P.ownerAccess
 				ownerGroup:  Groups.owner.claim
+				if len(Members.editor) > 0 {
+					editors: strings.Join([for O in Members.editor {O.email}], "\n")
+				}
+				if len(Members.viewer) > 0 {
+					viewers: strings.Join([for O in Members.viewer {O.email}], "\n")
+				}
 			}
 		}
 	}).artifact,

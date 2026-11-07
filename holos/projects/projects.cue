@@ -8,17 +8,20 @@
 //	projects: "my-project": {
 //		clusterSelector: matchLabels: "holos.run/cluster-name": "treasury"
 //		owners: "alice@bank.internal": _
+//		viewers: "carol@bank.internal": _
 //	}
 //
 // and renders, on each cluster its selector selects, through the project
-// component (components/project), the project's namespace, its owners'
-// Keycloak users and their membership in its owner group, its owner, editor
-// and viewer groups, its Quay organization with a team synced from each group,
-// its Argo CD AppProject and Application, the RoleBinding that makes its
-// owners admins of its namespace, its owner group's entry in
+// component (components/project), the project's namespace, its owner, editor
+// and viewer groups, the Keycloak users of its owners, editors and viewers and
+// their membership in those groups, its Quay organization with a team synced
+// from each group, its Argo CD AppProject and Application, the RoleBinding that
+// makes its owners admins of its namespace, its owner group's entry in
 // holos-authenticator's allowlist, and on a cluster that names substrate and
 // substrate-shim, its Substrate atespace, with the atespace's route through the
-// Substrate shim.
+// Substrate shim. Everything past Quay is the owners': an editor or a viewer
+// gets the Quay team of their role and nothing else, though an editor is admin
+// of any repository they create there (README.md, Editors and viewers).
 //
 // A claim is a tenant choosing where it lands, so it names its clusters by
 // label, and a selector may name several, which matchLabels cannot:
@@ -70,7 +73,7 @@ import (
 // the claim.
 #Name: =~"^[a-z0-9]+(-[a-z0-9]+)*$" & strings.MinRunes(2) & strings.MaxRunes(54)
 
-// #Email is the shape of an owner's key: a non-empty local part, an @ and a
+// #Email is the shape of a member's key: a non-empty local part, an @ and a
 // dotted domain, in lower case. It is not RFC 5322; it exists to refuse an
 // empty key or a bare username at render, before it becomes a Keycloak
 // user's email. Lower case, because Keycloak keeps every email in lower
@@ -80,32 +83,34 @@ import (
 
 // #Username is the shape of a Keycloak username a claim may give: lower case,
 // since Keycloak lower-cases every username, and a valid name for the User
-// resource the project component makes for the owner, which is a DNS
+// resource the project component makes for the member, which is a DNS
 // subdomain: runs of letters and digits joined by single dashes or dots, so
 // neither a.b. nor a..b nor a-.b, whose dot-separated parts would begin or
 // end with a dash or be empty.
 #Username: =~"^[a-z0-9]+([-.][a-z0-9]+)*$" & strings.MaxRunes(253)
 
-// #Owner is one of a project's owners, keyed by email in owners.
+// #Owner is one member of a project, an owner, an editor or a viewer, keyed by
+// email in the map of their role: the three differ in what they are granted,
+// not in shape.
 #Owner: {
-	// email is the owners key. It is the Keycloak user's email and what
-	// holos-controller finds the user by when it adds them to the owner
+	// email is the map's key. It is the Keycloak user's email and what
+	// holos-controller finds the user by when it adds them to the role's
 	// group.
 	email: #Email
 
-	// username is the owner's Keycloak username, which their tokens carry
-	// as preferred_username, and so the user holos-authenticator
-	// impersonates them as, oidc:<username>, and the name Quay knows them by.
-	// It defaults to the email's local part, lower-cased, with each run of
-	// anything outside [a-z0-9] turned to a dash and the dashes at either end
-	// trimmed, as aavis-ops derives the name of an owner's User:
-	// alice.smith@bank.internal is alice-smith. An owner whose username is
-	// something else sets it here. An owner who is already one of the
-	// realm's people (Keycloak.users) must have the username they have
-	// there, and no owner may be one of the platform's service users, which
-	// Projects (components/project.cue) checks when the project component
-	// renders the claim. holos/people embeds this definition, so a person's
-	// username is derived as an owner's is.
+	// username is the member's Keycloak username, which their tokens carry
+	// as preferred_username, and so the name Quay knows them by and, for an
+	// owner, the user holos-authenticator impersonates them as,
+	// oidc:<username>. It defaults to the email's local part, lower-cased, with
+	// each run of anything outside [a-z0-9] turned to a dash and the dashes at
+	// either end trimmed, as aavis-ops derives the name of an owner's User:
+	// alice.smith@bank.internal is alice-smith. A member whose username is
+	// something else sets it here. A member who is already one of the realm's
+	// people (Keycloak.users) must have the username they have there, and no
+	// member may be one of the platform's service users, which Projects
+	// (components/project.cue) checks when the project component renders the
+	// claim. holos/people embeds this definition, so a person's username is
+	// derived as a member's is.
 	let Local = strings.ToLower(strings.SplitN(email, "@", 2)[0])
 	let Derived = regexp.ReplaceAll("^-+|-+$", regexp.ReplaceAll("[^a-z0-9]+", Local, "-"), "")
 	username: #Username & (*Derived | string)
@@ -178,6 +183,17 @@ let DNSLabel = "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
 	// reject a key that does not match it, so the key is unified into
 	// email, where #Email does.
 	owners: [EMAIL=string]: #Owner & {email: EMAIL}
+
+	// editors and viewers are the rest of the project's members by email,
+	// written as owners are and for the same reason. Either may be empty,
+	// unlike owners: a project needs someone to own it and no one to read it.
+	// Each is a membership of the role's group and so of its Quay team, and
+	// nothing more, though Quay makes an editor admin of any repository they
+	// create. Nothing in Kubernetes binds these groups, so neither map
+	// reaches holos-authenticator's allowlist (#ProjectOwnerGroupClaims,
+	// collections.cue).
+	editors: [EMAIL=string]: #Owner & {email: EMAIL}
+	viewers: [EMAIL=string]: #Owner & {email: EMAIL}
 }
 
 // projects is the collection, keyed by name. The key is unified into name,

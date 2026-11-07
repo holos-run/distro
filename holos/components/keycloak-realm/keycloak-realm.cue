@@ -412,7 +412,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// every later sync wave. In the Instance's namespace, so no
 		// ReferenceGrant, as for the Group above. A claim that names the
 		// person renders no User, so this is the one resource for them,
-		// however many claims do. adopt and Orphan as for an owner
+		// however many claims do. adopt and Orphan as for a project's member
 		// (components/project): the realm may have them already, and removing
 		// them from the collection leaves the user and their password. No
 		// name and no password, for which the kind has no field: both are set
