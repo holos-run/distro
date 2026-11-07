@@ -2666,7 +2666,10 @@ which one Argo CD sync does not keep: the pod certificate controller, then
 `ds/atelet` and its rollout, then `WorkerPool` `gvisor` and its workers, then
 ate-controller and everything else, and `kagent-crds` and `kagent` after that.
 A worker must not be newer than its node's atelet, and ate-api-server not
-newer than any worker. The two role Jobs are Sync hooks, so a hand apply leaves
+newer than any worker. A CRD gets no tracking id: Argo CD leaves every CRD
+without one, and one added by hand reads `OutOfSync` until the first sync takes
+it off, as `workerpools`, `sandboxconfigs` and `csidriverconfigs` did on the
+2026-11-06 bump. The two role Jobs are Sync hooks, so a hand apply leaves
 them out and they run at the first sync after the merge. While it is paused,
 each Application reads `OutOfSync`. One whose last sync operation failed reads
 `Degraded` as well, and the root with it, however long ago that failure was:
