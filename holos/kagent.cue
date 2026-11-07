@@ -18,9 +18,11 @@ package holos
 // from its references, re-read the chart's values.yaml against the kagent
 // component's, re-copy components/kagent/setup.sql if the fork's changed, and
 // move harnessImages and guestImage to the upstream release nearest the new
-// fork's base. A bump that changes kagent's initial migration in place needs
-// the kagent schema dropped and re-created on the cluster (README.md,
-// Substrate, Bumping the pin).
+// fork's base. Moving harnessImages.claude moves the agent image's base too:
+// set the digest in components/product-planboard/Dockerfile and rebuild that
+// image (README.md, Building the Planboard images). A bump that changes
+// kagent's initial migration in place needs the kagent schema dropped and
+// re-created on the cluster (README.md, Substrate, Bumping the pin).
 Kagent: {
 	namespace: "kagent"
 	// atespace is the Substrate atespace kagent creates for its agents

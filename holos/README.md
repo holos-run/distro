@@ -4403,6 +4403,90 @@ point at a path that does not exist and report a `ComparisonError`; a claim
 avoids that with its `ConfigMap` `project`, and a product with a binding has to
 render something into `platform` for the same reason.
 
+### Building the Planboard images
+
+`components/product-planboard/Dockerfile` builds the product's three images
+from a checkout of `holos-run/planboard`, the vendor's source, which never
+enters this repository. Nothing in it pulls from Docker Hub: the anonymous limit
+is per public IP, and the claude VM shares its address with the garage's
+clusters, so a build could stop for an hour.
+
+| Target | Base | What it adds | Quay repository |
+| --- | --- | --- | --- |
+| `board` | `quay.io/lib/alpine:3.22.1`, upgraded | `git`, `planboard`, the placeholder `/etc/gitconfig`, `HOME=/data`, uid 65532 | `<claim>/planboard` |
+| `agent` | kagent's `claude-harness` from `ghcr.io`, the digest `harnessImages.claude` in `kagent.cue` pins | `planboard` and the placeholder `/etc/gitconfig`, one layer, the entrypoint and user unchanged | `<claim>/planboard-agent` |
+| `plugin` | `scratch` | The checkout's `plugins/planboard` at `/plugin`, so the `AgentTemplate` names it with `path: plugin` | `<claim>/planboard-plugin` |
+
+`planboard` is built in `quay.io/projectquay/golang:1.27`, a Go 1.27.3 image on
+RHEL 8, static so one binary serves both images. The placeholder is
+`Authorization: Basic x` on `https://github.com/`: Substrate's egress gateway
+replaces a header only when the request carries one, and git sends none until
+challenged, so the real credential stays out of the image and the sandbox.
+
+Build from `holos/`, on the claude VM. The context is an export of the tag and
+not the checkout, so a working tree's stray files cannot reach an image.
+`SOURCE_DATE_EPOCH` and `rewrite-timestamp` fix the timestamps, and the two
+attestations are off because each carries the time of the build:
+
+```sh
+checkout=~/workspace/holos-run/planboard
+tag=v0.0.1
+ctx=$(mktemp -d)
+git -C $checkout archive $tag | tar -x -C $ctx
+export SOURCE_DATE_EPOCH=$(git -C $checkout log -1 --format=%ct $tag)
+
+build() {
+  target=$1 output=$2; shift 2
+  docker buildx build --target $target --platform linux/amd64 \
+    --provenance=false --sbom=false --build-arg VERSION=$tag \
+    --output $output,rewrite-timestamp=true "$@" \
+    -f components/product-planboard/Dockerfile $ctx
+}
+
+for t in board agent plugin; do build $t type=oci,dest=/tmp/$t.tar; done
+for t in board agent plugin; do build $t type=oci,dest=/tmp/$t.tar --no-cache; done
+```
+
+Each build prints `exporting manifest sha256:...`. The two runs print the same
+three digests, which are `images` in `products/planboard.cue`, and pushing gives
+the digest the export did. `v0.0.1` gave:
+
+| Image | Digest |
+| --- | --- |
+| `board` | `sha256:b5a72ab690dd0a7e7eed6804765825a846ec04cc54680bdb54322892818dd069` |
+| `agent` | `sha256:908e537f6f2e3b60ce2504de37ae1ccc9864eba1a82421a7676237d38b317d29` |
+| `plugin` | `sha256:f04a6b7f1680999d7eab2a97c4df14b988ead486fcc520db64e779c82a58e4bf` |
+
+`agent` and `plugin` should reproduce at any time. `board` reproduces only while
+Alpine's `v3.22` repositories hold the same packages, because the bases are
+pinned and the packages `apk` installs are not, and Alpine keeps only the latest
+of each. When it moves, the build is still sound: push the new digest and commit
+it.
+
+To push, once a claim's `Repository` objects exist, run this in the shell that
+ran the build, since it uses `build`, `$ctx`, `$tag` and `SOURCE_DATE_EPOCH`. It
+uses the controller's token as Bringing Substrate up, above, does. The daemon
+pushes here, so it has to trust the cluster's root through
+`/etc/docker/certs.d/quay.$domain/ca.crt`, as Checking Quay, above, sets up, and
+buildx sends it the credential from `DOCKER_CONFIG`:
+
+```sh
+claim=splunk
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+export DOCKER_CONFIG=$(mktemp -d)
+tok=$(kubectl -n seabank-prj-platform get secret quay-controller-token -o jsonpath='{.data.token}' | base64 -d)
+printf '{"auths":{"%s":{"auth":"%s"}}}' "quay.$domain" \
+  "$(printf '%s' "\$oauthtoken:$tok" | base64 -w0)" > $DOCKER_CONFIG/config.json
+unset tok
+build board type=image,name=quay.$domain/$claim/planboard:$tag,push=true
+build agent type=image,name=quay.$domain/$claim/planboard-agent:$tag,push=true
+build plugin type=image,name=quay.$domain/$claim/planboard-plugin:$tag,push=true
+rm -rf $DOCKER_CONFIG $ctx; unset DOCKER_CONFIG
+```
+
+This is the interim: the push uses the platform controller's token from the VM,
+until the workflow runner rebuilds the images in the cluster.
+
 ## Render
 
 From this directory, in a clone or worktree with the Substrate submodule
