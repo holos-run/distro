@@ -401,8 +401,8 @@ entries have no hand step.
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
-| `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim |
-| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, and a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below) |
+| `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim; and on a cluster where a binding names it, its zone on the ingress Gateway, a `ListenerSet` with a wildcard of its own |
+| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), and the board's `HTTPRoute` on the ingress Gateway with the placeholder `Service` it routes to (The board's hostname, below) |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -758,6 +758,7 @@ was approved by policy `private-ca-root`.
 | `trust-manager-webhook` | `Issuer` `trust-manager` | `cert-manager` | trust-manager's webhook's DNS name and common name | cert-manager's controller |
 | `private-ca-<namespace>` | `ClusterIssuer` `private-ca` | that namespace | exactly the DNS names, usages and common name its `Certificate`s list, no CA | cert-manager's controller |
 | `project-<name>` | `ClusterIssuer` `private-ca` | `substrate-shim` | exactly the claim's `*.<name>.ate.treasury.bank.internal`, no CA | cert-manager's controller |
+| `ingress-project-<name>` | `ClusterIssuer` `private-ca` | `istio-ingress` | exactly the claim's zone, `*.<name>.cartography.bank.internal`, no CA, on a cluster where the claim has a binding, so not on treasury | cert-manager's controller |
 | `deny-all` | any | any | nothing: it requires a DNS name from an empty list | `system:authenticated` |
 
 The `private-ca-<namespace>` policies are `ate-system`, `cnpg-system`,
@@ -769,15 +770,18 @@ string, so a namespace with a wildcard name, `istio-ingress`'s
 a CEL rule that each name be one of the listed ones exactly; without it
 `*.treasury.bank.internal` would allow `keycloak.treasury.bank.internal`.
 
-A ProjectClaim's wildcard is the one `Certificate` from `private-ca` with no
-entry in `PrivateCA.requesters`. The claim renders the policy `project-<name>`
-itself, with the `ClusterRole` and `ClusterRoleBinding`
+A ProjectClaim's wildcards are the only `Certificate`s from `private-ca` with
+no entry in `PrivateCA.requesters`. The claim renders the policy
+`project-<name>` itself, with the `ClusterRole` and `ClusterRoleBinding`
 `approver-policy:project-<name>` that let cert-manager's controller use it, at
-sync wave -1, and Argo CD holds the wave until the policy is `Ready`. An entry
-in `PrivateCA.requesters` would reach the cluster on `private-ca`'s own sync,
-which nothing orders against the claim's, and a request denied first would
-wait on cert-manager's back-off. `private-ca-substrate-shim` does not list the
-claim's name, and need not: one policy that allows a request is enough.
+sync wave -1, and Argo CD holds the wave until the policy is `Ready`; and, for
+its zone on the ingress Gateway, `ingress-project-<name>` the same way (The
+board's hostname, below). An entry in `PrivateCA.requesters` would reach the
+cluster on `private-ca`'s own sync, which nothing orders against the claim's,
+and a request denied first would wait on cert-manager's back-off.
+`private-ca-substrate-shim` does not list the claim's name, nor
+`private-ca-istio-ingress` its zone's, and need not: one policy that allows a
+request is enough.
 
 So the namespace selector keeps out every namespace not listed, a project's
 included: only `deny-all` applies there, and the request is denied. RBAC is
@@ -1127,6 +1131,12 @@ deploys it: a Deployment and a `LoadBalancer` Service both named
   route forwards the connection to the platform authenticator's own Gateway
   (holos-authenticator, below). The impersonator's token and the Lua that
   writes `Impersonate-Group` never run on `ingress`.
+- **Claims' zones.** On a cluster with a binding, the Gateway sets
+  `allowedListeners` to its own namespace, and each claim with a binding adds
+  an HTTPS listener for `*.<claim>.<ingressDomain>` with a certificate of its
+  own, as the `ListenerSet` `ingress-project-<claim>`, which takes routes only
+  from the claim's namespace (The board's hostname, below). A cluster with no
+  binding, such as `treasury`, has neither.
 - **ServiceAccount.** The `gateway.istio.io/service-account` annotation names
   it `ingress-gateway`, so the gateway's mesh identity is
   `spiffe://cluster.local/ns/istio-ingress/sa/ingress-gateway`. Without the
@@ -3811,6 +3821,11 @@ Q66), and on any other cluster it renders nothing:
   actor runs on the platform's `ate-workers/gvisor` with no pool named on its
   template, and a project cannot have a pool of its own, whose workers need
   the privileged Pod Security level.
+- **Its zone on the ingress Gateway**, on a cluster where a binding names the
+  claim, and nowhere else: `*.<name>.<ingressDomain>`, where the bound
+  products have their hostnames, as the `ListenerSet`, `Certificate` and
+  `CertificateRequestPolicy` `ingress-project-<name>` (The board's hostname,
+  below).
 
 No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
 editor and viewer groups, whose members have Quay, and what a binding opens to
@@ -4494,6 +4509,68 @@ kubectl ate revert actor planboard -a $claim
 ```
 
 The next request wakes it from `/data`.
+
+#### The board's hostname
+
+The board has a second hostname, on the ingress Gateway, where a browser will
+reach it once a login is in front of it. The actor's hostname through the shim
+stays as it is, for a client with an ID token:
+
+| Hostname | Gateway | Route | What answers |
+| --- | --- | --- | --- |
+| `https://planboard.<claim>.<cluster>.bank.internal` | `istio-ingress/ingress`, the `ListenerSet` `ingress-project-<claim>` | `HTTPRoute` `planboard` in `<claim>` | The `Service` `planboard-oauth2-proxy` in `<claim>`, a placeholder with no endpoints, so the gateway answers 503 |
+| `https://planboard.<claim>.ate.<cluster>.bank.internal` | `substrate-shim/ate`, through the ingress Gateway's `ate` listener | `HTTPRoute` `ate-<claim>` in `ate-system` | The actor, through Substrate's router, for a bearer ID token the claim's rules admit (above) |
+
+The first is in the claim's zone, `*.<claim>.<cluster>.bank.internal`, which a
+claim with a binding on the cluster gets (`IngressGateway.#Claim` in
+`components/ingress.cue`). The Gateway's `https` listener would match the name,
+since a Gateway API wildcard matches any number of labels, but its certificate
+would not: an X.509 wildcard covers one label, so `*.<cluster>.bank.internal`
+is no good for `planboard.<claim>.<cluster>.bank.internal`. The zone is a
+listener and a certificate of the claim's own, rendered by `project-<claim>`,
+since a second product bound to the claim shares them:
+
+- the `ListenerSet` `ingress-project-<claim>` in `istio-ingress`, an HTTPS
+  listener named `<claim>` for `*.<claim>.<cluster>.bank.internal`, which takes
+  `HTTPRoute`s from the claim's namespace and no other. The Gateway has
+  `allowedListeners` `Same` on a cluster with a binding, and on none other, so
+  `treasury`'s Gateway is as it was;
+- the `Certificate` `ingress-project-<claim>` there, Secret
+  `ingress-project-<claim>-tls`, for the zone's wildcard;
+- the `CertificateRequestPolicy` `ingress-project-<claim>`, at wave -1, for that
+  one name in `istio-ingress`, and the `ClusterRole` and `ClusterRoleBinding`
+  `approver-policy:ingress-project-<claim>` that let cert-manager use it, as the
+  atespace's wildcard has (Approval, in The private CA, above).
+
+The names are not the atespace's `project-<claim>`: the project component
+renders both sets in one map, where a name in two namespaces is one object, and
+the policy is cluster-scoped, where `project-<claim>-ingress` would be the
+atespace's policy of a claim named `<claim>-ingress`. A claim may not be named
+`ate`, whose zone would be the `ate` listener's hostname (`Projects.reserved`).
+
+The route and the placeholder are the product's, in `product-planboard-<claim>`.
+The placeholder has the name and port of oauth2-proxy's `Service`, which the
+login (`a-pkce-client-and-oauth2-proxy-per-binding` in the planning board) takes
+over in place, and a selector nothing in the platform matches.
+
+Argo CD has no health check for a `ListenerSet`, so `project-<claim>` reads
+`Healthy` whatever the gateway made of it. Read its status instead, listener by
+listener:
+
+```sh
+kubectl get certificaterequestpolicy ingress-project-$claim          # READY True
+kubectl -n istio-ingress get certificate ingress-project-$claim      # READY True
+kubectl -n istio-ingress get listenerset ingress-project-$claim \
+  -o jsonpath='{range .status.listeners[*]}{.name} {.attachedRoutes}{range .conditions[*]} {.type}={.status}{end}{"\n"}{end}'
+    # <claim> 1 Accepted=True Programmed=True ResolvedRefs=True, among others
+kubectl -n $claim get httproute planboard \
+  -o jsonpath='{range .status.parents[*].conditions[*]}{.type}={.status} {end}{"\n"}'
+    # Accepted=True ResolvedRefs=True
+curl -s -o /dev/null -w '%{http_code}\n' https://planboard.$claim.$domain/   # 503, until the login
+```
+
+The `curl` is the certificate's check too: it verifies the chain and the name
+against the private root, which the laptop trusts (The private CA, above).
 
 ### Building the Planboard images
 

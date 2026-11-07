@@ -14,7 +14,9 @@ import "encoding/yaml"
 // through to its own Gateway (AteGateway), whose TLSRoute substrate-shim
 // renders, on a cluster that names it, and the one the Kubernetes API's host
 // passes through to holos-authenticator's Gateway (PlatformAuthenticator),
-// whose TLSRoute holos-authenticator renders.
+// whose TLSRoute holos-authenticator renders. A claim with a binding adds a
+// listener for its own zone as a ListenerSet, which components/project
+// renders.
 //
 // Applied once istiod is running (it owns the istio GatewayClass) and the
 // private CA issues.
@@ -83,6 +85,14 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					group: ""
 					kind:  "ConfigMap"
 					name:  IG.parameters
+				}
+				// On a cluster with a binding, each bound claim adds the
+				// listener of its own zone, *.<claim>.<domain>, as a
+				// ListenerSet (IngressGateway.#Claim, components/project),
+				// from this namespace alone, which only git writes. A claim's
+				// owner, admin in its namespace, can make no listener here.
+				if IG.listenerSets {
+					allowedListeners: namespaces: from: "Same"
 				}
 				listeners: [
 					{

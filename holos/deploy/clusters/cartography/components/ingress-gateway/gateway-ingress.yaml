@@ -9,6 +9,9 @@ spec:
     addresses:
         - type: IPAddress
           value: 10.20.0.34
+    allowedListeners:
+        namespaces:
+            from: Same
     gatewayClassName: istio
     infrastructure:
         parametersRef:

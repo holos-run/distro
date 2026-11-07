@@ -4,7 +4,7 @@ package holos
 // (PrivateCA.permittedDNSDomains and PrivateCA.requesters, private-ca.cue):
 // the domains the root may sign names in, and every Certificate in the
 // cluster that the private-ca ClusterIssuer signs, but for a ProjectClaim's
-// wildcard, which renders its own policy (components/project), by namespace
+// wildcards, each with a policy of its own (components/project), by namespace
 // and name, with what it asks for. The private-ca component puts the subtrees
 // in the root's name constraints and turns each namespace into a
 // CertificateRequestPolicy, and each Certificate below takes its fields

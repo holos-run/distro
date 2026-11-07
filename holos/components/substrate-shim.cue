@@ -41,8 +41,10 @@ AteGateway: {
 	// that is <actor>.<atespace>.ate.<cluster>.<privateDomain> (the
 	// Cluster_Qualified_Hostnames planning project). The private zone's
 	// *.<ingressDomain> record already resolves it to the ingress Gateway's
-	// address.
-	domain:   "ate.\(IngressGateway.domain)"
+	// address. label is the zone's one label under the ingress domain, which no
+	// claim may take (Projects.reserved).
+	label:    "ate"
+	domain:   "\(label).\(IngressGateway.domain)"
 	wildcard: "*.\(domain)"
 
 	// #Rule is a rule of an AuthorizationPolicy on the Gateway: its hostname,

@@ -23,7 +23,11 @@ import (
 //     Application, which syncs the project's own directory in deploy/;
 //   - on a cluster that names substrate and substrate-shim, its Substrate
 //     atespace, named for it, and the atespace's route through the Substrate
-//     shim, https://<actor>.<project>.ate.<domain> (Atespace, below).
+//     shim, https://<actor>.<project>.ate.<domain> (Atespace, below);
+//   - on a cluster where a product is bound to it, its zone on the ingress
+//     Gateway, *.<project>.<domain>, where the products have their hostnames:
+//     a ListenerSet and a wildcard, with the wildcard's own approval (Zone,
+//     below).
 //
 // The owner group's claim and the owners' usernames reach
 // holos-authenticator's allowlist from collections.cue, so the same
@@ -122,6 +126,12 @@ let Members = {
 let Atespace = AteGateway.claimed[NAME]
 let S = Substrate
 let AG = AteGateway
+
+// Zone is the claim's zone on the ingress Gateway, *.<project>.<domain>
+// (IngressGateway.#Claim), on a cluster where the claim has a binding, and
+// otherwise bottom, which the block that renders it tests for.
+let IG = IngressGateway
+let Zone = IG.claimed[NAME]
 
 // ProjectClient is the ServiceAccount the claim makes in its namespace, the
 // one principal of the atespace's access policy. A token for it owns this
@@ -513,6 +523,96 @@ if ProjectName != "" {holos: spec: artifacts: [
 						}]
 						action: "ALLOW"
 						rules: [Atespace.rule]
+					}
+				}
+			}
+
+			// The claim's zone on the ingress Gateway, *.<claim>.<domain>, on
+			// a cluster where it has a binding (IngressGateway.claimed), and
+			// on no other. Here rather than in a product's component because a
+			// second product bound to the claim has its hostname in the same
+			// zone, and shares the listener and the certificate. The pattern
+			// is the atespace's on the shim, above, in istio-ingress.
+			if Zone != _|_ {
+				// The claim's own approval for the zone's wildcard, this one
+				// name from the private CA, in the ingress Gateway's namespace,
+				// and no CA, at wave -1, for the reasons the atespace's has
+				// (above). private-ca-istio-ingress does not list the name and
+				// need not. Its name, and the zone's other objects', is not the
+				// atespace's (IngressGateway.#Claim.resource).
+				CertificateRequestPolicy: (Zone.resource): {
+					metadata: {
+						labels: Labels
+						annotations: "argocd.argoproj.io/sync-wave": "-1"
+					}
+					spec: {
+						allowed: {
+							dnsNames: (#Exactly & {names: [Zone.hostname & PrivateCA.#Within]}).out
+							isCA: false
+						}
+						selector: {
+							issuerRef: PrivateCA.issuerRef
+							namespace: matchNames: [IG.namespace]
+						}
+					}
+				}
+
+				// cert-manager's controller may use that one policy.
+				ClusterRole: "approver-policy:\(Zone.resource)": {
+					metadata: {
+						labels: Labels
+						annotations: "argocd.argoproj.io/sync-wave": "-1"
+					}
+					rules: [{
+						apiGroups: ["policy.cert-manager.io"]
+						resources: ["certificaterequestpolicies"]
+						verbs: ["use"]
+						resourceNames: [Zone.resource]
+					}]
+				}
+				ClusterRoleBinding: "approver-policy:\(Zone.resource)": {
+					metadata: {
+						labels: Labels
+						annotations: "argocd.argoproj.io/sync-wave": "-1"
+					}
+					roleRef: {
+						apiGroup: "rbac.authorization.k8s.io"
+						kind:     "ClusterRole"
+						name:     "approver-policy:\(Zone.resource)"
+					}
+					subjects: [{
+						kind:      "ServiceAccount"
+						name:      PrivateCA.certManager.name
+						namespace: PrivateCA.certManager.namespace
+					}]
+				}
+
+				// The zone's wildcard, in the ingress Gateway's namespace, where
+				// the listener reads its Secret.
+				Certificate: (Zone.resource): {
+					metadata: {
+						namespace: IG.namespace
+						labels:    Labels
+					}
+					spec: Zone.certificate & {dnsNames: [Zone.hostname]}
+				}
+
+				// The zone's listener on the ingress Gateway, which allows
+				// ListenerSets from its own namespace on a cluster with a
+				// binding (IngressGateway.listenerSets). Its routes are the
+				// bound products', in the claim's namespace (Zone.parentRef).
+				ListenerSet: (Zone.resource): {
+					metadata: {
+						namespace: IG.namespace
+						labels:    Labels
+					}
+					spec: {
+						parentRef: {
+							group: "gateway.networking.k8s.io"
+							kind:  "Gateway"
+							name:  IG.name
+						}
+						listeners: [Zone.listener]
 					}
 				}
 			}

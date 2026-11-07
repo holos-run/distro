@@ -71,10 +71,11 @@ PrivateCA: {
 	// components' shared names, which they are made from; only a component
 	// knows the cluster it renders for.
 	//
-	// A ProjectClaim's wildcard is not here. The claim renders a policy of
-	// its own, ahead of its Certificate (components/project), since an entry
-	// here would reach the cluster on private-ca's sync, which nothing orders
-	// against the claim's.
+	// A ProjectClaim's wildcards are not here: its atespace's on the shim,
+	// and its zone's on the ingress Gateway where it has a binding. The claim
+	// renders a policy of its own for each, ahead of its Certificate
+	// (components/project), since an entry here would reach the cluster on
+	// private-ca's sync, which nothing orders against the claim's.
 	//
 	// _rendered is whether the entry reaches a policy on this cluster. An
 	// optional component's entry sets it (components/private-ca.cue), and a
