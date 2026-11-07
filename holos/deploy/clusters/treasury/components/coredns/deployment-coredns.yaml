@@ -7,12 +7,12 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: "Helm"
     app.kubernetes.io/instance: "coredns"
-    helm.sh/chart: "coredns-1.49.0"
+    helm.sh/chart: "coredns-1.50.2"
     k8s-app: kube-dns
     kubernetes.io/cluster-service: "true"
     kubernetes.io/name: "CoreDNS"
     app.kubernetes.io/name: coredns
-    app.kubernetes.io/version: "v1.14.7"
+    app.kubernetes.io/version: "v1.14.7_sha256-7efd3c635b03efd68c4e8398fc45f0d993d0e9ab016f72c1"
 spec:
   replicas: 2
   strategy:
@@ -32,7 +32,7 @@ spec:
         app.kubernetes.io/name: coredns
         app.kubernetes.io/instance: "coredns"
       annotations:
-        checksum/config: d068030d57fade55ea517e0d2765c8bccad07864a8ed7000059b543484a3e5d5
+        checksum/config: f345f8846756128aa508c454e3957cd9ac3739b49df968cfda7a7a2a78f67513
         scheduler.alpha.kubernetes.io/tolerations: '[{"key":"CriticalAddonsOnly", "operator":"Exists"}]'
     spec:
       terminationGracePeriodSeconds: 30
@@ -48,7 +48,7 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
       containers:
       - name: "coredns"
-        image: "registry.k8s.io/coredns/coredns:v1.14.7"
+        image: "registry.k8s.io/coredns/coredns:v1.14.7@sha256:7efd3c635b03efd68c4e8398fc45f0d993d0e9ab016f72c1cefb0fd6d01aa286"
         imagePullPolicy: IfNotPresent
         args: [ "-conf", "/etc/coredns/Corefile" ]
         volumeMounts:

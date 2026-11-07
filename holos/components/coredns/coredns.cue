@@ -10,8 +10,9 @@ import "strings"
 // this component deploys it from the CoreDNS project's chart, as the same
 // kube-dns Service at the address every kubelet was given.
 //
-// Chart 1.49.0 ships CoreDNS 1.14.7, the version Talos 1.14.4 deploys.
-CoreDNSChartVersion: "1.49.0"
+// Chart 1.50.2 ships CoreDNS 1.14.7, the version Talos 1.14.4 deploys. 1.15
+// stays held until after Agent Substrate Day.
+CoreDNSChartVersion: "1.50.2"
 
 // CoreDNS stays in kube-system, where Talos put it and where clients and
 // network policies expect the kube-dns Service.
@@ -50,10 +51,11 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		}]
 		// Talos's image, from registry.k8s.io rather than the chart's
 		// default of Docker Hub, whose anonymous pull limit the garage's one
-		// address shares.
+		// address shares, by index digest. The chart joins repository and
+		// tag with a colon, so the digest goes in the tag.
 		image: {
 			repository: "registry.k8s.io/coredns/coredns"
-			tag:        "v1.14.7"
+			tag:        "v1.14.7@sha256:7efd3c635b03efd68c4e8398fc45f0d993d0e9ab016f72c1cefb0fd6d01aa286"
 		}
 		// Talos's resources: a memory limit and no CPU limit, so DNS is not
 		// throttled under load. Helm merges values with the chart's
