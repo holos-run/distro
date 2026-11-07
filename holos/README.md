@@ -402,7 +402,7 @@ entries have no hand step.
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
 | `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim |
-| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, and the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor (The board as an actor, below) |
+| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, and a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below) |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -4425,6 +4425,17 @@ in Substrate's API, so its Sync hook `planboard-<claim>` makes them, as
 | `Actor` | `planboard` | Creates it, suspended; or, if it is on another template, suspends it and moves it. Reverts it first if it is `CRASHED` |
 | `EgressPolicy` | The actor's | Creates it or writes it again: `github.com:443`, `https`, with `authorization` replaced from `planboard-git` |
 | Old templates | `planboard-<hex12>-<hex8>` | Deletes every one but the current, so that shape of name is the hook's alone: Substrate deletes a template an actor still uses. Nothing else in the atespace is touched |
+
+A hook is outside an `Application`'s comparison, so a change that touched only
+the hook would leave the `Application` `Synced` and the actor where it was. The
+`ConfigMap` `planboard-<claim>` in `ate-system` is why that does not happen:
+nothing reads it, but it is compared, and it holds the template's name and a hash
+of the whole Job, so a merged change of image, `repo` value or hook reaches the
+actor with no sync by hand, as long as the hook succeeds. A hook that fails leaves
+the `ConfigMap` updated and the `Application` `Synced`, so the check below still
+applies, and a sync by hand runs it again. `atespace-<name>` has no such object
+and still has that limit: a change to its Job alone runs nothing until the next
+sync of the claim.
 
 The template has two containers from the `board` image, uid 65532, sharing a
 durable directory at `/data`. `sync` clones the repository to `/data/repo` and

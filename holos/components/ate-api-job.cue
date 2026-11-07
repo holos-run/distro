@@ -1,5 +1,11 @@
 package holos
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
+
 // #AteAPIJob is a Job that calls Substrate's API with grpcurl as the global
 // owner, the one way anything in git makes an object in Substrate's database:
 // the claim's atespace Job (components/project) and a product's (the Planboard
@@ -28,6 +34,12 @@ package holos
 // passes it, and an automated sync does not run it again. So the limits here
 // are short, as the API server is up by this wave, and the check and the
 // recovery, a sync by hand, are in README.md, Checking a project.
+//
+// Being outside the comparison also means a change to the Job alone is no
+// difference, so the Application stays Synced, no automated sync runs, and the
+// Job does not run. A Job whose content must trigger a sync needs a compared
+// object that changes with it, and revision, below, is what such an object
+// carries (product-planboard's ConfigMap).
 #AteAPIJob: {
 	// labels mark the Job and its pod as their claim's. The substrate
 	// component's NetworkPolicy admits the pod to the API server by the labels
@@ -110,4 +122,10 @@ package holos
 			}
 		}
 	}
+
+	// revision is a hash of the whole Job, so it moves with the script, the env
+	// and the image, and no list of fields can fall behind them. The name is
+	// not in it, as a component adds that to job, but a name changes only with
+	// the claim, and so does whatever carries this.
+	revision: hex.Encode(sha256.Sum256(json.Marshal(job)))
 }

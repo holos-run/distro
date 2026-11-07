@@ -31,7 +31,10 @@ import (
 //   - a rule on the shim's Gateway admitting the claim's members to the board's
 //     hostname, and to no other actor of the atespace;
 //   - a Sync hook that makes the board's ActorTemplate, its Actor and its
-//     EgressPolicy through Substrate's API, since none is a Kubernetes object.
+//     EgressPolicy through Substrate's API, since none is a Kubernetes object;
+//   - a ConfigMap beside the hook that nothing reads, since a hook is outside
+//     the Application's comparison and this is what makes a change to it a
+//     difference, so the automated sync runs it.
 //
 // README.md, The board as an actor, has what the owner does by hand.
 
@@ -312,6 +315,13 @@ if ProjectName != "" {
 		{name: "DELETE_TEMPLATE", value: json.Marshal({actorTemplate: {atespace: CLAIM, name: "%s"}})},
 	]
 
+	// Hook is held here because two objects read it, the Job and its ConfigMap.
+	let Hook = #AteAPIJob & {
+		labels: Labels
+		script: ActorScript
+		env:    JobEnv
+	}
+
 	holos: spec: artifacts: (Read & {
 		platform: {
 			// Public, so atelet pulls with no pull secret, as demo/echo is. Orphan,
@@ -404,11 +414,26 @@ if ProjectName != "" {
 			// atespace, a wave earlier. A claim's name can be 54 characters, which
 			// here is one too many for a Job's: refused on the name, because a
 			// bottom in the key would drop the Job and render on without it.
-			Job: "planboard-\(CLAIM)": (#AteAPIJob & {
-				labels: Labels
-				script: ActorScript
-				env:    JobEnv
-			}).job & {metadata: name: strings.MaxRunes(63)}
+			Job: "planboard-\(CLAIM)": Hook.job & {metadata: name: strings.MaxRunes(63)}
+
+			// The image's digest, the binding's repo values, the egress rules and the
+			// script reach the cluster only through the hook, which is outside the
+			// Application's comparison: a change to them alone would leave the
+			// Application Synced and the actor where it was. Nothing reads this
+			// ConfigMap. It is here to be compared, with no hook annotation, so
+			// that any such change is a difference and the automated sync runs the
+			// hook. job is the Job's revision, which covers all of it, and template
+			// is there for a person, as the name the actor should be on.
+			ConfigMap: "planboard-\(CLAIM)": {
+				metadata: {
+					namespace: Substrate.namespace
+					labels:    Labels
+				}
+				data: {
+					template: Template
+					job:      Hook.revision
+				}
+			}
 		}
 		project: {}
 	}).artifacts
