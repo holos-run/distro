@@ -17,7 +17,7 @@ holos/
 ├── brand.cue       the distribution's brand, Bank of the Salish Sea, which its own names are built from
 ├── clusters.cue    per-site and per-cluster data
 ├── registry.cue    the components, in sync order
-├── collections.cue the ProjectClaim collection, bound into the platform, which claims each cluster takes, and its group and user definitions
+├── collections.cue the ProjectClaim and people collections, bound into the platform, which claims and people each cluster takes, and the owners' group and user definitions
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── private-ca.cue  the names of the private CA and its trust bundle, and the shape of its requesters
 ├── istio.cue       the mesh's release, namespace, images and trust domain
@@ -25,6 +25,7 @@ holos/
 ├── kagent.cue      the kagent fork's pins, its namespace and controller identity, which Substrate trusts
 ├── signing-keys/   the public keys commits on main are signed with
 ├── projects/       the ProjectClaim collection: its schema, and a file per project
+├── people/         the people collection: its schema, and a file per person
 ├── platform/       the Platform: the registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
 ├── vendor/         git submodules a component renders from: substrate, the Substrate fork
@@ -218,7 +219,8 @@ the root files, not a filter on `Cluster`, because the platform instance does
 not load `components/component.cue`, where `Cluster` is defined, and never
 gets the `clusterName` tag: a filter on that would quietly read its default,
 treasury, for every cluster. `clusterProjects`, in `collections.cue`, is the
-claims each cluster takes, a map for the same reason. `Projects.reserved`
+claims each cluster takes, and `clusterPeople` the people, each a map for the
+same reason. `Projects.reserved`
 reads the whole registry, so a name is reserved whether or not a cluster
 takes it.
 
@@ -383,7 +385,7 @@ entries have no hand step.
 | `keycloak-operator` | The Keycloak Operator 26.8.2 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
 | `keycloak` | Keycloak 26.8.2 in `keycloak`, at `keycloak.treasury.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `seabank-controller` | The platform controller, holos-controller 0.22.0 from aavis-ops' manifests, vendored, from `components/holos-controller`, in the ambient namespace `seabank-controller`, its objects renamed from the release's `holos-controller` names, with its eight CRDs and the private root in its trust; no resources of its kinds |
-| `keycloak-realm` | The realm `default`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, the platform controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
+| `keycloak-realm` | The realm `default`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, the platform controller's credential, the `Instance`, the group `/platform/owners` and its membership, a `User` for each person in `people/` that selects the cluster (People, below), and the Job that writes the `Instance`'s `caBundle` |
 | `seabank-authenticator` | The platform authenticator, holos-authenticator 0.21.0, from `components/holos-authenticator`, in the ambient namespace `seabank-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.treasury.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
 | `secrets-manager` | The Bank of the Salish Sea Secrets Manager, holos-run/secrets-manager v0.20.0, in the ambient namespace `secrets-manager`, at `secrets.treasury.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
 | `toolhive-crds` | ToolHive 0.63.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
@@ -1844,14 +1846,14 @@ export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 # 1. Let the controller remove what it made: its finalizers delete the
 #    groups, memberships and clients in Keycloak. Deleting the realm first
 #    would leave its resources reporting errors with finalizers stuck.
-kubectl -n keycloak delete groupmembership,group --all     # and any Client or User in other namespaces
+kubectl -n keycloak delete groupmembership,group,users.keycloak.holos.run --all     # and any Client or User in other namespaces
 # 2. The import, then the realm, with the master admin's token.
 kubectl -n keycloak delete keycloakrealmimport default
 t=$(curl -s --cacert root.pem https://keycloak.$domain/realms/master/protocol/openid-connect/token \
   -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
 curl -s --cacert root.pem -X DELETE -H "Authorization: Bearer $t" https://keycloak.$domain/admin/realms/default -w '%{http_code}\n'  # 204
-# 3. Turn automation back on; the sync re-creates the import, the groups and
-#    the memberships, and its PostSync Job runs again.
+# 3. Turn automation back on; the sync re-creates the import, the groups,
+#    the memberships and the people's users, and its PostSync Job runs again.
 ```
 
 `u` and `p` are the master admin's, as in the check under Keycloak, above.
@@ -2088,10 +2090,12 @@ Substrate shim.
 #### Adding a person or a group
 
 - **A person**: as the owner of a project, through its claim (Projects,
-  below). Otherwise add them to `Keycloak.users` and their username to
-  `PlatformAuthenticator.users`, and create them in the realm by hand, as
-  `svc-quay-controller` was (Quay, below). The realm import creates only
-  `jeff`; it does not read the rest of `Keycloak.users`.
+  below). A person with a login and no access, in the people collection
+  (People, below), is not on this list until a claim makes them an owner.
+  To put someone on it without a project, add them to `Keycloak.users` and
+  their username to `PlatformAuthenticator.users`, and create them in the
+  realm by hand, as `svc-quay-controller` was (Quay, below). The realm import
+  creates only `jeff`; it does not read the rest of `Keycloak.users`.
 - **A group**: add its full path to `PlatformAuthenticator.groups`, and bind
   it to what it may do, with a binding of its own.
 
@@ -3737,9 +3741,10 @@ Q66), and on any other cluster it renders nothing:
 
 - **The namespace** `<name>`, in ambient, labeled `holos.run/project: <name>`.
 - **Keycloak**: the groups `/projects/<name>/roles/owner`, `editor` and
-  `viewer`; a `User` for each owner who is not already one of the realm's
-  people (`Keycloak.users`, such as `jeff`); the owners' membership in the
-  owner group; and the `ReferenceGrant` `project-<name>` in `keycloak` that
+  `viewer`; a `User` for each owner who is neither one of the platform's
+  people (`Keycloak.users`, such as `jeff`) nor in the people collection on
+  this cluster (People, below), who have one already; the owners' membership
+  in the owner group; and the `ReferenceGrant` `project-<name>` in `keycloak` that
   lets these resources name the `Instance` there. The controller makes the
   parent groups `/projects`, `/projects/<name>` and `/projects/<name>/roles`
   itself. No client (Q65): Quay syncs its teams from the groups claim.
@@ -4018,6 +4023,163 @@ admin console or Quay's API once nobody needs them:
   before a claim of the same name is added again: the new `Organization`
   does not adopt, so the controller reports a `Conflict` on an
   organization it did not create, and the project's never becomes Ready.
+
+## People
+
+A person who needs a login, and nothing more yet, gets one with a small CUE
+file in `people/`, in a pull request with the manifest it renders. Like the
+ProjectClaim collection it is a pure CUE collection and not a CRD.
+`people/people.cue` is its schema, `collections.cue` binds it into the platform
+and says which people each cluster has (`clusterPeople`), and `keycloak-realm`
+renders them.
+
+A person renders one thing, on each cluster their required `clusterSelector`
+selects: a `User` in `keycloak`, in `keycloak-realm`'s `Application`,
+`adopt: true` and `deletionPolicy: Orphan` as an owner's is. On any other
+cluster they do not exist. The selector is a claim's (Projects, above). The
+`User` carries neither a name nor a password, since the kind has no field for
+either at holos-controller 0.22.0, so `firstName` and `lastName` in the file
+render nothing and step 5 below sets them.
+
+The collection feeds no group, no `RoleBinding` and not holos-authenticator's
+allowlist, so a person can log in to their cluster's realm and nothing grants
+them anything. Then:
+
+- `kubectl` through `k8s.$domain` is refused with 403: their token is verified,
+  and the impersonator may not impersonate a user off the allowlist.
+- Argo CD lets them in and shows them nothing: `policy.default` is empty.
+- The Substrate shim's rules admit groups, and they have none.
+
+Two places admit any realm user, so a person reaches these without being named:
+
+- Quay makes them an account in no organization, since team membership follows
+  the groups claim and they have no group, but with a personal namespace they
+  can push to, and they can create organizations (`FEATURE_USER_CREATION`).
+- kagent's oauth2-proxy has `--email-domain=*` and no `allowed-groups`, and its
+  controller has no authorizer for users, so a login that passes the proxy
+  reaches kagent's UI and API.
+
+The rest stays true until a claim or a group names them. A claim names a person
+as it names any owner, by email, `owners: "morgan@bank.internal": _`, and
+adopts them: on a cluster where the owner is a person, the claim renders them
+no `User`, since theirs is the one in `keycloak` and a second resource would
+contend for it, and it still puts them in the owner group and, through the
+claim, on the allowlist. An owner who is not a person on that cluster renders a
+`User` in the claim's namespace, as owners always have, so no claim needs this
+collection, and an owner can be a person on one cluster and not on another.
+Adding someone who already owns a claim moves their `User`: the claim's goes,
+and `Orphan` leaves the realm's user and password, and the one in `keycloak`
+adopts them.
+
+### Adding a person
+
+1. Write `people/<username>.cue`, keyed by email in lower case:
+
+   ```cue
+   package people
+
+   people: "morgan@bank.internal": {
+   	firstName: "Morgan"
+   	lastName:  "Reyes"
+   	clusterSelector: matchLabels: "holos.run/cluster-name": "cartography"
+   }
+   ```
+
+   The username is derived from the email as an owner's is (Adding a project,
+   above), here `morgan`. Set `username` when it is something else, and a claim
+   that names them must then set the same one.
+
+   One username is one person on a cluster, and so is one email: a person who
+   shares either with another person or an owner there, but not both, fails the
+   render. So does one of the platform's people, even exactly as the realm has
+   them, since `Keycloak.users` are on every cluster and a claim can name them
+   without this collection, and a platform service user
+   (`svc-quay-controller`, or a client's `service-account-*`). Quay's users and
+   organizations share a namespace, so no project on the cluster may take a
+   person's username as its name (`Projects.reserved`), and no person may take
+   the name of one of `Quay.organizations`.
+
+   `cue vet` refuses a person with no name, or whose selector is missing or
+   selects no cluster, each of which `holos render platform` alone would let
+   by. It reports a conflict between people for treasury alone, or for another
+   cluster with `-t clusterName=<cluster>`, and the render reports every
+   conflict above for every cluster. A project that takes a person's username
+   fails only the render.
+
+2. Render, from this directory, and check what changed. A cluster the person
+   does not select stays as it was, byte for byte, and no sync wave moves:
+
+   ```sh
+   cue vet ./... && rm -rf deploy/clusters && holos render platform
+   git status deploy/
+     # new: clusters/<cluster>/components/keycloak-realm/user-<username>.yaml
+     #      for each selected cluster, and nothing else
+   ```
+
+3. Commit the file and `deploy/` together, signed, and open a pull request.
+   Merge it in GitHub's UI.
+
+4. Argo CD syncs `keycloak-realm`, and the controller makes the user:
+
+   ```sh
+   export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+   kubectl -n keycloak get users.keycloak.holos.run   # READY True
+   ```
+
+5. **Set their name and a password**, on each selected cluster, in Keycloak's
+   admin console (realm `default`, Users) or through the admin API, with the
+   bootstrap admin (`keycloak-admin`; `root.pem`, `u` and `p` as under
+   Keycloak, above). A password is not for git, and the realm requires a name,
+   which Keycloak otherwise asks for on first login:
+
+   ```sh
+   t=$(curl -s --cacert root.pem https://keycloak.$domain/realms/master/protocol/openid-connect/token \
+     -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
+   a=https://keycloak.$domain/admin/realms/default
+   uid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/users?email=morgan@bank.internal&exact=true" | jq -r '.[0].id')
+   # The body keeps what the user has.
+   curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/users/$uid" |
+     jq '. + {firstName: "Morgan", lastName: "Reyes"}' |
+     curl -s --cacert root.pem -X PUT -H "Authorization: Bearer $t" -H 'Content-Type: application/json' "$a/users/$uid" -d @- -w '%{http_code}\n'  # 204
+   pw=$(openssl rand -base64 24)
+   printf %s "$pw" | jq -Rs '{type: "password", value: ., temporary: false}' |
+     curl -s --cacert root.pem -X PUT -H "Authorization: Bearer $t" -H 'Content-Type: application/json' "$a/users/$uid/reset-password" -d @- -w '%{http_code}\n'  # 204
+   ```
+
+6. **Keep the password for the browser tool**, if an agent will log in as them.
+   The tool that drives a browser from the agent VM reads every
+   `seabank-user-<name>` Secret in `keycloak`, each cluster's, and types its
+   `password` when given the name `KEYCLOAK_<CLUSTER>_<NAME>`, such as
+   `KEYCLOAK_CARTOGRAPHY_MORGAN`, so a transcript never holds it. It reads them
+   when it starts, so a Secret added later needs a new session. Make the Secret
+   in the same shell as step 5, on each selected cluster, and with
+   `kubectl create`, never `kubectl apply`: apply would keep the password in
+   the `kubectl.kubernetes.io/last-applied-configuration` annotation, which is
+   how `alice`'s, `bob`'s and `carol`'s came to be there on treasury:
+
+   ```sh
+   kubectl -n keycloak create secret generic seabank-user-morgan --type=kubernetes.io/basic-auth \
+     --from-literal=username=morgan --from-file=password=<(printf %s "$pw")
+   unset pw
+   ```
+
+   An owner the claim made, such as `alex` on cartography, gets a Secret for the
+   tool the same way, with the password they already have: their `User` is the
+   claim's, the Secret is by hand. Nothing renders or prunes these Secrets, and
+   a rebuilt cluster, whose realm is new, needs steps 5 and 6 again, as does a
+   realm re-imported in place (The realm, above).
+
+Removing the file removes the `User` resource, and only that: `Orphan` leaves
+the realm's user and their password, and the Secret stays, for the admin console
+and `kubectl delete` to take if they should go. An owner who was adopted gets a
+`User` from their claim again.
+
+To change a person's `email` or `username`, change it in Keycloak's admin
+console and delete the `User` before merging: both are immutable on the
+resource, the API server refuses a change to either, and that refusal fails
+`keycloak-realm`'s sync, which holds back its PostSync Job and any root sync
+waiting on its wave. `Orphan` leaves the realm's user, and the new resource
+adopts them by email.
 
 ## Render
 

@@ -21,8 +21,9 @@ import (
 //     deleting the realm and the import (README.md, "The realm").
 //   - the platform controller's resources, reconciled for as long as they
 //     exist: the Instance every other resource names, the group
-//     /platform/owners, and jeff's membership in it. Later items add their
-//     own Clients and Groups against the same Instance.
+//     /platform/owners, jeff's membership in it, and a User for each person
+//     of the people collection the cluster has. Later items add their own
+//     Clients and Groups against the same Instance.
 //
 // It also writes the credential the platform controller calls the admin API
 // with, and the PostSync Job that gives the Instance the private root (Q52).
@@ -64,7 +65,7 @@ let Clients = KC.clients
 // svc-seabank-controller, and UserSecret jeff's,
 // seabank-user-jeff.
 let ControllerSecret = Clients.controller
-let UserSecret = "\(Brand.slug)-user-\(User.username)"
+let UserSecret = "\(Brand.slug)-user-\(Jeff.username)"
 
 // QuayUser is the service user Quay's SUPER_USERS names and
 // cmd/quay-bootstrap logs in to Quay as (components/quay.cue, interview
@@ -78,7 +79,7 @@ let QuayUser = Quay.controller
 // The milestone's user (interview Q6), Keycloak.users.jeff, whose username
 // the platform authenticator's impersonator may impersonate too. Its group
 // membership is the controller's, below, not the import's.
-let User = KC.users.jeff
+let Jeff = KC.users.jeff
 
 // Owners is the group whose members are Argo CD admins (components/argocd),
 // Keycloak.groups.owners, which the Substrate shim's policy reads too. The
@@ -328,7 +329,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 								"query-groups",
 							]
 						},
-						User & {
+						Jeff & {
 							enabled:       true
 							emailVerified: true
 							// An imported user gets only the roles
@@ -400,7 +401,32 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 			spec: {
 				instanceRef: name: HC.instance.name
 				groupRef: name:    Owners.name
-				members: [{email: User.email}]
+				members: [{email: Jeff.email}]
+			}
+		}
+
+		// Each person of the people collection this cluster has
+		// (holos/people, Projects.collected), and nothing else of theirs: no
+		// group, and no place on holos-authenticator's allowlist. Here, not
+		// in a component of its own, which would add an Application and move
+		// every later sync wave. In the Instance's namespace, so no
+		// ReferenceGrant, as for the Group above. A claim that names the
+		// person renders no User, so this is the one resource for them,
+		// however many claims do. adopt and Orphan as for an owner
+		// (components/project): the realm may have them already, and removing
+		// them from the collection leaves the user and their password. No
+		// name and no password, for which the kind has no field: both are set
+		// by hand (README.md, Adding a person).
+		for P in Projects.collected {
+			User: (P.username): {
+				metadata: namespace: HC.instance.namespace
+				spec: {
+					email:    P.email
+					username: P.username
+					instanceRef: name: HC.instance.name
+					adopt:          true
+					deletionPolicy: "Orphan"
+				}
 			}
 		}
 
@@ -531,7 +557,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 	resources: (#GeneratedSecret & {
 		name:      UserSecret
 		namespace: Namespace
-		username:  User.username
+		username:  Jeff.username
 	}).resources
 
 	resources: (#GeneratedSecret & {

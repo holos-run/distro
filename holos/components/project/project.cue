@@ -75,8 +75,9 @@ let Groups = {
 // under another username, or who is a platform service user, fails the
 // render. The checks are folded into email, which the owner group's
 // membership and the ConfigMap always render, so they hold for an owner
-// with no User too. platform is whether Keycloak already has them, for
-// whom no User is rendered.
+// with no User too. platform is whether Keycloak already has them, and
+// person whether they are in the people collection on this cluster, whose
+// User keycloak-realm renders; neither has a User rendered here.
 let Owners = {
 	for EMAIL, O in P.owners {
 		(EMAIL): {
@@ -84,6 +85,7 @@ let Owners = {
 			username: USERNAME
 			email:    EMAIL & Projects.people[USERNAME].email
 			platform: Projects.people[USERNAME].platform
+			person:   Projects.people[USERNAME].person
 		}
 	}
 }
@@ -206,15 +208,16 @@ if ProjectName != "" {holos: spec: artifacts: [
 			}
 
 			// Each owner's user, unless Keycloak already has them as one of
-			// the platform's people, as jeff, whom the realm import creates:
-			// holos-controller finds a member by email, so the membership needs
-			// no User. No password: it is set in Keycloak by hand (README.md,
-			// Projects). adopt, because one person may own several projects,
-			// each with its own resource for them, and Orphan, because a person
-			// is not a project's to delete: removing a claim, or one of its
-			// owners, leaves the user and their password in the realm, and
-			// takes them only out of the group.
-			for O in Owners if !O.platform {
+			// the platform's people, as jeff, whom the realm import creates, or
+			// they are in the people collection on this cluster, whose User is
+			// keycloak-realm's: holos-controller finds a member by email, so the
+			// membership needs no User of the claim's. No password: it is set in
+			// Keycloak by hand (README.md, Projects). adopt, because one person
+			// may own several projects, each with its own resource for them, and
+			// Orphan, because a person is not a project's to delete: removing a
+			// claim, or one of its owners, leaves the user and their password in
+			// the realm, and takes them only out of the group.
+			for O in Owners if !O.platform if !O.person {
 				User: (O.username): {
 					metadata: {
 						namespace: NAME

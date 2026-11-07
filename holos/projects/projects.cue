@@ -104,7 +104,8 @@ import (
 	// realm's people (Keycloak.users) must have the username they have
 	// there, and no owner may be one of the platform's service users, which
 	// Projects (components/project.cue) checks when the project component
-	// renders the claim.
+	// renders the claim. holos/people embeds this definition, so a person's
+	// username is derived as an owner's is.
 	let Local = strings.ToLower(strings.SplitN(email, "@", 2)[0])
 	let Derived = regexp.ReplaceAll("^-+|-+$", regexp.ReplaceAll("[^a-z0-9]+", Local, "-"), "")
 	username: #Username & (*Derived | string)

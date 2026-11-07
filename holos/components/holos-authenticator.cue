@@ -98,7 +98,7 @@ PlatformAuthenticator: {
 	// are the resourceNames of the impersonator's users rule, each with
 	// usernamePrefix. Each is in Keycloak.users, whom the realm import or
 	// a person by hand creates, or is the owner of a project on this
-	// cluster, whose claim creates them (#ProjectOwnerUsernames,
+	// cluster, whose claim creates or adopts them (#ProjectOwnerUsernames,
 	// collections.cue), each once.
 	users: [...string]
 	users: [for U, _ in {
