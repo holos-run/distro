@@ -1,0 +1,15 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Repository
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-agent
+    namespace: splunk
+spec:
+    credentialsSecretRef:
+        name: seabank-controller-quay-creds
+    deletionPolicy: Orphan
+    description: The Planboard agent, kagent's Claude harness with planboard.
+    name: planboard-agent
+    organizationRef: splunk
+    visibility: public

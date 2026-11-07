@@ -189,12 +189,25 @@ let OTel = {
 // NamespacePolicy is the credential provider's: an atespace may resolve
 // ate-secret:// references to Secrets in the namespaces listed for it, and
 // in no other. kagent's atespace reads kagent's namespace, where its model
-// key is.
+// key is. A claim with a binding on this cluster may read its own namespace
+// (clusterBindings, collections.cue), and only what the product's Role there
+// gives the provider, since this component drops upstream's cluster-wide
+// binding: the entry opens nothing by itself. It is here and not in the product
+// because the policy is one value, one key of one ConfigMap.
+let BoundClaims = {
+	for B in clusterBindings[Cluster.name] {(B.project): true}
+}
 let NamespacePolicy = yaml.Marshal({
-	policies: [{
-		atespace: Kagent.atespace
-		allowedNamespaces: [Kagent.namespace]
-	}]
+	policies: [
+		{
+			atespace: Kagent.atespace
+			allowedNamespaces: [Kagent.namespace]
+		},
+		for CLAIM in list.SortStrings([for NAME, _ in BoundClaims {NAME}]) {
+			atespace: CLAIM
+			allowedNamespaces: [CLAIM]
+		},
+	]
 })
 
 // ConfigHashes are what each workload reads of the configuration made in

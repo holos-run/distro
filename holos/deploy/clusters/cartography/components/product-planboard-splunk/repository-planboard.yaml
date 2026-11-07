@@ -1,0 +1,15 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Repository
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard
+    namespace: splunk
+spec:
+    credentialsSecretRef:
+        name: seabank-controller-quay-creds
+    deletionPolicy: Orphan
+    description: The Planboard board, which the actor runs.
+    name: planboard
+    organizationRef: splunk
+    visibility: public

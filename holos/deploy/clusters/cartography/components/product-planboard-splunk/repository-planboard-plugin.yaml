@@ -1,0 +1,15 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Repository
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-plugin
+    namespace: splunk
+spec:
+    credentialsSecretRef:
+        name: seabank-controller-quay-creds
+    deletionPolicy: Orphan
+    description: The Planboard plugin, an image volume of the agent.
+    name: planboard-plugin
+    organizationRef: splunk
+    visibility: public
