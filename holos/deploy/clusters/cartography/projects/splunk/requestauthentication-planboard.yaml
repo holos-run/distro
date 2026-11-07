@@ -1,0 +1,20 @@
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard
+    namespace: splunk
+spec:
+    jwtRules:
+        - audiences:
+            - planboard-splunk
+          forwardOriginalToken: true
+          fromHeaders:
+            - name: Authorization
+              prefix: 'Bearer '
+          issuer: https://keycloak.cartography.bank.internal/realms/default
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: planboard-waypoint

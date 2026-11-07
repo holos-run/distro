@@ -29,12 +29,22 @@ products: planboard: {
 			path: *"" | =~"^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$"
 		}
 
+		// #projectPattern is the shape of a Planboard project's name, a
+		// directory name, as a regular expression. It is a definition, so it is
+		// not a value a binding sets, and it is one, because the waypoint's Lua
+		// holds the project query parameter to the same shape
+		// (components/product-planboard): a request naming a project no
+		// binding could list never gets the header the policy reads.
+		#projectPattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+
 		// access.viewers.projects are the Planboard projects the claim's viewer
 		// group may open, by name, which are directory names. Owners and
 		// editors reach them all, so this is the only grant the claim's roles
 		// do not already give. The pattern keeps out a wildcard, since a name
-		// becomes a value the waypoint's policy matches a header against.
-		access: viewers: projects: [...=~"^[A-Za-z0-9][A-Za-z0-9_-]*$"]
+		// becomes a value the waypoint's policy matches a header against, and
+		// a path segment of its policy's /files/<project>/* and
+		// /present/<project>/*.
+		access: viewers: projects: [...=~#projectPattern]
 	}
 
 	// images are the three images components/product-planboard/Dockerfile

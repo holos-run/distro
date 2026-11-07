@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/yaml"
 	"list"
 	"strings"
 )
@@ -17,10 +18,10 @@ import (
 // Dockerfile beside this file builds the images, and products/planboard.cue
 // pins them.
 //
-// Everything is in the platform bucket, since none of it is the owner's to
-// change in git. The Substrate objects are in the atespace, which the owner
-// also owns through the claim's ServiceAccount, so the hook writes them again on
-// every sync:
+// Everything but the waypoint's policy is in the platform bucket, since none of
+// it is the owner's to change in git. The Substrate objects are in the
+// atespace, which the owner also owns through the claim's ServiceAccount, so the
+// hook writes them again on every sync:
 //
 //   - the claim's three public Quay repositories, which the images are pushed to
 //     (README.md, Building the Planboard images) and atelet pulls from
@@ -42,10 +43,49 @@ import (
 //     Service and generated cookie secret, an Istio AuthorizationPolicy that
 //     admits the ingress Gateway to it and nothing else, and the Keycloak
 //     public client planboard-<claim> (Planboard.#Client) it logs in through
-//     with PKCE, so no client secret exists anywhere.
+//     with PKCE, so no client secret exists anywhere;
+//   - the hop from the login to the shim: a waypoint in the claim's
+//     namespace, a Gateway of the claim's waypointClass with its parameters
+//     ConfigMap, which mounts the private root; a ServiceEntry that gives the
+//     board's shim hostname a mesh address behind the waypoint, on port 80, to
+//     the shim Gateway's ClusterIP Service on 443; a DestinationRule that
+//     originates TLS to the shim with the hostname as SNI, against the private
+//     root; and a TrafficExtension whose Lua copies the project query
+//     parameter into x-planboard-project and strips what Planboard should not
+//     see.
+//
+// The project bucket, the claim's own Application, holds the waypoint's
+// RequestAuthentication and AuthorizationPolicy, which decide who reads which
+// part of the board (overview §6): the owner's to edit live, with self-heal off
+// on that Application, and healed back to this render when it is on again.
+// The waypoint's Gateway and its parameters ConfigMap, the ServiceEntry, the
+// DestinationRule, the TrafficExtension and an AuthorizationPolicy that
+// admits nothing stay in the platform bucket, since they decide where the
+// board's traffic goes, what it is checked against and what the policy reads,
+// and the last makes the waypoint refuse everything the owner's policy does
+// not admit, whichever Application syncs first. Denying those kinds in the
+// claim's AppProject is self-heal-off-for-live-policy-edits, in the
+// Planboard_On_Holos planning project, and not done here; until then the
+// owner, admin in the namespace, can edit them live, and self-heal on the
+// platform's Application puts them back.
+//
+// A logged-in request takes this path:
+//
+//	browser
+//	  -> the ingress Gateway, the claim's ListenerSet, the HTTPRoute planboard,
+//	     which removes the identity headers
+//	  -> oauth2-proxy, which adds the ID token as a bearer token, to
+//	     http://<ActorHost>, whose address in the claim's namespace is the
+//	     ServiceEntry's
+//	  -> ztunnel, to the waypoint over HBONE
+//	  -> the waypoint: RequestAuthentication (the board's client), the Lua,
+//	     AuthorizationPolicy (the claim's groups, by route and project)
+//	  -> TLS to the shim Gateway's Service, for ActorHost
+//	  -> the shim, which verifies the token again (the AuthorizationPolicy
+//	     product-planboard-<claim>, below), and the router, to the actor
 //
 // README.md, The board as an actor, has what the owner does by hand, and The
-// board's login what the login does.
+// board's login what the login and the waypoint do.
 
 // ProjectName and ProductName are the binding this instance renders, the
 // parameters its registry entry passes. Without them, as `cue vet ./...`
@@ -358,7 +398,8 @@ if ProjectName != "" {
 		callback: "https://\(Host)/oauth2/callback"
 	}
 
-	// CAMount is where the private-ca ConfigMap is mounted in the proxy.
+	// CAMount is where the private-ca ConfigMap is mounted, in the proxy and
+	// in the waypoint.
 	let CAMount = "/etc/private-ca"
 
 	// ProxyArgs are oauth2-proxy's arguments, every one stated, with no
@@ -380,11 +421,11 @@ if ProjectName != "" {
 	// in place, so the route removes them (HTTPRoute, below). The ID token is
 	// not set on the browser's response. The Host is the upstream's, the
 	// actor's hostname, the only one the shim's Lua takes. The upstream is
-	// plain HTTP, so a waypoint in the claim's namespace can read the
-	// request's headers and originate TLS to the shim (in the
-	// Planboard_On_Holos planning project,
-	// the-project-waypoint-and-the-shim-hop); until it is there, the name
-	// resolves to the ingress Gateway, whose port 80 redirects to https.
+	// plain HTTP to port 80, so the waypoint in the claim's namespace can read
+	// the request's headers and originate TLS to the shim: ztunnel's DNS
+	// proxy resolves the actor's hostname to the ServiceEntry's address
+	// (ShimEntry, below), and ztunnel sends what is dialed there through the
+	// waypoint, so the argument names the hostname and nothing else.
 	//
 	// cookie-refresh: Keycloak's ID token lives five minutes, so oauth2-proxy
 	// redeems the session's refresh token for a new one on a request once
@@ -424,7 +465,8 @@ if ProjectName != "" {
 
 	// IdentityHeaders are the request headers an auth proxy uses to name the
 	// user, which the board's route removes from every request before it
-	// reaches oauth2-proxy (ProxyArgs).
+	// reaches oauth2-proxy (ProxyArgs), and the waypoint's Lua removes again
+	// (Lua, below).
 	let IdentityHeaders = [
 		"X-Forwarded-User",
 		"X-Forwarded-Email",
@@ -437,6 +479,194 @@ if ProjectName != "" {
 		"X-Auth-Request-Access-Token",
 		"X-Forwarded-Access-Token",
 	]
+
+	// Waypoint is the board's waypoint in the claim's namespace, which
+	// istiod deploys as a Deployment and a Service of the Gateway's name. It is
+	// named for the product, not a bare waypoint, since another product bound
+	// to the claim would want that name. ref is the Gateway as the policies'
+	// targetRefs name it, so each applies to this waypoint alone. parameters
+	// is the ConfigMap its infrastructure.parametersRef names. class is the
+	// claim's waypointClass, interpolated, which settles the claim's default:
+	// #Resources gives a Gateway's class a default of its own, and two
+	// defaults that differ leave neither.
+	let WaypointName = "planboard-waypoint"
+	let Waypoint = {
+		name:       WaypointName
+		parameters: WaypointName
+		class:      "\(Read.claim.waypointClass)"
+		ref: {
+			group: "gateway.networking.k8s.io"
+			kind:  "Gateway"
+			name:  WaypointName
+		}
+	}
+
+	// ShimEntry is the ServiceEntry and the DestinationRule for the board's
+	// shim hostname, and endpoint the shim Gateway's ClusterIP Service, the
+	// fully qualified name, since a ServiceEntry's endpoint is resolved by DNS
+	// as it is written. The Service rather than the public hostname, which
+	// resolves to the ingress Gateway's address, where ztunnel could take the
+	// connection for the ingress Service's.
+	let ShimEntry = {
+		name:     "planboard-shim"
+		endpoint: "\(AteGateway.service).\(AteGateway.namespace).svc.\(Cluster.network.dnsDomain)"
+	}
+
+	// ProjectHeader is the header the waypoint's Lua sets from the project
+	// query parameter, and the policy's viewer rule for /api/document reads.
+	let ProjectHeader = "x-planboard-project"
+
+	// ProjectPattern is #Values' #projectPattern (products/planboard.cue) as a
+	// Lua pattern. Lua's patterns are not regular expressions: a dash is a
+	// range in a character class and a lazy repetition outside one unless
+	// escaped with %, and there is no alternation and no counted repetition.
+	// So it is written out here, and unified with the regular expression with
+	// that one change made, so that a change there fails the render until this
+	// is changed with it. The literal is a let of its own: CUE v0.17.1 lets a
+	// let that unifies a literal with a builtin's result conflict without an
+	// error, and takes the literal.
+	let LuaProjectPattern = "^[A-Za-z0-9][A-Za-z0-9_%-]*$"
+	let ProjectPattern = LuaProjectPattern & strings.Replace(Read.product.#Values.#projectPattern, "-]", "%-]", -1)
+
+	// Theme is the one cookie of Planboard's own, which holds the UI's theme
+	// and nothing about the user.
+	let Theme = "planboard-theme"
+
+	// Lua is the waypoint's TrafficExtension, at the AUTHZ phase: after the
+	// JWT filter, so a request with a bad token is already refused, and before
+	// the RBAC filter, so the AuthorizationPolicy reads the header it sets.
+	//
+	// Istio matches a policy's paths without the query, and has no condition
+	// on a query parameter, so the Lua makes the project parameter a header.
+	// It reads the query as Planboard does, with Go's url.Query().Get, so the
+	// project the policy admits is the project Planboard serves: pairs split
+	// on &, empty ones skipped; a pair holding ; dropped, as Go has done since
+	// 1.17; key and value split at the first =, each unescaped with + as a
+	// space and %XX as a byte, a malformed escape dropping the pair; and the
+	// first pair whose key is project wins. Its value becomes the header only
+	// in the shape of a project's name (ProjectPattern), and otherwise there
+	// is no header, so a viewer is refused. A client's own copy of the header
+	// is removed first, whatever the query says.
+	//
+	// It also strips what Planboard has no use for and should not see: every
+	// cookie but Theme, the login's session cookie among them; the client's
+	// X-Forwarded-For, so the address Planboard sees is the waypoint's, which
+	// the shim appends; and IdentityHeaders, which the board's route removes
+	// for requests through the ingress Gateway, and which a pod in the claim's
+	// namespace calling the ServiceEntry's address directly could send. The
+	// Authorization header stays, for the shim, which removes it once it has
+	// verified the token.
+	//
+	// Envoy keeps each Cookie header a client sends as a value of its own, so
+	// every value is read, by index from 0. A pair is kept when its name, the
+	// text before the first = with spaces trimmed as Go trims it, is Theme, and
+	// what is kept is sent as one header, or none.
+	let RemoveIdentity = strings.Join([for H in IdentityHeaders {
+		"  headers:remove(\"\(strings.ToLower(H))\")"
+	}], "\n")
+	let Lua = """
+		-- unescape is Go's url.QueryUnescape: + is a space and %XX a byte, and a
+		-- % not followed by two hex digits fails the whole pair, so nil.
+		local function unescape(s)
+		  local i = 1
+		  while true do
+		    local p = string.find(s, "%", i, true)
+		    if p == nil then break end
+		    if not string.match(string.sub(s, p + 1, p + 2), "^%x%x$") then return nil end
+		    i = p + 3
+		  end
+		  s = string.gsub(s, "%+", " ")
+		  s = string.gsub(s, "%%(%x%x)", function(x) return string.char(tonumber(x, 16)) end)
+		  return s
+		end
+
+		-- project is the first value of the query parameter project, as Go's
+		-- url.Query().Get reads it, or nil. Go reads no parameter at all past
+		-- its limit of 10000 pairs, where this still reads one; that can
+		-- only admit a viewer to a request Planboard then answers with no
+		-- project.
+		local function project(path)
+		  local query = string.match(path, "%?(.*)$")
+		  if query == nil then return nil end
+		  for pair in string.gmatch(query, "[^&]+") do
+		    if not string.find(pair, ";", 1, true) then
+		      local key, value = pair, ""
+		      local eq = string.find(pair, "=", 1, true)
+		      if eq ~= nil then
+		        key = string.sub(pair, 1, eq - 1)
+		        value = string.sub(pair, eq + 1)
+		      end
+		      key = unescape(key)
+		      if key ~= nil then value = unescape(value) end
+		      if key == "project" and value ~= nil then return value end
+		    end
+		  end
+		  return nil
+		end
+
+		local function trim(s)
+		  return string.match(s, "^%s*(.-)%s*$")
+		end
+
+		-- theme is every \(Theme) cookie of every Cookie header, as name=value.
+		local function theme(headers)
+		  local kept = {}
+		  for i = 0, headers:getNumValues("cookie") - 1 do
+		    for pair in string.gmatch(headers:getAtIndex("cookie", i) or "", "[^;]+") do
+		      pair = trim(pair)
+		      if trim(string.match(pair, "^[^=]*")) == "\(Theme)" then
+		        table.insert(kept, pair)
+		      end
+		    end
+		  end
+		  return kept
+		end
+
+		function envoy_on_request(handle)
+		  local headers = handle:headers()
+
+		  -- The project, for the policy, and only from the query.
+		  headers:remove("\(ProjectHeader)")
+		  local name = project(headers:get(":path") or "")
+		  if name ~= nil and string.match(name, "\(ProjectPattern)") then
+		    headers:add("\(ProjectHeader)", name)
+		  end
+
+		  -- Of the cookies, \(Theme) alone.
+		  local kept = theme(headers)
+		  headers:remove("cookie")
+		  if #kept > 0 then
+		    headers:add("cookie", table.concat(kept, "; "))
+		  end
+
+		  -- No client address, and no header naming a user.
+		  headers:remove("x-forwarded-for")
+		\(RemoveIdentity)
+		end
+		"""
+
+	// Policy is what the waypoint's AuthorizationPolicy is made of (overview
+	// §6). Every rule takes a token the RequestAuthentication verified, from
+	// the realm, and one of the claim's groups in its groups claim. Writers
+	// are /platform/owners and the claim's owner and editor groups, who reach
+	// every route: editors read the board, since they drive the agent that
+	// writes it. The viewer group reads the UI shell and the API that names
+	// no project, and the projects the binding lists (Viewers).
+	let Policy = {
+		from: [{source: requestPrincipals: ["\(Keycloak.issuer)/*"]}]
+		groups: "request.auth.claims[\(Keycloak.groupsClaim)]"
+		writers: list.SortStrings([
+			Keycloak.groups.owners.path,
+			(#ProjectRoleGroupPath & {project: CLAIM, role: "owner"}).claim,
+			(#ProjectRoleGroupPath & {project: CLAIM, role: "editor"}).claim,
+		])
+		viewer: (#ProjectRoleGroupPath & {project: CLAIM, role: "viewer"}).claim
+		reads: ["GET", "HEAD"]
+	}
+
+	// Viewers are the Planboard projects the viewer group may open, the
+	// binding's values.planboard.access.viewers.projects.
+	let Viewers = list.SortStrings(Read.values.access.viewers.projects)
 
 	// Hook is held here because two objects read it, the Job and its ConfigMap.
 	let Hook = #AteAPIJob & {
@@ -569,7 +799,7 @@ if ProjectName != "" {
 			// do, and none to the board itself, which would bypass the login.
 			// The gateway removes a client's identity headers first, which
 			// oauth2-proxy, setting none of its own, would pass on
-			// (ProxyArgs).
+			// (ProxyArgs), and the waypoint removes them again (Lua).
 			HTTPRoute: planboard: {
 				metadata: {
 					namespace: CLAIM
@@ -705,8 +935,10 @@ if ProjectName != "" {
 			// port 15008 and not 4180. ztunnel enforces this instead: the
 			// gateway's mesh identity, on 4180 alone, and nothing else, as
 			// holos-authenticator admits its gateway. The proxy's own egress
-			// is the waypoint's to narrow (in the Planboard_On_Holos planning
-			// project, the-project-waypoint-and-the-shim-hop).
+			// is still open: in an ambient namespace a NetworkPolicy sees
+			// ztunnel's HBONE on 15008, and the ingress Gateway's address for
+			// Keycloak, not the path through the waypoint, so narrowing it
+			// needs a spike of its own (README.md, The board's login).
 			AuthorizationPolicy: (Proxy.service): {
 				metadata: {
 					namespace: CLAIM
@@ -733,7 +965,232 @@ if ProjectName != "" {
 				namespace: CLAIM
 				generator: spec: secretKeys: ["cookie-secret"]
 			}).resources
+
+			// The waypoint Deployment's customization, which istiod merges into
+			// the Deployment it generates: the private root, from trust-manager's
+			// ConfigMap, which every namespace has, read-only in the proxy, for
+			// the DestinationRule to check the shim's certificate against. A
+			// mounted file rather than a DestinationRule's credentialName, which
+			// would need the root copied into a Secret, and trust-manager writes
+			// ConfigMaps alone here.
+			ConfigMap: (Waypoint.parameters): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				data: deployment: yaml.Marshal({
+					spec: template: spec: {
+						containers: [{
+							name: "istio-proxy"
+							volumeMounts: [{name: "private-ca", mountPath: CAMount, readOnly: true}]
+						}]
+						volumes: [{name: "private-ca", configMap: name: PrivateCA.bundle}]
+					}
+				})
+			}
+
+			// The waypoint, for Services and ServiceEntries that name it, of
+			// which there is one, ShimEntry. One HBONE listener, which is how
+			// ztunnel hands it a connection. The class is the claim's
+			// waypointClass, Istio's waypoint unless the claim says otherwise.
+			Gateway: (Waypoint.name): {
+				metadata: {
+					namespace: CLAIM
+					labels: Labels & {"istio.io/waypoint-for": "service"}
+				}
+				spec: {
+					gatewayClassName: Waypoint.class
+					infrastructure: parametersRef: {
+						group: ""
+						kind:  "ConfigMap"
+						name:  Waypoint.parameters
+					}
+					listeners: [{name: "mesh", port: 15008, protocol: "HBONE"}]
+				}
+			}
+
+			// The board's shim hostname in the claim's namespace: an address
+			// of the mesh's, which ztunnel's DNS proxy answers the hostname
+			// with for the namespace's pods, behind the waypoint. Port 80 is
+			// plain HTTP, the login's upstream, sent to the shim Gateway's
+			// Service on 443 once the waypoint has originated TLS. Exported to
+			// the claim's namespace alone. A pod there that dials the
+			// hostname's https port gets this address too, and fails its TLS
+			// handshake (README.md, The board's login).
+			ServiceEntry: (ShimEntry.name): {
+				metadata: {
+					namespace: CLAIM
+					labels: Labels & {"istio.io/use-waypoint": Waypoint.name}
+				}
+				spec: {
+					hosts: [ActorHost]
+					exportTo: ["."]
+					location:   "MESH_EXTERNAL"
+					resolution: "DNS"
+					ports: [{number: 80, name: "http", protocol: "HTTP", targetPort: 443}]
+					endpoints: [{address: ShimEntry.endpoint}]
+				}
+			}
+
+			// TLS from the waypoint to the shim: the actor's hostname as SNI,
+			// which picks the claim's listener on the shim Gateway, and the
+			// shim's certificate checked for that name against the private
+			// root the waypoint mounts. One-way, since the shim takes the
+			// user's token, not the waypoint's identity. Exported to the
+			// claim's namespace alone, where the waypoint is the proxy that
+			// dials the hostname.
+			DestinationRule: (ShimEntry.name): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					host: ActorHost
+					exportTo: ["."]
+					trafficPolicy: tls: {
+						mode: "SIMPLE"
+						sni:  ActorHost
+						subjectAltNames: [ActorHost]
+						caCertificates: "\(CAMount)/\(PrivateCA.bundleKey)"
+					}
+				}
+			}
+
+			// The waypoint admits nothing on its own. An ALLOW policy with no
+			// rules matches no request, and once a workload has an ALLOW
+			// policy, a request no ALLOW rule matches is refused, so the
+			// owner's policy (the project bucket, below) only adds to this.
+			// Without it, the waypoint would admit any request with a valid
+			// token, every viewer to every project and to the agent's routes,
+			// from the moment this Application makes the ServiceEntry until
+			// the claim's Application syncs the policy, or for as long as that
+			// sync fails.
+			AuthorizationPolicy: (Waypoint.name): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					targetRefs: [Waypoint.ref]
+					action: "ALLOW"
+				}
+			}
+
+			// The project header and the strip (Lua, above), at the AUTHZ
+			// phase, stated, since an unphased filter would run after the
+			// policy and the policy would never see the header.
+			TrafficExtension: (Waypoint.name): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					targetRefs: [Waypoint.ref]
+					phase: "AUTHZ"
+					lua: inlineCode: Lua
+				}
+			}
 		}
-		project: {}
+
+		// The waypoint's policy, the owner's to edit live (overview §6), so
+		// in the claim's own Application, where self-heal off leaves an edit
+		// in place and self-heal on returns it to this.
+		project: {
+			// A bearer token, if the request carries one, must be a Keycloak ID
+			// token from the realm for the board's client, the token the login
+			// forwards; any other bearer token is 401. A request without one,
+			// or whose Authorization is not a bearer token, passes here as
+			// anonymous and is refused by the AuthorizationPolicy. The token is
+			// forwarded, since the shim verifies it again.
+			RequestAuthentication: planboard: {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					targetRefs: [Waypoint.ref]
+					jwtRules: [{
+						issuer: Keycloak.issuer
+						audiences: [Login.client]
+						fromHeaders: [{name: "Authorization", prefix: "Bearer "}]
+						forwardOriginalToken: true
+					}]
+				}
+			}
+
+			// Who reads what of the board (Policy, above). Planboard v0.0.1's
+			// routes (server/handler.go) are the UI shell at / and the
+			// project-less research library's /research/<slug>/raw/<name>,
+			// which the first viewer rule admits as everything outside /api/,
+			// /files/ and /present/; the API, of which every GET but
+			// /api/document names no project, and GET /api/agent is the
+			// agent's card, while POST /api/agent/turn and /api/agent/render
+			// drive the agent and stay closed to viewers; and /files/<project>/
+			// and /present/<project>/, a project's files and decks, by path.
+			// /api/projects returns nearly every project's text whatever this
+			// says about /api/document, and the UI cannot start without it, a
+			// leak taken as Planboard has it. Istio resolves a .. before the
+			// match, and Go's mux answers any other unclean path with a
+			// redirect to the clean one, which comes back through here. The
+			// mesh's path normalization leaves a %2F encoded, though, so
+			// /files/<P>/..%2F<Q>/x matches <P>'s prefix and reaches Planboard
+			// with ../<Q>/x as its path; Planboard refuses it, since it checks
+			// every segment of a project's path and refuses a .. or a /
+			// (server/images.go, servedPath). The project rules render only
+			// when the binding lists projects.
+			AuthorizationPolicy: planboard: {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					targetRefs: [Waypoint.ref]
+					action: "ALLOW"
+					rules: [
+						{
+							from: Policy.from
+							when: [{key: Policy.groups, values: Policy.writers}]
+						},
+						{
+							from: Policy.from
+							to: [
+								{operation: {
+									methods: Policy.reads
+									notPaths: ["/api/*", "/files/*", "/present/*"]
+								}},
+								{operation: {
+									methods: Policy.reads
+									paths: list.SortStrings([
+										"/api/projects",
+										"/api/events",
+										"/api/catalog",
+										"/api/research",
+										"/api/research/*",
+										"/api/agent",
+									])
+								}},
+							]
+							when: [{key: Policy.groups, values: [Policy.viewer]}]
+						},
+						if len(Viewers) > 0 {
+							from: Policy.from
+							to: [{operation: {methods: Policy.reads, paths: ["/api/document"]}}]
+							when: [
+								{key: Policy.groups, values: [Policy.viewer]},
+								{key: "request.headers[\(ProjectHeader)]", values: Viewers},
+							]
+						},
+						if len(Viewers) > 0 {
+							from: Policy.from
+							to: [{operation: {
+								methods: Policy.reads
+								paths: list.SortStrings([for P in Viewers for D in ["files", "present"] {"/\(D)/\(P)/*"}])
+							}}]
+							when: [{key: Policy.groups, values: [Policy.viewer]}]
+						},
+					]
+				}
+			}
+		}
 	}).artifacts
 }

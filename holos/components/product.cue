@@ -69,7 +69,13 @@ package holos
 	project: #Resources & {
 		[_]: [_]: metadata: namespace: projectName
 
-		// What the claim's AppProject would refuse (above).
+		// What the claim's AppProject would refuse (above). Gateway,
+		// ListenerSet, TrafficExtension and ServiceEntry are not among them
+		// yet, though a product's waypoint keeps them in the platform bucket
+		// (components/product-planboard): the AppProject takes them today, and
+		// denying them there and here, while security.istio.io stays the
+		// owner's, is self-heal-off-for-live-policy-edits, in the
+		// Planboard_On_Holos planning project.
 		Application?:                    _|_
 		AppProject?:                     _|_
 		Bundle?:                         _|_

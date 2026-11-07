@@ -402,7 +402,7 @@ entries have no hand step.
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
 | `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim; and on a cluster where a binding names it, its zone on the ingress Gateway, a `ListenerSet` with a wildcard of its own |
-| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>` (The board's hostname and The board's login, below) |
+| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>`, and the waypoint the login reaches the board through: its `Gateway` and parameters `ConfigMap` `planboard-waypoint`, the `ServiceEntry` and `DestinationRule` `planboard-shim` and the `TrafficExtension` `planboard-waypoint`, in the claim's namespace, with the waypoint's `RequestAuthentication` and `AuthorizationPolicy` `planboard` in the claim's own directory (The board's hostname and The board's login, below) |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -3879,6 +3879,9 @@ and `checkout`, each selecting `treasury`, and `splunk`, selecting
    and the render exits 0 having rendered nothing, which is why `cue vet` goes
    first.
    `ownerAccess: "edit"` or `"view"` gives the owners less than `admin`.
+   `waypointClass` is the `GatewayClass` of the waypoint a binding puts in the
+   claim's namespace, `istio-waypoint` unless the claim says otherwise (The
+   board's login, below); a claim with no binding renders nothing for it.
 
 2. Render, from this directory, and check what changed. The changes below are
    each selected cluster's, and a cluster the claim does not select stays as
@@ -4498,7 +4501,9 @@ curl -H "Authorization: Bearer $TOKEN" https://planboard.$claim.ate.$domain/api/
 claim's owner, editor and viewer groups and `/platform/owners` to the board's host,
 and only that host, so another actor in the atespace stays closed to editors and
 viewers. Everyone else gets 403. That is every route for every project, for
-anyone admitted: the per-project rule for viewers is not built yet.
+anyone admitted with a token on the shim's hostname. The rule by route and
+project for viewers is on the browser's path, at the waypoint in the claim's
+namespace (The board's login, below).
 
 An actor woken before `planboard-git` exists fails its clone. The first request
 gets 504 from the router after ten seconds, the probe gives up after 120, and the
@@ -4584,6 +4589,11 @@ renders in the claim's namespace in plain CUE, with the image kagent's chart run
 | `Deployment`, `ServiceAccount`, `Service` | `planboard-oauth2-proxy`, in `<claim>` | oauth2-proxy on 4180: PKCE (`--code-challenge-method=S256`, with `--client-secret-file=/dev/null` to get past its check for a secret), the ID token upstream as a bearer token and not to the browser, no identity header and not the client's `Host`, a session refreshed every minute, since an ID token lives five, and no provider button |
 | `Password`, `ExternalSecret` | `planboard-oauth2-proxy-cookie`, in `<claim>` | The cookie secret, generated once (External Secrets, above) |
 | Istio `AuthorizationPolicy` | `planboard-oauth2-proxy`, in `<claim>` | ztunnel admits the ingress Gateway's mesh identity to the proxy, on 4180, and nothing else. The namespace is in ambient, where a NetworkPolicy would see HBONE's 15008 |
+| `Gateway`, `ConfigMap` | `planboard-waypoint`, in `<claim>` | The waypoint, of the claim's `waypointClass`, `istio-waypoint` by default, with one `HBONE` listener on 15008; istiod deploys it as a `Deployment` and `Service` of that name. The `ConfigMap` is its `infrastructure.parametersRef`, which mounts trust-manager's `private-ca` `ConfigMap` at `/etc/private-ca` |
+| `ServiceEntry` | `planboard-shim`, in `<claim>` | `planboard.<claim>.ate.<domain>` on port 80, `HTTP`, behind the waypoint (`istio.io/use-waypoint`), to the shim Gateway's Service `ate-istio.substrate-shim.svc.cluster.local` on 443, exported to the claim's namespace alone |
+| `DestinationRule` | `planboard-shim`, in `<claim>` | TLS from the waypoint to the shim, with the actor's hostname as SNI and as the name the shim's certificate must carry, checked against the private root at `/etc/private-ca/ca.crt` |
+| `TrafficExtension` | `planboard-waypoint`, in `<claim>` | Lua on the waypoint at `phase: AUTHZ`, after the JWT filter and before the RBAC filter: `x-planboard-project` from the `project` query parameter, and the strip (below) |
+| `RequestAuthentication`, `AuthorizationPolicy` | `planboard`, in `<claim>`, in the claim's own directory | On the waypoint: a bearer token must be an ID token for `planboard-<claim>`, forwarded to the shim, and the claim's groups reach the routes below |
 
 The `HTTPRoute` `planboard` removes `X-Forwarded-User`, `-Email`, `-Groups` and
 `-Preferred-Username`, and their `X-Auth-Request-` forms with
@@ -4592,20 +4602,101 @@ with `--pass-user-headers`, `--pass-basic-auth` and `--pass-access-token` off,
 oauth2-proxy sets none of them and leaves a client's copies in place.
 
 The proxy's upstream is the actor's hostname, `http://planboard.<claim>.ate.<domain>`,
-in plain HTTP, so a waypoint in the claim's namespace can read the request's
-headers and originate TLS to the shim (`the-project-waypoint-and-the-shim-hop` in
-the planning board). Until it is there, the name resolves to the ingress Gateway,
-whose port 80 redirects to https, so a logged-in browser is sent on to the
-actor's hostname, where it has no token and gets 403. Until then, too, each
-logged-in request carries the viewer's ID token in plain HTTP across the pod
-network to the ingress Gateway's port 80, which answers only with that redirect.
+in plain HTTP to port 80, so the waypoint in the claim's namespace reads the
+request and originates TLS to the shim. A logged-in request takes this path:
+
+```text
+browser
+  -> the ingress Gateway, the ListenerSet ingress-project-<claim>, the HTTPRoute
+     planboard, which removes the identity headers
+  -> oauth2-proxy, which adds the session's ID token as a bearer token, to
+     http://planboard.<claim>.ate.<domain>; ztunnel's DNS proxy answers the
+     name with the ServiceEntry planboard-shim's address
+  -> ztunnel, to the waypoint planboard-waypoint over HBONE
+  -> RequestAuthentication planboard: a token for planboard-<claim>, or 401
+  -> TrafficExtension planboard-waypoint: x-planboard-project, and the strip
+  -> AuthorizationPolicy planboard: the claim's groups by route and project,
+     or 403
+  -> TLS to ate-istio in substrate-shim, for planboard.<claim>.ate.<domain>,
+     against the private root (DestinationRule planboard-shim)
+  -> the shim, which verifies the token again and removes it, and the router,
+     to the actor
+```
+
+The ServiceEntry targets the shim Gateway's `ClusterIP` Service rather than the
+public hostname, which resolves to the ingress Gateway's address. The private
+root comes from a mounted `ConfigMap`, not a `DestinationRule` `credentialName`,
+which would need the root copied into a `Secret`, and trust-manager writes
+`ConfigMap`s alone here.
+
+The policy is overview §6 of the planning project:
+
+| Group | What it reaches |
+| --- | --- |
+| `/platform/owners`, `/projects/<claim>/roles/owner`, `/projects/<claim>/roles/editor` | Every route, every method. Editors read the board, since they drive the agent that writes it |
+| `/projects/<claim>/roles/viewer` | `GET` and `HEAD` on everything outside `/api/`, `/files/` and `/present/`, which is the UI shell and the research library's `/research/<slug>/raw/<name>`, a library of no project; `/api/projects`, `/api/events`, `/api/catalog`, `/api/research` and `/api/research/*`, which name no project, and `/api/agent`, the agent's card; and for each project in `values.planboard.access.viewers.projects`, `/api/document` with `project=<P>`, `/files/<P>/*` and `/present/<P>/*`. Not `POST /api/agent/turn` or `/api/agent/render` |
+
+Istio matches a policy's paths without the query and has no condition on a query
+parameter, so the Lua removes any client copy of `x-planboard-project` and sets it
+from the `project` parameter, read as Planboard reads it, with Go's
+`url.Query().Get`: a pair holding `;` or a malformed escape is dropped, the first
+pair named `project` wins, and its value becomes the header only if it has the
+shape of a project's name (`#projectPattern` in `products/planboard.cue`, the pattern a
+binding's project names are held to). Istio resolves `..` before the policy, and
+Go's mux answers any other unclean path with a redirect to the clean one. The mesh
+leaves `%2F` encoded, so `/files/<P>/..%2F<Q>/x` matches `<P>`'s prefix; Planboard
+refuses it, since it checks each segment of a project's path and refuses `..` and
+`/` in one. `/api/projects` returns
+nearly every project's text whatever the policy says about `/api/document`, and the
+UI cannot start without it: a viewer admitted to the board can read most of the
+root, which is taken as Planboard has it, with feedback to its maintainer.
+
+The `RequestAuthentication` and `AuthorizationPolicy` are in the claim's own
+directory, `deploy/clusters/<cluster>/projects/<claim>`, synced by the claim's own
+`Application`, because they are what the owner may come to edit live: with
+self-heal off on that `Application` an edit stays, and with it on again Argo CD
+returns the policy to the render. The access to do that is not built yet
+(`self-heal-off-for-live-policy-edits` in the planning board). The waypoint's
+`Gateway` and its parameters `ConfigMap`, the `ServiceEntry`, the
+`DestinationRule` and the `TrafficExtension` decide where the board's traffic goes,
+what it is checked against and what the policy reads, so they are the platform's,
+in `product-planboard-<claim>`. So is the `AuthorizationPolicy`
+`planboard-waypoint`, which has no rules and so admits nothing: the waypoint
+refuses whatever the claim's policy does not admit, including everything before
+the claim's `Application` has synced that policy, whichever of the two syncs
+first.
+
+What reaches Planboard is a plain request: the method, the path and query, the
+actor's hostname as `Host`, the `planboard-theme` cookie and no other, the session
+cookie `_oauth2_proxy` among those removed, `X-Planboard-Project` as the Lua set
+it, an `X-Forwarded-For` holding the waypoint's address, which the shim appends
+once the Lua has removed the client's, and Envoy's own `X-Envoy-*`,
+`X-Forwarded-Proto` and `X-Request-Id`. No token: the shim removes `Authorization`
+once it has verified it. No identity header: the Lua removes the ones the route
+removes, again, for a pod in the claim's namespace that calls the `ServiceEntry`'s
+address directly.
+
+Two gaps are accepted:
+
+- `https://planboard.<claim>.ate.<domain>` on 443 from a pod in the claim's
+  namespace fails its TLS handshake (curl exit 35) once the `ServiceEntry` exists,
+  since the name resolves to the `ServiceEntry`'s address there. A second, `TLS`
+  port on the `ServiceEntry` did not fix it. The board's path is plain HTTP to
+  port 80, so nothing of the board breaks; from outside the namespace the name
+  works as before.
+- oauth2-proxy's egress is still open. In an ambient namespace a NetworkPolicy
+  sees ztunnel's HBONE on 15008, and the ingress Gateway's address for Keycloak,
+  not the path through the waypoint, so narrowing it needs a spike of its own.
 
 Removing a binding while its claim stays: delete the `Client` `planboard-<claim>`
 first and wait for it to go, then merge. No Application has Argo CD's resources
 finalizer, so the root drops `product-planboard-<claim>` and leaves its objects,
 and the same render narrows `project-<claim>`'s `ReferenceGrant`, without
 which the `Client`'s finalizer cannot reach the `Instance`, so a `Client` left
-behind hangs in Terminating once deleted.
+behind hangs in Terminating once deleted. The waypoint's objects are left too,
+and the claim's `Application` prunes the board's policy, so the waypoint refuses
+everything; delete them by hand: `kubectl -n <claim> delete serviceentry,destinationrule planboard-shim`
+and `kubectl -n <claim> delete gateway,configmap,trafficextension,authorizationpolicy planboard-waypoint`.
 
 The shim's `RequestAuthentication` takes `kubectl` and each bound board's
 client (`Planboard.clients` in `components/planboard.cue`). On a cluster with a
@@ -4622,9 +4713,10 @@ already decides.
 
 To check it, log in as a member of the claim, such as `alex` on cartography, at
 `https://planboard.splunk.cartography.bank.internal/`: the browser goes straight
-to Keycloak's login, and after it to the actor's hostname, with the session
-cookie `_oauth2_proxy` set on the board's. Then take a token of the board's
-client and try it on the shim. The client has the standard flow alone, so the
+to Keycloak's login, and after it back to the board, which it shows on its own
+hostname, with the session cookie `_oauth2_proxy` set; the first request may get
+504 while the actor wakes. Then take a token of the board's client and try it on
+the shim. The client has the standard flow alone, so the
 token comes from the flow by hand: open the authorization URL in the browser,
 log in, and copy `code` from the callback URL it lands on, which oauth2-proxy
 refuses, since it did not start that flow:
@@ -4644,6 +4736,35 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $BOARD" https
 
 A `kubectl` token still reaches the board's actor hostname, as before (The
 board as an actor, above).
+
+Then the waypoint, from a pod in the claim's namespace, which reaches the board's
+hostname as oauth2-proxy does, on port 80. `$curl` is any image with `curl`, such
+as `quay.io/curl/curl:8.11.1`; `$BOARD` is the token above, of a member of the owner
+group, and `$OTHER` a token of the board's client for a user of the realm in none
+of the claim's groups, such as `morgan` on cartography:
+
+```sh
+kubectl -n $claim get gateway planboard-waypoint                     # PROGRAMMED True
+kubectl -n $claim get serviceentry planboard-shim \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}{"\n"}'
+    # istio.io/WaypointBound=True
+kubectl -n $claim run waypoint-check --image=$curl --restart=Never --command -- sleep 3600
+kubectl -n $claim wait --for=condition=Ready pod/waypoint-check
+c() { kubectl -n $claim exec waypoint-check -- curl -s -o /dev/null -w '%{http_code}\n' "$@"; }
+board=http://planboard.$claim.ate.$domain
+c -H "Authorization: Bearer $BOARD" $board/api/projects              # 200, or 504 while it wakes
+c $board/                                                            # 403: no token
+c -H "Authorization: Bearer x.y.z" $board/                           # 401, from the waypoint
+c -H "Authorization: Bearer $OTHER" $board/                          # 403: no group of the claim's
+c -H "Authorization: Bearer $BOARD" https://planboard.$claim.ate.$domain/  # 000, curl exit 35: the first gap above
+kubectl -n $claim delete pod waypoint-check
+```
+
+A viewer's token, where the claim has a viewer, gets 200 on `$board/` and
+`$board/api/projects`, and 403 on `$board/api/document?project=<P>&kind=overview`
+for a `<P>` the binding does not list, on the same with a listed `<P>` named only
+in a client's own `x-planboard-project` header, and on
+`-X POST $board/api/agent/turn`.
 
 ### Building the Planboard images
 
