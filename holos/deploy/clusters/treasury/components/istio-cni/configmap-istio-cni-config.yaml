@@ -14,10 +14,10 @@ metadata:
     app.kubernetes.io/managed-by: "Helm"
     app.kubernetes.io/instance: "istio-cni"
     app.kubernetes.io/part-of: "istio"
-    app.kubernetes.io/version: "1.31.3"
-    helm.sh/chart: cni-1.31.3
+    app.kubernetes.io/version: "1.31.4"
+    helm.sh/chart: cni-1.31.4
 data:
-  CURRENT_AGENT_VERSION: "1.31.3"
+  CURRENT_AGENT_VERSION: "1.31.4"
   AMBIENT_ENABLED: "true"
   AMBIENT_ENABLEMENT_SELECTOR: "- podSelector:\n    matchLabels:\n      istio.io/dataplane-mode: ambient\n- namespaceSelector:\n    matchLabels:\n      istio.io/dataplane-mode: ambient\n  podSelector:\n    matchExpressions:\n    - key: istio.io/dataplane-mode\n      operator: NotIn\n      values:\n      - none"
   AMBIENT_DNS_CAPTURE: "true"

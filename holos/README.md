@@ -353,7 +353,7 @@ optional entries have no hand step.
 | `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate`, the `private-ca` `ClusterIssuer`, and the `CertificateRequestPolicy`s and RBAC that approve every certificate request but a claim's wildcard, which renders its own |
 | `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
-| `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
+| `istio-base` | Istio 1.31.4's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
 | `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks, the private root as its JWKS trust and the platform authenticator as an ext_authz provider |
 | `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
 | `ztunnel` | Ambient's node proxy on every worker |
@@ -988,7 +988,7 @@ label. The images are pinned by digest.
 
 ### Istio
 
-Istio 1.31.3 in ambient mode (interview Q16), from the charts at
+Istio 1.31.4 in ambient mode (interview Q16), from the charts at
 `oci://ghcr.io/istio/release/charts`, in four components applied in this
 order: `istio-base` (the CRDs and the `istio-system` namespace), `istiod`,
 `istio-cni` and `ztunnel`. `istio.cue` has the release, the images, pinned by

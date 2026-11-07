@@ -9,8 +9,8 @@ metadata:
     app.kubernetes.io/managed-by: "Helm"
     app.kubernetes.io/instance: "ztunnel"
     app.kubernetes.io/part-of: "istio"
-    app.kubernetes.io/version: "1.31.3"
-    helm.sh/chart: ztunnel-1.31.3
+    app.kubernetes.io/version: "1.31.4"
+    helm.sh/chart: ztunnel-1.31.4
     
   annotations:
     {}
@@ -33,8 +33,8 @@ spec:
         app.kubernetes.io/managed-by: "Helm"
         app.kubernetes.io/instance: "ztunnel"
         app.kubernetes.io/part-of: "istio"
-        app.kubernetes.io/version: "1.31.3"
-        helm.sh/chart: ztunnel-1.31.3
+        app.kubernetes.io/version: "1.31.4"
+        helm.sh/chart: ztunnel-1.31.4
 
       annotations:
         sidecar.istio.io/inject: "false"
@@ -60,7 +60,7 @@ spec:
           operator: Exists
       containers:
       - name: istio-proxy
-        image: "docker.io/istio/ztunnel:1.31.3-distroless@sha256:5235c45bbfc4f11c45496ea69906aa4d305264f8b29bf5b2ba6e785ef82818f7"
+        image: "docker.io/istio/ztunnel:1.31.4-distroless@sha256:7e62e32aebed2cc220aa7a03818b3a0ab6056af462bf3b6a287ea7c6bd3aeec6"
         ports:
         - containerPort: 15020
           name: ztunnel-stats

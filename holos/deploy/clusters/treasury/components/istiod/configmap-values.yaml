@@ -15,8 +15,8 @@ metadata:
     app.kubernetes.io/managed-by: "Helm"
     app.kubernetes.io/instance: "istiod"
     app.kubernetes.io/part-of: "istio"
-    app.kubernetes.io/version: "1.31.3"
-    helm.sh/chart: istiod-1.31.3
+    app.kubernetes.io/version: "1.31.4"
+    helm.sh/chart: istiod-1.31.4
 data:
   original-values: |-
     {
@@ -29,10 +29,10 @@ data:
       },
       "global": {
         "proxy": {
-          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e"
+          "image": "docker.io/istio/proxyv2:1.31.4-distroless@sha256:553f3640686d588531426e4c6b6810390b230374b7f83aae65fe4c68efccf1cc"
         }
       },
-      "image": "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a",
+      "image": "docker.io/istio/pilot:1.31.4-distroless@sha256:2bc9c4190eec5146c6dacb3e2b81fe2752ecd4f5f5198e51fb27ca67b5930312",
       "meshConfig": {
         "extensionProviders": [
           {
@@ -155,7 +155,7 @@ data:
           "excludeIPRanges": "",
           "excludeInboundPorts": "",
           "excludeOutboundPorts": "",
-          "image": "docker.io/istio/proxyv2:1.31.3-distroless@sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e",
+          "image": "docker.io/istio/proxyv2:1.31.4-distroless@sha256:553f3640686d588531426e4c6b6810390b230374b7f83aae65fe4c68efccf1cc",
           "includeIPRanges": "*",
           "includeInboundPorts": "*",
           "includeOutboundPorts": "",
@@ -197,7 +197,7 @@ data:
         "sts": {
           "servicePort": 0
         },
-        "tag": "1.31.3",
+        "tag": "1.31.4",
         "variant": "distroless",
         "waypoint": {
           "affinity": {},
@@ -217,7 +217,7 @@ data:
         }
       },
       "hub": "",
-      "image": "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a",
+      "image": "docker.io/istio/pilot:1.31.4-distroless@sha256:2bc9c4190eec5146c6dacb3e2b81fe2752ecd4f5f5198e51fb27ca67b5930312",
       "initContainers": [],
       "ipFamilies": [],
       "ipFamilyPolicy": "",

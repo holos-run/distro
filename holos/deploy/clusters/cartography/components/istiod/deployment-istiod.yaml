@@ -16,8 +16,8 @@ metadata:
     app.kubernetes.io/managed-by: "Helm"
     app.kubernetes.io/instance: "istiod"
     app.kubernetes.io/part-of: "istio"
-    app.kubernetes.io/version: "1.31.3"
-    helm.sh/chart: istiod-1.31.3
+    app.kubernetes.io/version: "1.31.4"
+    helm.sh/chart: istiod-1.31.4
 spec:
   replicas: 1
   strategy:
@@ -41,20 +41,20 @@ spec:
         app.kubernetes.io/managed-by: "Helm"
         app.kubernetes.io/instance: "istiod"
         app.kubernetes.io/part-of: "istio"
-        app.kubernetes.io/version: "1.31.3"
-        helm.sh/chart: istiod-1.31.3
+        app.kubernetes.io/version: "1.31.4"
+        helm.sh/chart: istiod-1.31.4
       annotations:
         prometheus.io/port: "15014"
         prometheus.io/scrape: "true"
         sidecar.istio.io/inject: "false"
     spec:
       tolerations:
-        - key: cni.istio.io/not-ready
+        - key: "cni.istio.io/not-ready"
           operator: "Exists"
       serviceAccountName: istiod
       containers:
         - name: discovery
-          image: "docker.io/istio/pilot:1.31.3-distroless@sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a"
+          image: "docker.io/istio/pilot:1.31.4-distroless@sha256:2bc9c4190eec5146c6dacb3e2b81fe2752ecd4f5f5198e51fb27ca67b5930312"
           args:
           - "discovery"
           - --monitoringAddr=:15014
