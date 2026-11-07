@@ -1,0 +1,12 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Group
+metadata:
+    labels:
+        holos.run/project: lending
+    name: lending-roles-editor
+    namespace: lending
+spec:
+    instanceRef:
+        name: default
+        namespace: keycloak
+    path: projects/lending/roles/editor
