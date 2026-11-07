@@ -335,10 +335,20 @@ entries have no hand step.
     is then `Synced` and `Healthy`; `kagent`, on a cluster that takes it, is the
     last before the root. A running cluster with a claim that takes `substrate`
     later is the exception: `project-<claim>` syncs at the merge, ahead of
-    `ate-system` and `substrate-shim`, and if its retries run out it stays
-    `Degraded` and stops the root, which re-syncing the root does not fix. Once
-    `substrate-shim` is `Healthy`, sync `project-<claim>` with the same patch
-    under its name, then the root.
+    `ate-system` and `substrate-shim`. On `cartography` a retry landed between
+    the two, applied the `HTTPRoute` without its `ListenerSet`, and then waited
+    on the route for good, `Running` with retries left. Out of retries it would
+    read `Degraded`. Either stops the root at the claim, and re-syncing the root
+    does not move it. Once `substrate-shim` is `Healthy`, end the operation if
+    it is still `Running`, and sync the claim with the same patch under its
+    name:
+
+    ```sh
+    kubectl -n argocd patch app project-$claim --type merge \
+      -p '{"status":{"operationState":{"phase":"Terminating"}}}'
+    ```
+
+    The root's own retries then carried it on; sync it only if they ran out.
 17. **Log in and check.** As `jeff`, with the password from Secret
     `keycloak/seabank-user-jeff`, generated per cluster (Logging in, below), and
     with `kubectl` as `$cluster-oidc` (Logging in with kubectl, under
