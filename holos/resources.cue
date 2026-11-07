@@ -116,7 +116,7 @@ import (
 	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}
 
 	// ToolHive's MCPServer, MCPOIDCConfig and MCPAuthzConfig,
-	// toolhive.stacklok.dev/v1beta1, the storage version of its 0.59.0 CRDs
+	// toolhive.stacklok.dev/v1beta1, the storage version of its 0.63.0 CRDs
 	// (components/toolhive). Namespaced too.
 	MCPServer?: [_]: {apiVersion: "toolhive.stacklok.dev/v1beta1", metadata: {...}, ...}
 	MCPOIDCConfig?: [_]: {apiVersion: "toolhive.stacklok.dev/v1beta1", metadata: {...}, ...}

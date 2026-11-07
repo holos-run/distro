@@ -371,8 +371,8 @@ optional entries have no hand step.
 | `keycloak-realm` | The realm `default`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, the platform controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `seabank-authenticator` | The platform authenticator, holos-authenticator 0.21.0, from `components/holos-authenticator`, in the ambient namespace `seabank-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.treasury.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
 | `secrets-manager` | The Bank of the Salish Sea Secrets Manager, holos-run/secrets-manager v0.20.0, in the ambient namespace `secrets-manager`, at `secrets.treasury.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
-| `toolhive-crds` | ToolHive 0.59.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
-| `toolhive-operator` | The ToolHive operator 0.59.0 from its `toolhive-operator` OCI chart, images by digest, in `toolhive-system`, watching only the `toolhive` namespace, which it renders too (both restricted, not in the mesh) |
+| `toolhive-crds` | ToolHive 0.63.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
+| `toolhive-operator` | The ToolHive operator 0.63.0 from its `toolhive-operator` OCI chart, images by digest, in `toolhive-system`, watching only the `toolhive` namespace, which it renders too (both restricted, not in the mesh) |
 | `toolhive` | The MCP server `everything` in `toolhive`, at `toolhive.treasury.bank.internal/mcp`: its `MCPServer`, the `MCPOIDCConfig` that checks the realm's `kubectl` ID tokens, the `MCPAuthzConfig` with its Cedar policies, the `HTTPRoute` to the proxy runner and the NetworkPolicies that make the proxy the only way to the server (ToolHive, below) |
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, the gVisor `WorkerPool` `gvisor` in `ate-workers`, and the `NetworkPolicy` that admits the claims' atespace Jobs to the API server |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace of the platform's (`demo`, `kagent`; a claim brings its own), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
@@ -3243,7 +3243,7 @@ holds the pins and the names. Three components, in registry order:
 `toolhive` namespace it manages; and `toolhive`, the MCP server and its
 policies.
 
-- **Pins.** Release 0.59.0: both charts from `oci://ghcr.io/stacklok/toolhive`,
+- **Pins.** Release 0.63.0: both charts from `oci://ghcr.io/stacklok/toolhive`,
   and the operator, proxy runner, vMCP and registry API images by index
   digest. The MCP server is the MCP reference server `everything`, as
   Stacklok's dockyard packages it for the ToolHive catalog
@@ -3254,7 +3254,9 @@ policies.
   namespace`): RoleBindings there to its ClusterRole, no ClusterRoleBinding.
   So the storage version migrator, which needs the whole cluster, is off: a
   CRD version bump that drops a stored version must re-store the objects by
-  hand. Update checks are off too.
+  hand. Update checks are off too. A new operator rolls the proxy runner
+  itself some seconds after it starts, so `rollout status deploy/everything`
+  straight after the chart reports the old pod: read the Deployment's image.
 - **The MCP server** is two workloads. The operator runs a proxy runner,
   Deployment `everything` and Service `mcp-everything-proxy:8080`, and the
   proxy runner creates the MCP server, StatefulSet `everything` and Service
