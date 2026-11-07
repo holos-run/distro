@@ -10,14 +10,15 @@ import (
 // "Bootstrap Argo CD"). argocd-apps holds what it syncs: the AppProject and
 // an Application per component.
 //
-// Chart 10.11.6, the latest stable of argo-helm's argo-cd chart, ships Argo
-// CD v3.5.6, the latest release. The images are pinned by digest (the tag is
-// kept for the reader). quay.io/argoproj and ecr-public.aws.com allow
+// Chart 10.11.7, the latest of argo-helm's argo-cd chart on Argo CD 3.5, ships
+// v3.5.7, the latest 3.5 patch. 3.6 is out, with breaking changes, and is
+// held until after Agent Substrate Day. The images are pinned by digest (the
+// tag is kept for the reader). quay.io/argoproj and ecr-public.aws.com allow
 // anonymous pulls.
-ArgoCDChartVersion: "10.11.6"
-ArgoCDVersion:      "v3.5.6"
+ArgoCDChartVersion: "10.11.7"
+ArgoCDVersion:      "v3.5.7"
 
-let ArgoCDImage = "\(ArgoCDVersion)@sha256:8e5cc5bb008df8a09dba439462e58c94c55b7735888d3ebde0c25fc05e4e5335"
+let ArgoCDImage = "\(ArgoCDVersion)@sha256:16df57da6f223808d204cd94c67c929b931fa01670b91b0b3a2298c4647de0db"
 
 holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: ArgoCD.namespace

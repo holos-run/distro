@@ -91,14 +91,14 @@ let Owners = {
 	path: strings.TrimPrefix(KC.groups.owners.path, "/")
 }
 
-// BuiltinClientScopes are the client scopes Keycloak 26.8.1 creates in a new
+// BuiltinClientScopes are the client scopes Keycloak 26.8.2 creates in a new
 // realm, as the admin API returns the master realm's on treasury, ids
 // removed. A realm import that lists any client scope gets none of these:
 // Keycloak creates its defaults only when the import's clientScopes is
 // absent (RealmManager.importRealm), and the groups scope must be listed. So
 // they are listed beside it, as a realm created without them would have them.
-// A Keycloak upgrade that adds a default scope does not add it to a realm
-// already imported, here or anywhere.
+// A Keycloak upgrade that adds a default scope adds it to a realm already
+// imported only if its migration says so, as 26.8.2's does for kc-admin-api.
 _builtinClientScopes: _ @embed(file="client-scopes.json")
 let BuiltinClientScopes = _builtinClientScopes
 
@@ -108,6 +108,21 @@ let BuiltinClientScopes = _builtinClientScopes
 // scope, so every token carries the groups claim without a mapper of its own.
 let DefaultScopes = ["role_list", "saml_organization", "AuthnContextClassRef", "profile", "email", "roles", "web-origins", "acr", "basic", "groups"]
 let OptionalScopes = ["offline_access", "address", "phone", "microprofile-jwt", "organization"]
+
+// AdminAPIScope is the built-in client scope a token needs to reach the Admin
+// REST API since Keycloak 26.8.2 (CVE-2026-19688): it adds the realm's admin
+// URL to the token's aud and itself to its scope, and the API answers 401
+// without both. It is in no realm default, so no other client's tokens carry
+// that audience. Keycloak gives it to admin-cli and security-admin-console
+// alone, so the platform controller's client names it here.
+let AdminAPIScope = "kc-admin-api"
+
+// ControllerMapperTypes are the protocol mappers a client administrator may
+// write without manage-realm, which the controller is not given, below. Since
+// 26.8.2 the list is empty unless a realm sets it, and the controller makes
+// one mapper of this type on every Client it reconciles, before it delivers
+// the client's secret, so without it a new Client never gets Ready.
+let ControllerMapperTypes = "oidc-usermodel-client-role-mapper"
 
 // Placeholders are the import's environment variables, which the operator
 // sets on its import Job from the Secrets named, and which Keycloak puts in
@@ -189,6 +204,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 					}]])
 					defaultDefaultClientScopes:  DefaultScopes
 					defaultOptionalClientScopes: OptionalScopes
+					attributes: allowedProtocolMapperTypesForClientAdministrators: ControllerMapperTypes
 
 					clients: [
 						{
@@ -281,6 +297,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 							implicitFlowEnabled:       false
 							directAccessGrantsEnabled: false
 							serviceAccountsEnabled:    true
+							defaultClientScopes: list.Concat([DefaultScopes, [AdminAPIScope]])
 						},
 					]
 

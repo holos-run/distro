@@ -76,7 +76,7 @@ import (
 	// Nor do NetworkPolicy, CloudNativePG's Cluster or the Keycloak
 	// Operator's Keycloak and KeycloakRealmImport. All are namespaced, so
 	// metadata is opened as it is for External Secrets' kinds above. The
-	// Keycloak kinds' version is the storage version of the 26.8.1 CRDs;
+	// Keycloak kinds' version is the storage version of the 26.8.2 CRDs;
 	// v2alpha1 is deprecated.
 	NetworkPolicy?: [_]: {apiVersion: "networking.k8s.io/v1", metadata: {...}, ...}
 	Cluster?: [_]: {apiVersion: "postgresql.cnpg.io/v1", metadata: {...}, ...}
@@ -116,7 +116,7 @@ import (
 	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}
 
 	// ToolHive's MCPServer, MCPOIDCConfig and MCPAuthzConfig,
-	// toolhive.stacklok.dev/v1beta1, the storage version of its 0.59.0 CRDs
+	// toolhive.stacklok.dev/v1beta1, the storage version of its 0.63.0 CRDs
 	// (components/toolhive). Namespaced too.
 	MCPServer?: [_]: {apiVersion: "toolhive.stacklok.dev/v1beta1", metadata: {...}, ...}
 	MCPOIDCConfig?: [_]: {apiVersion: "toolhive.stacklok.dev/v1beta1", metadata: {...}, ...}

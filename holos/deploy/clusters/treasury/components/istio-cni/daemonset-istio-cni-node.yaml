@@ -25,8 +25,8 @@ metadata:
     app.kubernetes.io/managed-by: "Helm"
     app.kubernetes.io/instance: "istio-cni"
     app.kubernetes.io/part-of: "istio"
-    app.kubernetes.io/version: "1.31.3"
-    helm.sh/chart: cni-1.31.3
+    app.kubernetes.io/version: "1.31.4"
+    helm.sh/chart: cni-1.31.4
     
 spec:
   selector:
@@ -46,8 +46,8 @@ spec:
         app.kubernetes.io/managed-by: "Helm"
         app.kubernetes.io/instance: "istio-cni"
         app.kubernetes.io/part-of: "istio"
-        app.kubernetes.io/version: "1.31.3"
-        helm.sh/chart: cni-1.31.3
+        app.kubernetes.io/version: "1.31.4"
+        helm.sh/chart: cni-1.31.4
         
       annotations:
         sidecar.istio.io/inject: "false"
@@ -61,6 +61,7 @@ spec:
         # Required for Kubernetes 1.29 which does not support setting appArmorProfile in the
         # securityContext which is otherwise preferred.
         container.apparmor.security.beta.kubernetes.io/install-cni: unconfined
+        checksum/cni-config: c2674d05f4527e1d2967168cc34192de8c8e2a60b0b540853debef166eb32f6c
         # Custom annotations
     spec:
       nodeSelector:
@@ -89,7 +90,7 @@ spec:
         # This container installs the Istio CNI binaries
         # and CNI network config file on each node.
         - name: install-cni
-          image: "docker.io/istio/install-cni:1.31.3-distroless@sha256:42cb4521bfef160fbe60087f2d68ba630c7220ebc4260388a9897eb75063731e"
+          image: "docker.io/istio/install-cni:1.31.4-distroless@sha256:f80f8bd86001494329d62544da21d75570eef4582f6e95f431296f3bc13b9629"
           ports:
           - containerPort: 15014
             name: metrics

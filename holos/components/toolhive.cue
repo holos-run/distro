@@ -17,7 +17,7 @@ package holos
 ToolHive: {
 	// version is the release's, which is also its charts' version and,
 	// with a v, its images' tag.
-	version:  "0.59.0"
+	version:  "0.63.0"
 	registry: "ghcr.io/stacklok/toolhive"
 
 	// charts are the release's two OCI charts. The digests are for the
@@ -25,11 +25,11 @@ ToolHive: {
 	charts: {
 		crds: {
 			name:   "oci://\(registry)/toolhive-operator-crds"
-			digest: "sha256:b7694eb741a04043818978c34b0136cf8cef30329a95ae16de518bd02daaf620"
+			digest: "sha256:88d683797fdd9c76cb8171e2c4962bf3b0c43f8da21a6d2ad22cff250eb04163"
 		}
 		operator: {
 			name:   "oci://\(registry)/toolhive-operator"
-			digest: "sha256:0920e45a4d371a6a9096c0019afea688e3aecbd1167182f5dacfe86b37605449"
+			digest: "sha256:710fd900c96c4edb12e3a91b8beeea7709d1034194e31d664aac2fb15eb6d175"
 		}
 	}
 
@@ -38,9 +38,9 @@ ToolHive: {
 	// nothing here runs but which the chart hands the operator, by index
 	// digest. The registry API has its own version, the chart's default.
 	images: {
-		operator:    "\(registry)/operator:v\(version)@sha256:b094d9220a687ef975a62f9c073fa5faf433e88c3f355f8ad29f50cd082e430c"
-		proxyrunner: "\(registry)/proxyrunner:v\(version)@sha256:f0e970f749ef10004d150721311fa8512ba4c349768ca7b1915ff77452750250"
-		vmcp:        "\(registry)/vmcp:v\(version)@sha256:e9077bc25803740423a04333d8400a02b6f5f44d5ba7c6b5edf65437ce1fe0dd"
+		operator:    "\(registry)/operator:v\(version)@sha256:3cfc741dbb0e37724b4f316ea3e6d0f5a3df36c0ac76cc534952c906525158bd"
+		proxyrunner: "\(registry)/proxyrunner:v\(version)@sha256:d2bfa6a3c19712eec4c87599696e69ed9234254414754d9dbb3953af383ce4af"
+		vmcp:        "\(registry)/vmcp:v\(version)@sha256:7d07294e3f78995c9f1e7fde7ec34135ad505503b0ab521847625bffe592f72d"
 		registryAPI: "ghcr.io/stacklok/thv-registry-api:v1.5.3@sha256:323652f7bd195a0a6a84815e749f52a809633a07d911580abb2d58945abc78f3"
 	}
 

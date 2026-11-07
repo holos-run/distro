@@ -7,11 +7,11 @@ package holos
 // reads it here.
 Istio: {
 	// version is the release of all four charts, from
-	// oci://ghcr.io/istio/release/charts, and of the images. 1.31.3 is the
+	// oci://ghcr.io/istio/release/charts, and of the images. 1.31.4 is the
 	// latest patch of 1.31, the release the gateway-api component's CRDs
 	// match. 1.31 lists Kubernetes 1.32 to 1.36; the Substrate spike ran it
 	// on 1.37.
-	version: "1.31.3"
+	version: "1.31.4"
 	charts:  "oci://ghcr.io/istio/release/charts"
 
 	// namespace holds istiod, istio-cni and ztunnel. The node agents need
@@ -31,10 +31,10 @@ Istio: {
 		ztunnel:       _
 	}
 	let digests = {
-		pilot:         "sha256:1b0e5f3bddf0cc472dce4dc44bb1d6880b6b598df5fe2eb5e5b7b88627debf6a"
-		proxyv2:       "sha256:ca2a25ce888e73e8c3c2b8a3a7d5e8f4b089adc80fa2baf00fe2efd74e55c57e"
-		"install-cni": "sha256:42cb4521bfef160fbe60087f2d68ba630c7220ebc4260388a9897eb75063731e"
-		ztunnel:       "sha256:5235c45bbfc4f11c45496ea69906aa4d305264f8b29bf5b2ba6e785ef82818f7"
+		pilot:         "sha256:2bc9c4190eec5146c6dacb3e2b81fe2752ecd4f5f5198e51fb27ca67b5930312"
+		proxyv2:       "sha256:553f3640686d588531426e4c6b6810390b230374b7f83aae65fe4c68efccf1cc"
+		"install-cni": "sha256:f80f8bd86001494329d62544da21d75570eef4582f6e95f431296f3bc13b9629"
+		ztunnel:       "sha256:7e62e32aebed2cc220aa7a03818b3a0ab6056af462bf3b6a287ea7c6bd3aeec6"
 	}
 
 	// trustDomain is the mesh's SPIFFE trust domain, Istio's default, stated

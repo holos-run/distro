@@ -346,14 +346,14 @@ optional entries have no hand step.
 | `cilium` | Cilium 1.20.4 from its Helm chart, in `kube-system`: CNI, kube-proxy replacement, LB IPAM and L2 announcements |
 | `cilium-resources` | The cluster's two `CiliumLoadBalancerIPPool`s, one reserving the gateway's address and one for the rest of the block, a `CiliumL2AnnouncementPolicy` on `eth0`, and the `allow-ambient-hostprobes` `CiliumClusterwideNetworkPolicy` |
 | `coredns` | CoreDNS from the CoreDNS project's Helm chart, replacing the one Talos deploys, with the site's private zone forwarded to its resolvers |
-| `argocd` | Argo CD v3.5.6 from argo-helm's `argo-cd` chart 10.11.6, in `argocd`, syncing this repository's `main` |
+| `argocd` | Argo CD v3.5.7 from argo-helm's `argo-cd` chart 10.11.7, in `argocd`, syncing this repository's `main` |
 | `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
 | `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook, and its own approver off |
 | `approver-policy` | approver-policy v0.29.0 from Jetstack's OCI chart, in `cert-manager`, with its `CertificateRequestPolicy` CRD and its webhook |
 | `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate`, the `private-ca` `ClusterIssuer`, and the `CertificateRequestPolicy`s and RBAC that approve every certificate request but a claim's wildcard, which renders its own |
-| `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook |
+| `trust-manager` | trust-manager v0.26.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
-| `istio-base` | Istio 1.31.3's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
+| `istio-base` | Istio 1.31.4's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
 | `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks, the private root as its JWKS trust and the platform authenticator as an ext_authz provider |
 | `istio-cni` | Istio's CNI node agent, chained after Cilium on every worker |
 | `ztunnel` | Ambient's node proxy on every worker |
@@ -362,17 +362,17 @@ optional entries have no hand step.
 | `management-namespaces` | The Secrets Manager's management organization `seabank-org-platform` and project `seabank-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
 | `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.treasury.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the `ate` passthrough listener for `*.ate.treasury.bank.internal` on a cluster that names `substrate-shim`, and the `k8s` passthrough listener for `k8s.treasury.bank.internal` |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.treasury.bank.internal` |
-| `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
+| `ceph-csi-rbd` | ceph-csi 3.17.2's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
 | `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `quay` bucket and user, and `substrate`'s on a cluster that names it |
-| `keycloak-operator` | The Keycloak Operator 26.8.1 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
-| `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.treasury.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
+| `keycloak-operator` | The Keycloak Operator 26.8.2 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
+| `keycloak` | Keycloak 26.8.2 in `keycloak`, at `keycloak.treasury.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `seabank-controller` | The platform controller, holos-controller 0.22.0 from aavis-ops' manifests, vendored, from `components/holos-controller`, in the ambient namespace `seabank-controller`, its objects renamed from the release's `holos-controller` names, with its eight CRDs and the private root in its trust; no resources of its kinds |
 | `keycloak-realm` | The realm `default`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, the platform controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `seabank-authenticator` | The platform authenticator, holos-authenticator 0.21.0, from `components/holos-authenticator`, in the ambient namespace `seabank-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.treasury.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
 | `secrets-manager` | The Bank of the Salish Sea Secrets Manager, holos-run/secrets-manager v0.20.0, in the ambient namespace `secrets-manager`, at `secrets.treasury.bank.internal`, its Keycloak `Client` `secrets-manager`, and its RBAC |
-| `toolhive-crds` | ToolHive 0.59.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
-| `toolhive-operator` | The ToolHive operator 0.59.0 from its `toolhive-operator` OCI chart, images by digest, in `toolhive-system`, watching only the `toolhive` namespace, which it renders too (both restricted, not in the mesh) |
+| `toolhive-crds` | ToolHive 0.63.0's fourteen `toolhive.stacklok.dev` CRDs from its `toolhive-operator-crds` OCI chart, which Argo CD neither prunes nor deletes |
+| `toolhive-operator` | The ToolHive operator 0.63.0 from its `toolhive-operator` OCI chart, images by digest, in `toolhive-system`, watching only the `toolhive` namespace, which it renders too (both restricted, not in the mesh) |
 | `toolhive` | The MCP server `everything` in `toolhive`, at `toolhive.treasury.bank.internal/mcp`: its `MCPServer`, the `MCPOIDCConfig` that checks the realm's `kubectl` ID tokens, the `MCPAuthzConfig` with its Cedar policies, the `HTTPRoute` to the proxy runner and the NetworkPolicies that make the proxy the only way to the server (ToolHive, below) |
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, the gVisor `WorkerPool` `gvisor` in `ate-workers`, and the `NetworkPolicy` that admits the claims' atespace Jobs to the API server |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace of the platform's (`demo`, `kagent`; a claim brings its own), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
@@ -988,7 +988,7 @@ label. The images are pinned by digest.
 
 ### Istio
 
-Istio 1.31.3 in ambient mode (interview Q16), from the charts at
+Istio 1.31.4 in ambient mode (interview Q16), from the charts at
 `oci://ghcr.io/istio/release/charts`, in four components applied in this
 order: `istio-base` (the CRDs and the `istio-system` namespace), `istiod`,
 `istio-cni` and `ztunnel`. `istio.cue` has the release, the images, pinned by
@@ -1140,10 +1140,10 @@ node. Volumes are `ReadWriteOnce`. There is no CephFS, no snapshot controller
 and no `VolumeSnapshotClass`; the provisioner's `csi-snapshotter` sidecar,
 which the chart always renders, is patched out until CNPG backups need it.
 
-- ceph-csi is 3.17.1, not the latest, 3.18.1: from 3.18.0 its image is built
+- ceph-csi is 3.17.2, not the latest, 3.18.2: from 3.18.0 its image is built
   on Rocky Linux 10, whose glibc needs x86-64-v3, and the garage's Xeon
   E5-2670 hosts have no AVX2, so the plugin exits with `Fatal glibc error:
-  CPU does not support x86-64-v3`. 3.17.1 is on CentOS Stream 9 with
+  CPU does not support x86-64-v3`. 3.17.2 is on CentOS Stream 9 with
   Tentacle's client libraries.
 - The monitors are listed by their v1 addresses, port 6789, which the kernel
   RBD client maps with by default. RBD is built into the Talos kernel, so the
@@ -1583,10 +1583,10 @@ holds only the admin.
 Two components, so Argo CD applies the CRDs before the resource that uses
 them:
 
-- `keycloak-operator` is the Keycloak Operator 26.8.1 from the release's
-  manifests, `kubernetes/` at tag 26.8.1 of
+- `keycloak-operator` is the Keycloak Operator 26.8.2 from the release's
+  manifests, `kubernetes/` at tag 26.8.2 of
   https://github.com/keycloak/keycloak-k8s-resources, vendored unmodified
-  in `components/keycloak-operator/vendor/26.8.1/` and rendered with
+  in `components/keycloak-operator/vendor/26.8.2/` and rendered with
   `#FileArtifact`, which gives the namespace-less manifests the namespace as
   `kubectl apply -n keycloak` would. It holds all four CRDs, `Keycloak`,
   `KeycloakRealmImport`, `KeycloakOIDCClient` and `KeycloakSAMLClient`: the
@@ -1594,7 +1594,9 @@ them:
   The CRDs carry `Prune=false,Delete=false`, since deleting one deletes
   every resource of its kind. The operator watches its own namespace only,
   registers no admission webhook, and gets a restricted security context
-  the release leaves out. This component renders the namespace, `keycloak`,
+  the release leaves out, and its image and the server's by digest
+  (`Keycloak.images`), where the release has tags. This component renders
+  the namespace, `keycloak`,
   in the mesh (`istio.io/dataplane-mode=ambient`).
 - `keycloak` is the `Keycloak` resource, its database, its credentials and
   its route. The operator runs the server as StatefulSet `keycloak`, one
@@ -1718,7 +1720,7 @@ field for the device grant, so the realm comes in two halves (interview Q50):
     realm default default scope, so every client gets it, the controller's
     included. An import that lists any client scope gets none of Keycloak's
     built-in ones, so those are listed too, as the master realm of a fresh
-    26.8.1 has them (`components/keycloak-realm/client-scopes.json`).
+    26.8.2 has them (`components/keycloak-realm/client-scopes.json`).
   - the public client `kubectl`, with the device grant, and the standard
     flow for kubelogin's loopback redirects. PKCE is not required on it:
     Keycloak 26.8.1 then demands a `code_challenge` on the device grant too,
@@ -1733,6 +1735,11 @@ field for the device grant, so the realm comes in two halves (interview Q50):
     Not `manage-realm`: aavis-ops grants it only for a `Group`'s
     `custodians`, which need fine-grained admin permissions, and nothing
     here uses them, so the realm leaves `adminPermissionsEnabled` off.
+    Keycloak 26.8.2 asks two more things of a client like this one (The
+    Admin API since 26.8.2, below): `kc-admin-api` among its default scopes,
+    and the realm attribute
+    `allowedProtocolMapperTypesForClientAdministrators` naming the mapper
+    the controller writes.
   - the user `jeff`, `jeff@bank.internal`, with the realm role
     `default-roles-default`. An imported user gets only the roles it lists, and
     without that role's `offline_access` Keycloak refuses the Secrets
@@ -1838,6 +1845,49 @@ password survive a re-import. This procedure was run once on treasury. The
 import Job's completed pod names both Secrets, so rotating either (Generated
 secrets, above) needs that pod gone first, and a re-import after, since the
 realm holds the values it was imported with.
+
+**The Admin API since 26.8.2.** Two security fixes in 26.8.2 change what the
+controller's client needs, and the import carries both, so a realm imported
+from 26.8.2 on has them:
+
+- The Admin REST API refuses a token without the built-in `kc-admin-api`
+  scope, and the audience it adds, with 401 (CVE-2026-19688). The migration
+  creates the scope in every realm but gives it only to `admin-cli` and
+  `security-admin-console`, so the master admin's calls in this README keep
+  working and the controller's stop: each `keycloak.holos.run` resource
+  reports the 401 at its next reconcile, and until then still reads Ready,
+  so Ready alone does not show the realm is fixed. No realm default carries
+  the scope, so `kubectl`'s and
+  every other client's tokens do not get that audience.
+- Only `manage-realm` may write a protocol mapper, unless the realm's
+  `allowedProtocolMapperTypesForClientAdministrators` lists its type. The
+  controller makes one `oidc-usermodel-client-role-mapper` on every `Client`
+  it reconciles, before it delivers the client's secret. One that has the
+  mapper is left alone, so a running Client does not notice, but a new one
+  gets 403 and never its secret.
+
+A realm imported before 26.8.2 needs both by hand, once, since the import is
+one-shot: the operator does not run its Job again for the new render. Run
+this after the server has started on 26.8.2, on each cluster; until then the
+controller cannot write, and logins are unaffected. `u` and `p` as above,
+with the restart's rollout finished before the check is read:
+
+```sh
+t=$(curl -s --cacert root.pem https://keycloak.$domain/realms/master/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
+a=https://keycloak.$domain/admin/realms/default
+sid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/client-scopes" | jq -r '.[] | select(.name=="kc-admin-api").id')
+cid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/clients?clientId=svc-seabank-controller" | jq -r '.[0].id')
+curl -s --cacert root.pem -X PUT -H "Authorization: Bearer $t" "$a/clients/$cid/default-client-scopes/$sid" -w '%{http_code}\n'  # 204
+# A realm's PUT replaces its attributes, so the body keeps the ones it has.
+curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a" |
+  jq '{attributes: (.attributes + {allowedProtocolMapperTypesForClientAdministrators: "oidc-usermodel-client-role-mapper"})}' |
+  curl -s --cacert root.pem -X PUT -H "Authorization: Bearer $t" -H 'Content-Type: application/json' "$a" -d @- -w '%{http_code}\n'  # 204
+kubectl -n seabank-controller rollout restart deploy/seabank-controller-manager   # clears the failed reconciles' backoff
+kubectl -n seabank-controller rollout status deploy/seabank-controller-manager
+kubectl get clients.keycloak.holos.run,users.keycloak.holos.run,groups.keycloak.holos.run,groupmemberships.keycloak.holos.run -A   # READY True
+curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a" | jq .attributes     # the mapper's type, beside the rest
+```
 
 jeff's password, to log in at
 `https://keycloak.$domain/realms/default/account` or to Argo CD:
@@ -2616,7 +2666,10 @@ which one Argo CD sync does not keep: the pod certificate controller, then
 `ds/atelet` and its rollout, then `WorkerPool` `gvisor` and its workers, then
 ate-controller and everything else, and `kagent-crds` and `kagent` after that.
 A worker must not be newer than its node's atelet, and ate-api-server not
-newer than any worker. The two role Jobs are Sync hooks, so a hand apply leaves
+newer than any worker. A CRD gets no tracking id: Argo CD leaves every CRD
+without one, and one added by hand reads `OutOfSync` until the first sync takes
+it off, as `workerpools`, `sandboxconfigs` and `csidriverconfigs` did on the
+2026-11-06 bump. The two role Jobs are Sync hooks, so a hand apply leaves
 them out and they run at the first sync after the merge. While it is paused,
 each Application reads `OutOfSync`. One whose last sync operation failed reads
 `Degraded` as well, and the root with it, however long ago that failure was:
@@ -3193,7 +3246,7 @@ holds the pins and the names. Three components, in registry order:
 `toolhive` namespace it manages; and `toolhive`, the MCP server and its
 policies.
 
-- **Pins.** Release 0.59.0: both charts from `oci://ghcr.io/stacklok/toolhive`,
+- **Pins.** Release 0.63.0: both charts from `oci://ghcr.io/stacklok/toolhive`,
   and the operator, proxy runner, vMCP and registry API images by index
   digest. The MCP server is the MCP reference server `everything`, as
   Stacklok's dockyard packages it for the ToolHive catalog
@@ -3204,7 +3257,9 @@ policies.
   namespace`): RoleBindings there to its ClusterRole, no ClusterRoleBinding.
   So the storage version migrator, which needs the whole cluster, is off: a
   CRD version bump that drops a stored version must re-store the objects by
-  hand. Update checks are off too.
+  hand. Update checks are off too. A new operator rolls the proxy runner
+  itself some seconds after it starts, so `rollout status deploy/everything`
+  straight after the chart reports the old pod: read the Deployment's image.
 - **The MCP server** is two workloads. The operator runs a proxy runner,
   Deployment `everything` and Service `mcp-everything-proxy:8080`, and the
   proxy runner creates the MCP server, StatefulSet `everything` and Service

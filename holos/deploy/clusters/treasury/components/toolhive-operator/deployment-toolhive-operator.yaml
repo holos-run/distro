@@ -6,8 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: toolhive-operator
     app.kubernetes.io/part-of: toolhive-operator
-    app.kubernetes.io/version: 0.59.0
-    helm.sh/chart: toolhive-operator-0.59.0
+    app.kubernetes.io/version: 0.63.0
+    helm.sh/chart: toolhive-operator-0.63.0
   name: toolhive-operator
   namespace: toolhive-system
 spec:
@@ -24,8 +24,8 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: toolhive-operator
         app.kubernetes.io/part-of: toolhive-operator
-        app.kubernetes.io/version: 0.59.0
-        helm.sh/chart: toolhive-operator-0.59.0
+        app.kubernetes.io/version: 0.63.0
+        helm.sh/chart: toolhive-operator-0.63.0
     spec:
       containers:
       - args:
@@ -52,14 +52,14 @@ spec:
         - name: WATCH_NAMESPACE
           value: toolhive
         - name: TOOLHIVE_RUNNER_IMAGE
-          value: ghcr.io/stacklok/toolhive/proxyrunner:v0.59.0@sha256:f0e970f749ef10004d150721311fa8512ba4c349768ca7b1915ff77452750250
+          value: ghcr.io/stacklok/toolhive/proxyrunner:v0.63.0@sha256:d2bfa6a3c19712eec4c87599696e69ed9234254414754d9dbb3953af383ce4af
         - name: VMCP_IMAGE
-          value: ghcr.io/stacklok/toolhive/vmcp:v0.59.0@sha256:e9077bc25803740423a04333d8400a02b6f5f44d5ba7c6b5edf65437ce1fe0dd
+          value: ghcr.io/stacklok/toolhive/vmcp:v0.63.0@sha256:7d07294e3f78995c9f1e7fde7ec34135ad505503b0ab521847625bffe592f72d
         - name: TOOLHIVE_PROXY_HOST
           value: 0.0.0.0
         - name: TOOLHIVE_REGISTRY_API_IMAGE
           value: ghcr.io/stacklok/thv-registry-api:v1.5.3@sha256:323652f7bd195a0a6a84815e749f52a809633a07d911580abb2d58945abc78f3
-        image: ghcr.io/stacklok/toolhive/operator:v0.59.0@sha256:b094d9220a687ef975a62f9c073fa5faf433e88c3f355f8ad29f50cd082e430c
+        image: ghcr.io/stacklok/toolhive/operator:v0.63.0@sha256:3cfc741dbb0e37724b4f316ea3e6d0f5a3df36c0ac76cc534952c906525158bd
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
