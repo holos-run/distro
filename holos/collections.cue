@@ -19,8 +19,9 @@ import (
 // (components/holos-authenticator.cue) reads the owners' groups and usernames
 // from the definitions below. clusterPeople, below, is which people each
 // cluster has, and keycloak-realm renders a User for each. Nothing here gives a
-// person a group or a place on the allowlist: those are a claim's, for its
-// owners.
+// person a group or a place on the allowlist: a group is a claim's, for its
+// owners, editors and viewers, and a place on the allowlist a claim's for its
+// owners alone.
 //
 // Only what the platform needs is here: the platform instance loads the
 // root files and platform/, not components/*.cue, so Keycloak, Quay and the

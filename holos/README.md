@@ -396,7 +396,7 @@ entries have no hand step.
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
-| `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, owners and membership, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim |
+| `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -3741,17 +3741,20 @@ Q66), and on any other cluster it renders nothing:
 
 - **The namespace** `<name>`, in ambient, labeled `holos.run/project: <name>`.
 - **Keycloak**: the groups `/projects/<name>/roles/owner`, `editor` and
-  `viewer`; a `User` for each owner who is neither one of the platform's
-  people (`Keycloak.users`, such as `jeff`) nor in the people collection on
-  this cluster (People, below), who have one already; the owners' membership
-  in the owner group; and the `ReferenceGrant` `project-<name>` in `keycloak` that
+  `viewer`; a `User` for each owner, editor and viewer who is neither one of
+  the platform's people (`Keycloak.users`, such as `jeff`) nor in the people
+  collection on this cluster (People, below), who have one already; a
+  `GroupMembership` `<name>-roles-<role>` for the owners and, when the claim
+  names any, for its editors and for its viewers (Editors and viewers, below);
+  and the `ReferenceGrant` `project-<name>` in `keycloak` that
   lets these resources name the `Instance` there. The controller makes the
   parent groups `/projects`, `/projects/<name>` and `/projects/<name>/roles`
   itself. No client (Q65): Quay syncs its teams from the groups claim.
 - **Quay**: the `Organization` `<name>`, with the teams `projectowners`
   (admin), `projecteditors` (creator, write) and `projectviewers` (member,
   read), each synced from its group, and `platformowners`, as every
-  organization has.
+  organization has. The two lower teams are all a role gives an editor or a
+  viewer (Editors and viewers, below).
 - **RBAC**: the `RoleBinding` `<name>-owners` in `<name>`, the owner group
   bound to the `admin` `ClusterRole` (`ownerAccess`), in that namespace and
   no other. Its subject is the group's full path, with the leading slash
@@ -3803,14 +3806,16 @@ Q66), and on any other cluster it renders nothing:
   the privileged Pod Security level.
 
 No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
-editor and viewer groups. `projects/` holds four claims: `payments`, `ledger`
+editor and viewer groups, whose members have Quay and nothing else of the
+project. `projects/` holds four claims: `payments`, `ledger`
 and `checkout`, each selecting `treasury`, and `splunk`, selecting
 `cartography`.
 
 ### Adding a project
 
 1. Write `projects/<name>.cue`, with its `clusterSelector` (Projects, above)
-   and one owner or more, keyed by email in lower case:
+   and one owner or more, keyed by email in lower case, and any editors and
+   viewers (Editors and viewers, below):
 
    ```cue
    package projects
@@ -3828,23 +3833,26 @@ and `checkout`, each selecting `treasury`, and `splunk`, selecting
    starting `kube-`, `seabank-` or `project-` (`Projects.reserved`,
    `components/project.cue`). A claim that takes one fails the render.
 
-   An owner's Keycloak username, which their tokens carry as
-   `preferred_username` and which the authenticator impersonates as
+   A member's Keycloak username, which their tokens carry as
+   `preferred_username` and which the authenticator impersonates an owner as,
    `oidc:<username>`, is the email's local part, lower-cased, with each run
    of anything outside `[a-z0-9]` turned to a dash and any dash at either
    end trimmed: `alice.smith@` is `alice-smith`, `-alice-@` is `alice`. Set
    it when it is something else:
    `owners: "alice@bank.internal": username: "asmith"`; a username is runs
-   of lower-case letters and digits joined by single dashes or dots. An
-   owner who is one of the realm's people must have the username they have
-   there, one username is one person on a cluster, and no owner may be a
-   platform service user (`svc-quay-controller`, or a client's
+   of lower-case letters and digits joined by single dashes or dots. A
+   member, whatever their role, who is one of the realm's people must have the
+   username they have there, one username is one person on a cluster, and no
+   member may be a platform service user (`svc-quay-controller`, or a client's
    `service-account-*`): each mistake fails the render of the clusters the
    claim selects, and so `holos render platform` as a whole, and CI for every
    cluster. Each cluster has its own Keycloak, so the same username on two
    clusters may be two people. `cue vet` reports a conflict over a person for
    treasury alone, or for another cluster with `-t clusterName=<cluster>`, and
-   a service user as an owner not at all, so the render is what reports those.
+   a service user as a member not at all, so the render is what reports those.
+   A malformed or upper-case key is the other way about: `cue vet` refuses it,
+   and the render exits 0 having rendered nothing, which is why `cue vet` goes
+   first.
    `ownerAccess: "edit"` or `"view"` gives the owners less than `admin`.
 
 2. Render, from this directory, and check what changed. The changes below are
@@ -3872,7 +3880,7 @@ and `checkout`, each selecting `treasury`, and `splunk`, selecting
    which makes everything above and the project's `Application`, and
    `seabank-authenticator` syncs its allowlist.
 
-5. **For an owner Keycloak did not already have**, set their first and last
+5. **For a member Keycloak did not already have**, set their first and last
    name and a password in Keycloak's admin console (realm `default`, Users),
    or send them a reset. The claim makes the user with neither: a password
    is not for git, and the realm requires a name, which Keycloak otherwise
@@ -3892,6 +3900,119 @@ and `checkout`, each selecting `treasury`, and `splunk`, selecting
    kubectl --context $cluster-oidc auth can-i create deployments -n my-project   # yes
    kubectl --context $cluster-oidc auth can-i create deployments -n default      # no
    ```
+
+### Editors and viewers
+
+`editors` and `viewers` name the rest of a project's members. They are written
+as `owners` is, keyed by email in lower case, with the same username and the
+same refusals (Adding a project, above). Either may be left out, unlike
+`owners`, and one person may be in several:
+
+```cue
+projects: "my-project": {
+	clusterSelector: matchLabels: "holos.run/cluster-name": "treasury"
+	owners: "alice@bank.internal": _
+	editors: "carol@bank.internal": _
+	viewers: "morgan@bank.internal": _
+}
+```
+
+A role with anyone in it renders a `GroupMembership` `<name>-roles-<role>`
+and a line in the `ConfigMap` `project`. A member who has no user yet, being
+neither one of the platform's people nor in the people collection on this
+cluster, also renders a `User` in `<name>`, `adopt: true` and `deletionPolicy:
+Orphan` as an owner's is, one however many roles they are in, whose name and
+password are step 5 of Adding a project. A member who has a user is adopted, and
+renders no `User`. A claim that names neither role renders what it did without
+them, and the role's `Group` and Quay team are there either way. Naming someone
+changes only the claim's own files:
+
+```sh
+git status deploy/
+  # new: components/project-<name>/groupmembership-<name>-roles-viewer.yaml,
+  #      and user-<username>.yaml for a member with no user
+  # changed: projects/<name>/configmap-project.yaml
+  # not seabank-authenticator's Backend or impersonator ClusterRole
+```
+
+A member's username takes part in `Projects.people`, as an owner's does, so it
+is also reserved: no project on the cluster may take it as a name, since they
+can log in to Quay, whose users and organizations share a namespace.
+
+**What they get** is the role's team in the project's Quay organization, and
+nothing else. A member joins it at their next web login to Quay, since a team
+follows the groups claim at each such login, not before. `docker login` with a
+saved credential does not count. Each team has a role and a default permission,
+which are different grants:
+
+- `projecteditors` has the role `creator`, so an editor may create repositories
+  in the organization, by the API or by pushing to a new name, and the default
+  permission `write`.
+- `projectviewers` has the role `member`, which reads nothing by itself. Its
+  default permission `read` is what lets a viewer read.
+
+A default permission is a row Quay writes on a repository when it is created, so
+a repository that existed before the organization's teams did has none, and a
+repository's admin can remove one.
+
+An editor who creates a repository is also its **admin**, whatever `write` says:
+Quay gives the creator an admin permission on the repository, on top of the
+defaults. They may delete it, make it public or take the viewers' read off it.
+Owners who want write and nothing more create the repositories themselves and
+have editors push to those.
+
+**What they do not get:**
+
+- **Kubernetes.** No `RoleBinding` names either group, and neither their
+  usernames nor their groups join `PlatformAuthenticator.users` or `.groups`
+  (`#ProjectOwnerGroupClaims`, in `collections.cue`, names the owner group alone,
+  and `#ProjectOwnerUsernames` reads `owners` alone). So `kubectl` through `k8s.$domain` is
+  refused with 403, as for a person nobody has named. Someone who owns another
+  project on the cluster is on the allowlist for that, and this project's group
+  is dropped from what is forwarded, so they have nothing in `<name>`. A change
+  that binds one of these groups adds it to `#ProjectOwnerGroupClaims` too.
+- **Argo CD.** `policy.csv` names `/platform/owners` alone, `policy.default` is
+  empty and the project's `AppProject` has no roles, so they see nothing there.
+- **Substrate.** The atespace's `AuthorizationPolicy` admits the owner group and
+  `/platform/owners`, and its access policy binds `<name>/ate-client` alone.
+
+A member is still a realm user, so they reach the two places that admit any
+realm user (People, below). The role neither gives them that nor takes it away.
+
+**Removing someone** is taking their email out of the map, and the merge is
+enough for Keycloak. holos-controller records whom it added to the group in
+the `GroupMembership`'s `status.managedMembers`, and removes those and no one
+else:
+
+- An email gone from a `GroupMembership` that stays is taken out of the group
+  when its `Application` syncs.
+- An emptied map stops rendering the `GroupMembership`, and Argo CD prunes it.
+  The kind's finalizer takes everyone it added out of the group, since the
+  `deletionPolicy` is unset, which means `Delete`. The `Group` stays.
+- Someone added to the group by hand in Keycloak and named by no claim is left
+  alone in both cases, and appears in no file here. Naming them takes them over:
+  from then on they are the controller's, and leaving the map removes them.
+- Someone named in the map and taken out of the group by hand comes back at the
+  controller's next pass, within the hour: the map is what decides.
+
+Four things outlast the removal:
+
+- **Their Quay team.** Quay cannot list an OIDC group's members, so it has
+  nothing to resync from (`FEATURE_TEAM_SYNCING`, `components/quay.cue`): a
+  removed member stays in the team, and keeps what it may read or write, until
+  their next web login to Quay, however long that is. A saved `docker login`
+  credential never triggers it, and neither can anyone once the realm's user is
+  deleted. Quay's API refuses to take a person out of a synced team by hand.
+- **Their admin on what they created.** Leaving the team removes only the team
+  membership. An editor's admin permission on a repository they created has no
+  expiry and is not synced from anything, so a Quay admin removes it from each
+  repository, and checks those repositories' visibility and permissions.
+- **Their token.** A token keeps its groups until it expires, which matters for
+  an owner's `kubectl` and not here: nothing reads these two groups from a token
+  but Quay, at a login, and a login mints a new one.
+- **Their user.** A `User` the claim made goes with the member, and `Orphan`
+  leaves the realm's user and password. They can still log in, to what any realm
+  user reaches, until the user is deleted in Keycloak's admin console.
 
 ### Checking a project
 
@@ -4004,7 +4125,7 @@ kubectl delete certificaterequestpolicy project-<name>
 kubectl delete clusterrolebinding,clusterrole approver-policy:project-<name>
 kubectl -n argocd delete application <name>
 kubectl -n argocd delete appproject <name>
-kubectl delete namespace <name>        # wait: the controller's finalizers delete the groups and the membership
+kubectl delete namespace <name>        # wait: the controller's finalizers delete the groups and the memberships
 kubectl -n keycloak delete referencegrant.security.holos.run project-<name>
 ```
 
@@ -4017,7 +4138,7 @@ admin console or Quay's API once nobody needs them:
 - the parent groups `/projects/<name>` and `/projects/<name>/roles`, which
   the platform controller made and does not own, and `/projects` once no project
   is left;
-- each owner's user, `Orphan`, since a person may own another project and
+- each member's user, `Orphan`, since a person may be in another project and
   their password was set by hand;
 - the Quay organization and its images, `Orphan`, as `demo` is. Delete it
   before a claim of the same name is added again: the new `Organization`
@@ -4060,16 +4181,18 @@ Two places admit any realm user, so a person reaches these without being named:
   reaches kagent's UI and API.
 
 The rest stays true until a claim or a group names them. A claim names a person
-as it names any owner, by email, `owners: "morgan@bank.internal": _`, and
-adopts them: on a cluster where the owner is a person, the claim renders them
+as it names any member, by email, `viewers: "morgan@bank.internal": _`, and
+adopts them: on a cluster where the member is a person, the claim renders them
 no `User`, since theirs is the one in `keycloak` and a second resource would
-contend for it, and it still puts them in the owner group and, through the
-claim, on the allowlist. An owner who is not a person on that cluster renders a
-`User` in the claim's namespace, as owners always have, so no claim needs this
-collection, and an owner can be a person on one cluster and not on another.
-Adding someone who already owns a claim moves their `User`: the claim's goes,
-and `Orphan` leaves the realm's user and password, and the one in `keycloak`
-adopts them.
+contend for it, and it still puts them in the role's group and, as an owner,
+through the claim, on the allowlist. As an editor or a viewer they get the
+role's Quay team, and `kubectl`, Argo CD and the Substrate shim stay closed to
+them (Editors and viewers, above). A member who is not a person on that cluster
+renders a `User` in the claim's namespace, as owners always have, so no claim
+needs this collection, and a member can be a person on one cluster and not on
+another. Adding someone who is already in a claim moves their `User`: the
+claim's goes, and `Orphan` leaves the realm's user and password, and the one in
+`keycloak` adopts them.
 
 ### Adding a person
 
@@ -4085,15 +4208,15 @@ adopts them.
    }
    ```
 
-   The username is derived from the email as an owner's is (Adding a project,
+   The username is derived from the email as a member's is (Adding a project,
    above), here `morgan`. Set `username` when it is something else, and a claim
    that names them must then set the same one.
 
    One username is one person on a cluster, and so is one email: a person who
-   shares either with another person or an owner there, but not both, fails the
-   render. So does one of the platform's people, even exactly as the realm has
-   them, since `Keycloak.users` are on every cluster and a claim can name them
-   without this collection, and a platform service user
+   shares either with another person or a project's member there, but not both,
+   fails the render. So does one of the platform's people, even exactly as the
+   realm has them, since `Keycloak.users` are on every cluster and a claim can
+   name them without this collection, and a platform service user
    (`svc-quay-controller`, or a client's `service-account-*`). Quay's users and
    organizations share a namespace, so no project on the cluster may take a
    person's username as its name (`Projects.reserved`), and no person may take
@@ -4163,7 +4286,7 @@ adopts them.
    unset pw
    ```
 
-   An owner the claim made, such as `alex` on cartography, gets a Secret for the
+   A member the claim made, such as `alex` on cartography, gets a Secret for the
    tool the same way, with the password they already have: their `User` is the
    claim's, the Secret is by hand. Nothing renders or prunes these Secrets, and
    a rebuilt cluster, whose realm is new, needs steps 5 and 6 again, as does a
@@ -4171,7 +4294,7 @@ adopts them.
 
 Removing the file removes the `User` resource, and only that: `Orphan` leaves
 the realm's user and their password, and the Secret stays, for the admin console
-and `kubectl delete` to take if they should go. An owner who was adopted gets a
+and `kubectl delete` to take if they should go. A member who was adopted gets a
 `User` from their claim again.
 
 To change a person's `email` or `username`, change it in Keycloak's admin

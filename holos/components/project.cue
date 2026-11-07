@@ -15,7 +15,7 @@ package holos
 // treasury, or the one -t clusterName names, and with no project named, so it
 // reports a conflict over a person there; a check on one claim, such as
 // Projects.#Person, only the render reports. The people collection
-// (clusterPeople) takes part as owners do, and keycloak-realm reads collected,
+// (clusterPeople) takes part as members do, and keycloak-realm reads collected,
 // below, so its checks fail the render of every cluster the person selects,
 // whether or not a claim names them.
 Projects: {
@@ -44,12 +44,12 @@ Projects: {
 
 	// people are the realm's users a claim may name, by username: the
 	// platform's people, whom keycloak-realm's import or a person by hand
-	// creates (Keycloak.users, and Quay's controller user), the owners of
-	// every project the cluster takes, and the people of the collection the
-	// cluster has (clusterPeople). A username is one person on a cluster,
-	// where one Keycloak holds it: two emails for one username conflict here,
-	// and fail the render of each project on the cluster that names it, rather
-	// than leave holos-controller to report a Keycloak conflict, or
+	// creates (Keycloak.users, and Quay's controller user), the owners, editors
+	// and viewers of every project the cluster takes, and the people of the
+	// collection the cluster has (clusterPeople). A username is one person on a
+	// cluster, where one Keycloak holds it: two emails for one username conflict
+	// here, and fail the render of each project on the cluster that names it,
+	// rather than leave holos-controller to report a Keycloak conflict, or
 	// holos-authenticator to impersonate the wrong person.
 	people: [USERNAME=string]: {
 		username: USERNAME
@@ -59,7 +59,7 @@ Projects: {
 		// second resource for the same user would only contend for it.
 		platform: *false | true
 		// service is whether they are a platform service user, not a
-		// person, whom no claim may name as an owner (#Person).
+		// person, whom no claim may name as a member (#Person).
 		service: *false | true
 		// person is whether they are in the people collection on this
 		// cluster, for whom a claim renders no User either: keycloak-realm
@@ -71,7 +71,9 @@ Projects: {
 			(U.username): {email: U.email, platform: true}
 		}
 		(Quay.controller.username): {email: Quay.controller.email, platform: true, service: true}
-		for P in clusterProjects[Cluster.name] for O in P.owners {
+		for P in clusterProjects[Cluster.name]
+		for MEMBERS in [P.owners, P.editors, P.viewers]
+		for O in MEMBERS {
 			(O.username): email: O.email
 		}
 		for P in clusterPeople[Cluster.name] {
@@ -80,26 +82,28 @@ Projects: {
 	}
 
 	// usernames are the same people by email: one email with two usernames
-	// conflicts here, as an owner who is one of the platform's people
+	// conflicts here, as a member who is one of the platform's people
 	// under another username would, since Keycloak finds a user by email
 	// and the token would carry the other username.
 	usernames: {
 		for U, P in people {(P.email): U}
 	}
 
-	// #Person is a username an owner, or a person of the collection, may
-	// have: anyone's but a platform service user's
+	// #Person is a username a project's member, or a person of the collection,
+	// may have: anyone's but a platform service user's
 	// (people.<username>.service), such as Quay's controller user, a Quay
 	// superuser, or a Keycloak client's service account,
 	// service-account-<client>. An owner's username joins
 	// holos-authenticator's allowlist and its group gets admin in the
 	// project's namespace, so naming one would let a claim make the
-	// platform's own credential a kubectl user.
+	// platform's own credential a kubectl user. An editor or a viewer gets
+	// neither and is refused all the same: a service user is not a person, and
+	// no claim has a reason to put the platform's credential in its groups.
 	#Person: !~"^service-account-" & and([for U, P in people if P.service {!=U}])
 
 	// collected are the people of the collection this cluster has, by email,
 	// which keycloak-realm renders a User for. Each is checked as the project
-	// component checks an owner, the checks folded into username and email,
+	// component checks a member, the checks folded into username and email,
 	// which that User always reads: a username that is someone else's, an
 	// email someone else has under another username, or a service user's. Nor
 	// may a person be one of the platform's people, however exactly they
@@ -171,9 +175,9 @@ Projects: {
 		// Quay's organizations and users share one namespace, so a project's
 		// organization may take neither the name of the platform's own
 		// organizations nor of anyone who logs in to Quay: the platform's
-		// people, the owners of every project on the cluster and the people
-		// of the collection it has. Only on that cluster: a person is not
-		// reserved where they do not exist.
+		// people, the owners, editors and viewers of every project on the
+		// cluster and the people of the collection it has. Only on that
+		// cluster: a person is not reserved where they do not exist.
 		for O in Quay.organizations {(O.name): true}
 		for U in Quay.superUsers {(U): true}
 		for U, _ in people {(U): true}

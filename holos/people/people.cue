@@ -20,14 +20,15 @@
 // not select they do not exist, as a claim leaves no trace on a cluster it does
 // not select.
 //
-// A claim names a person as it names anyone, by email. An owner who is a person
-// on the cluster is adopted: the claim renders them no User, since this one
-// exists and a second resource would contend for it, and they join the owner
-// group and the allowlist through the claim. An owner who is not renders a User
-// in the claim's namespace (Projects, components/project.cue, README.md,
-// Adding a person). A claim therefore does not depend on this collection, and
-// listing a person here changes no claim that does not name them, unless the
-// claim has their username for its name, which fails its render.
+// A claim names a person as it names anyone, by email, as an owner, an editor
+// or a viewer. A member who is a person on the cluster is adopted: the claim
+// renders them no User, since this one exists and a second resource would
+// contend for it, and they join the role's group through the claim, and the
+// allowlist too if they are an owner. A member who is not renders a User in the
+// claim's namespace (Projects, components/project.cue, README.md, Adding a
+// person). A claim therefore does not depend on this collection, and listing a
+// person here changes no claim that does not name them, unless the claim has
+// their username for its name, which fails its render.
 //
 // firstName and lastName are here for whoever adds the person, and for what
 // comes after holos-controller 0.22.0: the User resource has no field for
@@ -38,9 +39,9 @@
 // of a component, so holos/collections.cue imports this package and binds
 // people into the root, where clusterPeople evaluates each selector and
 // Projects (components/project.cue) and keycloak-realm read the result. This
-// package can see no cluster. It imports projects for what a person and an
-// owner share, so the two cannot drift: the shape of an email and a username,
-// and the derivation of one from the other.
+// package can see no cluster. It imports projects for what a person and a
+// project's member share, so the two cannot drift: the shape of an email and a
+// username, and the derivation of one from the other.
 package people
 
 import (
@@ -49,7 +50,7 @@ import (
 	proj "go.holos.run/distro/holos/projects"
 )
 
-// #Person is one person. An owner's fields, email and username, are theirs
+// #Person is one person. A member's fields, email and username, are theirs
 // too, with the same derivation (proj.#Owner), because a claim finds a person
 // by email and the two must agree on the username: set it here when the email's
 // local part does not give the right one.
