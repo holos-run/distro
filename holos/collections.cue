@@ -3,19 +3,24 @@ package holos
 import (
 	"list"
 
+	ppl "go.holos.run/distro/holos/people"
 	proj "go.holos.run/distro/holos/projects"
 )
 
-// collections.cue binds the ProjectClaim collection (projects/) into the root
-// of package holos. CUE loads only root-level holos/*.cue files as ancestors
-// of the platform and of each component, so the collection, which is a
-// package of its own in a subdirectory, is visible to them only through this
-// import, as aavis-ops binds its collections. The registry (registry.cue)
+// collections.cue binds the ProjectClaim collection (projects/) and the people
+// collection (people/) into the root of package holos. CUE loads only
+// root-level holos/*.cue files as ancestors of the platform and of each
+// component, so a collection, which is a package of its own in a subdirectory,
+// is visible to them only through this import, as aavis-ops binds its
+// collections. The registry (registry.cue)
 // adds a component per claim from here, clusterProjects, below, is which
 // claims each cluster takes, the project component (components/project)
 // renders each on those clusters, and holos-authenticator's allowlist
 // (components/holos-authenticator.cue) reads the owners' groups and usernames
-// from the definitions below.
+// from the definitions below. clusterPeople, below, is which people each
+// cluster has, and keycloak-realm renders a User for each. Nothing here gives a
+// person a group or a place on the allowlist: those are a claim's, for its
+// owners.
 //
 // Only what the platform needs is here: the platform instance loads the
 // root files and platform/, not components/*.cue, so Keycloak, Quay and the
@@ -25,6 +30,9 @@ import (
 
 // projects is the collection, keyed by project name.
 projects: proj.projects
+
+// people is the collection, keyed by email.
+people: ppl.people
 
 // #ClusterSelected is whether selector selects a cluster with labels, by
 // Kubernetes' rules: every requirement holds, so {} selects every cluster;
@@ -90,6 +98,37 @@ clusterProjects: {
 claimClusters: {
 	for NAME, _ in projects {
 		(NAME): [for CLUSTER, P in clusterProjects if P[NAME] != _|_ {CLUSTER}] & [_, ...]
+	}
+}
+
+// clusterPeople are the people each cluster has, by cluster name and then
+// email: the ones whose clusterSelector selects it, evaluated as a claim's is
+// and a map in the root for the same reason (clusterProjects). Projects
+// (components/project.cue) reads it, for the checks and the name reservations
+// a person takes part in, and through Projects.collected keycloak-realm, for
+// the Users. So a person leaves no trace on a cluster they do not select. The
+// owner definitions below do not read it: a person is on holos-authenticator's
+// allowlist only as an owner, through a claim.
+clusterPeople: {
+	for CLUSTER, C in clusters {
+		(CLUSTER): {
+			for EMAIL, P in people
+			if P.clusterSelector != _|_
+			if (#ClusterSelected & {selector: P.clusterSelector, labels: C.metadata.labels}).selected {
+				(EMAIL): P
+			}
+		}
+	}
+}
+
+// personClusters are the clusters each person exists on, by email, and there is
+// at least one, as claimClusters requires of a claim and for the same reason: a
+// person on no cluster, for want of a selector or because it selects none,
+// fails cue vet here, with the email in the error. holos render platform would
+// drop them and exit 0.
+personClusters: {
+	for EMAIL, _ in people {
+		(EMAIL): [for CLUSTER, P in clusterPeople if P[EMAIL] != _|_ {CLUSTER}] & [_, ...]
 	}
 }
 

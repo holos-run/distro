@@ -1,0 +1,12 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    name: morgan
+    namespace: keycloak
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: morgan@bank.internal
+    instanceRef:
+        name: default
+    username: morgan

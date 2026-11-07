@@ -209,7 +209,8 @@ registry: [
 	},
 	// keycloak-realm is the realm default: the KeycloakRealmImport and its
 	// generated Secrets, the platform controller's credential, the Instance, the
-	// platform's groups and memberships, and the PostSync Job that writes
+	// platform's groups and memberships, the Users of the people collection, and
+	// the PostSync Job that writes
 	// the private root into the Instance's caBundle (interview Q52). Argo CD
 	// ignores the field it writes, which no render carries. The names are
 	// PlatformController.instance's (components/keycloak.cue), which the

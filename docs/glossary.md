@@ -107,6 +107,12 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   its Substrate atespace on those that name `substrate` and `substrate-shim`
   ([Projects](../holos/README.md#projects)).
 
+**person**, **people collection**
+: A CUE collection in `holos/people/`, keyed by email, each person with a required `clusterSelector`.
+  A person is a Keycloak user on the clusters they select and nothing more: they can log in, and
+  nothing grants them anything until a claim or a group names them. Only what admits any realm user
+  lets them in ([People](../holos/README.md#people)).
+
 ## Identity and tokens
 
 **ksa**

@@ -14,7 +14,10 @@ package holos
 // platform as a whole. cue vet evaluates this for the default cluster,
 // treasury, or the one -t clusterName names, and with no project named, so it
 // reports a conflict over a person there; a check on one claim, such as
-// Projects.#Person, only the render reports.
+// Projects.#Person, only the render reports. The people collection
+// (clusterPeople) takes part as owners do, and keycloak-realm reads collected,
+// below, so its checks fail the render of every cluster the person selects,
+// whether or not a claim names them.
 Projects: {
 	// teams are the Quay teams of a project's organization, by role, each
 	// synced from that role's group (#ProjectRoleGroupPath). Quay team names
@@ -41,8 +44,9 @@ Projects: {
 
 	// people are the realm's users a claim may name, by username: the
 	// platform's people, whom keycloak-realm's import or a person by hand
-	// creates (Keycloak.users, and Quay's controller user), and the owners of
-	// every project the cluster takes. A username is one person on a cluster,
+	// creates (Keycloak.users, and Quay's controller user), the owners of
+	// every project the cluster takes, and the people of the collection the
+	// cluster has (clusterPeople). A username is one person on a cluster,
 	// where one Keycloak holds it: two emails for one username conflict here,
 	// and fail the render of each project on the cluster that names it, rather
 	// than leave holos-controller to report a Keycloak conflict, or
@@ -57,6 +61,10 @@ Projects: {
 		// service is whether they are a platform service user, not a
 		// person, whom no claim may name as an owner (#Person).
 		service: *false | true
+		// person is whether they are in the people collection on this
+		// cluster, for whom a claim renders no User either: keycloak-realm
+		// renders theirs, which a second resource would contend for.
+		person: *false | true
 	}
 	people: {
 		for U in Keycloak.users {
@@ -65,6 +73,9 @@ Projects: {
 		(Quay.controller.username): {email: Quay.controller.email, platform: true, service: true}
 		for P in clusterProjects[Cluster.name] for O in P.owners {
 			(O.username): email: O.email
+		}
+		for P in clusterPeople[Cluster.name] {
+			(P.username): {email: P.email, person: true}
 		}
 	}
 
@@ -76,14 +87,39 @@ Projects: {
 		for U, P in people {(P.email): U}
 	}
 
-	// #Person is a username an owner may have: anyone's but a platform
-	// service user's (people.<username>.service), such as Quay's controller
-	// user, a Quay superuser, or a Keycloak client's service account,
+	// #Person is a username an owner, or a person of the collection, may
+	// have: anyone's but a platform service user's
+	// (people.<username>.service), such as Quay's controller user, a Quay
+	// superuser, or a Keycloak client's service account,
 	// service-account-<client>. An owner's username joins
 	// holos-authenticator's allowlist and its group gets admin in the
 	// project's namespace, so naming one would let a claim make the
 	// platform's own credential a kubectl user.
 	#Person: !~"^service-account-" & and([for U, P in people if P.service {!=U}])
+
+	// collected are the people of the collection this cluster has, by email,
+	// which keycloak-realm renders a User for. Each is checked as the project
+	// component checks an owner, the checks folded into username and email,
+	// which that User always reads: a username that is someone else's, an
+	// email someone else has under another username, or a service user's. Nor
+	// may a person be one of the platform's people, however exactly they
+	// match. Those are on every cluster and the import owns them, so the
+	// collection's selector would mean nothing and its User would contend for
+	// them, and a claim can name them without it. Nor may a person have the
+	// name of one of Quay's organizations, on any cluster, since Quay's users
+	// and organizations share a namespace and their first login there would
+	// collide with it.
+	collected: {
+		for EMAIL, P in clusterPeople[Cluster.name] {
+			(EMAIL): {
+				let USERNAME = P.username & usernames[EMAIL] & #Person &
+				and([for U, O in people if O.platform {!=U}]) &
+				and([for NAME, _ in Quay.organizations {!=NAME}])
+				username: USERNAME
+				email:    EMAIL & people[USERNAME].email
+			}
+		}
+	}
 
 	// reserved are the names no project may take. A project's name is its
 	// namespace, its AppProject and Application in argocd and its Quay
@@ -135,7 +171,9 @@ Projects: {
 		// Quay's organizations and users share one namespace, so a project's
 		// organization may take neither the name of the platform's own
 		// organizations nor of anyone who logs in to Quay: the platform's
-		// people and the owners of every project on the cluster.
+		// people, the owners of every project on the cluster and the people
+		// of the collection it has. Only on that cluster: a person is not
+		// reserved where they do not exist.
 		for O in Quay.organizations {(O.name): true}
 		for U in Quay.superUsers {(U): true}
 		for U, _ in people {(U): true}
