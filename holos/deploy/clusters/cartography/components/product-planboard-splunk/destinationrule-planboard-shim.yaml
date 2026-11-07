@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-shim
+    namespace: splunk
+spec:
+    exportTo:
+        - .
+    host: planboard.splunk.ate.cartography.bank.internal
+    trafficPolicy:
+        tls:
+            caCertificates: /etc/private-ca/ca.crt
+            mode: SIMPLE
+            sni: planboard.splunk.ate.cartography.bank.internal
+            subjectAltNames:
+                - planboard.splunk.ate.cartography.bank.internal

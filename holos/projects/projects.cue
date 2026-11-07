@@ -185,6 +185,14 @@ let DNSLabel = "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
 	// cluster has.
 	ownerAccess: *"admin" | "edit" | "view"
 
+	// waypointClass is the GatewayClass of a waypoint a binding's render
+	// puts in the project's namespace, Istio's own by default. It is the seam
+	// section 8 of the Holos_Distro planning program names for Solo's
+	// agentgateway, which would serve the same Gateway under another class.
+	// Only a binding's render reads it (components/product-planboard), so a
+	// claim with no binding renders nothing different for it.
+	waypointClass: string | *"istio-waypoint"
+
 	// owners are the project's owners by email, at least one, which the
 	// project component checks (components/project): a constraint here
 	// would make the schema itself unsatisfiable, since its owners are

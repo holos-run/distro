@@ -1,0 +1,102 @@
+apiVersion: extensions.istio.io/v1alpha1
+kind: TrafficExtension
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-waypoint
+    namespace: splunk
+spec:
+    lua:
+        inlineCode: |-
+            -- unescape is Go's url.QueryUnescape: + is a space and %XX a byte, and a
+            -- % not followed by two hex digits fails the whole pair, so nil.
+            local function unescape(s)
+              local i = 1
+              while true do
+                local p = string.find(s, "%", i, true)
+                if p == nil then break end
+                if not string.match(string.sub(s, p + 1, p + 2), "^%x%x$") then return nil end
+                i = p + 3
+              end
+              s = string.gsub(s, "%+", " ")
+              s = string.gsub(s, "%%(%x%x)", function(x) return string.char(tonumber(x, 16)) end)
+              return s
+            end
+
+            -- project is the first value of the query parameter project, as Go's
+            -- url.Query().Get reads it, or nil. Go reads no parameter at all past
+            -- its limit of 10000 pairs, where this still reads one; that can
+            -- only admit a viewer to a request Planboard then answers with no
+            -- project.
+            local function project(path)
+              local query = string.match(path, "%?(.*)$")
+              if query == nil then return nil end
+              for pair in string.gmatch(query, "[^&]+") do
+                if not string.find(pair, ";", 1, true) then
+                  local key, value = pair, ""
+                  local eq = string.find(pair, "=", 1, true)
+                  if eq ~= nil then
+                    key = string.sub(pair, 1, eq - 1)
+                    value = string.sub(pair, eq + 1)
+                  end
+                  key = unescape(key)
+                  if key ~= nil then value = unescape(value) end
+                  if key == "project" and value ~= nil then return value end
+                end
+              end
+              return nil
+            end
+
+            local function trim(s)
+              return string.match(s, "^%s*(.-)%s*$")
+            end
+
+            -- theme is every planboard-theme cookie of every Cookie header, as name=value.
+            local function theme(headers)
+              local kept = {}
+              for i = 0, headers:getNumValues("cookie") - 1 do
+                for pair in string.gmatch(headers:getAtIndex("cookie", i) or "", "[^;]+") do
+                  pair = trim(pair)
+                  if trim(string.match(pair, "^[^=]*")) == "planboard-theme" then
+                    table.insert(kept, pair)
+                  end
+                end
+              end
+              return kept
+            end
+
+            function envoy_on_request(handle)
+              local headers = handle:headers()
+
+              -- The project, for the policy, and only from the query.
+              headers:remove("x-planboard-project")
+              local name = project(headers:get(":path") or "")
+              if name ~= nil and string.match(name, "^[A-Za-z0-9][A-Za-z0-9_%-]*$") then
+                headers:add("x-planboard-project", name)
+              end
+
+              -- Of the cookies, planboard-theme alone.
+              local kept = theme(headers)
+              headers:remove("cookie")
+              if #kept > 0 then
+                headers:add("cookie", table.concat(kept, "; "))
+              end
+
+              -- No client address, and no header naming a user.
+              headers:remove("x-forwarded-for")
+              headers:remove("x-forwarded-user")
+              headers:remove("x-forwarded-email")
+              headers:remove("x-forwarded-groups")
+              headers:remove("x-forwarded-preferred-username")
+              headers:remove("x-auth-request-user")
+              headers:remove("x-auth-request-email")
+              headers:remove("x-auth-request-groups")
+              headers:remove("x-auth-request-preferred-username")
+              headers:remove("x-auth-request-access-token")
+              headers:remove("x-forwarded-access-token")
+            end
+    phase: AUTHZ
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: planboard-waypoint

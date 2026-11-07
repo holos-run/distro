@@ -1,0 +1,22 @@
+apiVersion: v1
+data:
+    deployment: |
+        spec:
+          template:
+            spec:
+              containers:
+                - name: istio-proxy
+                  volumeMounts:
+                    - name: private-ca
+                      mountPath: /etc/private-ca
+                      readOnly: true
+              volumes:
+                - name: private-ca
+                  configMap:
+                    name: private-ca
+kind: ConfigMap
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-waypoint
+    namespace: splunk

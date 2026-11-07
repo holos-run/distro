@@ -1,0 +1,22 @@
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+    labels:
+        holos.run/project: splunk
+        istio.io/use-waypoint: planboard-waypoint
+    name: planboard-shim
+    namespace: splunk
+spec:
+    endpoints:
+        - address: ate-istio.substrate-shim.svc.cluster.local
+    exportTo:
+        - .
+    hosts:
+        - planboard.splunk.ate.cartography.bank.internal
+    location: MESH_EXTERNAL
+    ports:
+        - name: http
+          number: 80
+          protocol: HTTP
+          targetPort: 443
+    resolution: DNS

@@ -1,0 +1,19 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+    labels:
+        holos.run/project: splunk
+        istio.io/waypoint-for: service
+    name: planboard-waypoint
+    namespace: splunk
+spec:
+    gatewayClassName: istio-waypoint
+    infrastructure:
+        parametersRef:
+            group: ""
+            kind: ConfigMap
+            name: planboard-waypoint
+    listeners:
+        - name: mesh
+          port: 15008
+          protocol: HBONE

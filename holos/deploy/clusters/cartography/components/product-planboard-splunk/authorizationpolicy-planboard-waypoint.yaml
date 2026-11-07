@@ -1,0 +1,13 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard-waypoint
+    namespace: splunk
+spec:
+    action: ALLOW
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: planboard-waypoint

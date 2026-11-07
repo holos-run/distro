@@ -1,0 +1,52 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: planboard
+    namespace: splunk
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.cartography.bank.internal/realms/default/*
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+                - /projects/splunk/roles/editor
+                - /projects/splunk/roles/owner
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.cartography.bank.internal/realms/default/*
+          to:
+            - operation:
+                methods:
+                    - GET
+                    - HEAD
+                notPaths:
+                    - /api/*
+                    - /files/*
+                    - /present/*
+            - operation:
+                methods:
+                    - GET
+                    - HEAD
+                paths:
+                    - /api/agent
+                    - /api/catalog
+                    - /api/events
+                    - /api/projects
+                    - /api/research
+                    - /api/research/*
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /projects/splunk/roles/viewer
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: planboard-waypoint
