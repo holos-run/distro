@@ -346,7 +346,7 @@ optional entries have no hand step.
 | `cilium` | Cilium 1.20.4 from its Helm chart, in `kube-system`: CNI, kube-proxy replacement, LB IPAM and L2 announcements |
 | `cilium-resources` | The cluster's two `CiliumLoadBalancerIPPool`s, one reserving the gateway's address and one for the rest of the block, a `CiliumL2AnnouncementPolicy` on `eth0`, and the `allow-ambient-hostprobes` `CiliumClusterwideNetworkPolicy` |
 | `coredns` | CoreDNS from the CoreDNS project's Helm chart, replacing the one Talos deploys, with the site's private zone forwarded to its resolvers |
-| `argocd` | Argo CD v3.5.6 from argo-helm's `argo-cd` chart 10.11.6, in `argocd`, syncing this repository's `main` |
+| `argocd` | Argo CD v3.5.7 from argo-helm's `argo-cd` chart 10.11.7, in `argocd`, syncing this repository's `main` |
 | `gateway-api` | The Gateway API v1.6.3 CRDs, standard channel, vendored from the release, ahead of Istio |
 | `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook, and its own approver off |
 | `approver-policy` | approver-policy v0.29.0 from Jetstack's OCI chart, in `cert-manager`, with its `CertificateRequestPolicy` CRD and its webhook |
