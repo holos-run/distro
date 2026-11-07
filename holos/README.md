@@ -351,7 +351,7 @@ optional entries have no hand step.
 | `cert-manager` | cert-manager v1.21.3 from Jetstack's OCI chart, in `cert-manager`, with its CRDs and its webhook, and its own approver off |
 | `approver-policy` | approver-policy v0.29.0 from Jetstack's OCI chart, in `cert-manager`, with its `CertificateRequestPolicy` CRD and its webhook |
 | `private-ca` | The self-signed bootstrap `Issuer`, the root `Certificate`, the `private-ca` `ClusterIssuer`, and the `CertificateRequestPolicy`s and RBAC that approve every certificate request but a claim's wildcard, which renders its own |
-| `trust-manager` | trust-manager v0.25.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook |
+| `trust-manager` | trust-manager v0.26.0 from Jetstack's OCI chart, in `cert-manager`, with its `Bundle` CRD and its webhook |
 | `private-ca-bundle` | The `private-ca` `Bundle`: the root as ConfigMap `private-ca`, key `ca.crt`, in every namespace |
 | `istio-base` | Istio 1.31.4's CRDs from its OCI `base` chart, the `istio-system` namespace (privileged) and the default revision's validating webhook |
 | `istiod` | Istio's control plane in ambient mode, in `istio-system`, with its webhooks, the private root as its JWKS trust and the platform authenticator as an ext_authz provider |
