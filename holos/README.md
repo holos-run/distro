@@ -365,8 +365,8 @@ optional entries have no hand step.
 | `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
 | `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `quay` bucket and user, and `substrate`'s on a cluster that names it |
-| `keycloak-operator` | The Keycloak Operator 26.8.1 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
-| `keycloak` | Keycloak 26.8.1 in `keycloak`, at `keycloak.treasury.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
+| `keycloak-operator` | The Keycloak Operator 26.8.2 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
+| `keycloak` | Keycloak 26.8.2 in `keycloak`, at `keycloak.treasury.bank.internal`: the `Keycloak` resource, its one-instance CloudNativePG cluster `keycloak-db` on `ceph-rbd`, and its generated admin and database credentials |
 | `seabank-controller` | The platform controller, holos-controller 0.22.0 from aavis-ops' manifests, vendored, from `components/holos-controller`, in the ambient namespace `seabank-controller`, its objects renamed from the release's `holos-controller` names, with its eight CRDs and the private root in its trust; no resources of its kinds |
 | `keycloak-realm` | The realm `default`: its `KeycloakRealmImport` and generated secrets, the users `jeff` and `svc-quay-controller`, the platform controller's credential, the `Instance`, the group `/platform/owners` and its membership, and the Job that writes the `Instance`'s `caBundle` |
 | `seabank-authenticator` | The platform authenticator, holos-authenticator 0.21.0, from `components/holos-authenticator`, in the ambient namespace `seabank-authenticator`: its `Backend` CRD, vendored, the manager and its RBAC, the impersonator and its grants, the `Backend` for `k8s.treasury.bank.internal`, `/platform/owners` as `cluster-admin`, and the ClusterIP `Gateway` `k8s` behind `ingress`'s `k8s` listener, with the ext_authz policy, the Lua `TrafficExtension` and the TLS to the API server |
@@ -1583,10 +1583,10 @@ holds only the admin.
 Two components, so Argo CD applies the CRDs before the resource that uses
 them:
 
-- `keycloak-operator` is the Keycloak Operator 26.8.1 from the release's
-  manifests, `kubernetes/` at tag 26.8.1 of
+- `keycloak-operator` is the Keycloak Operator 26.8.2 from the release's
+  manifests, `kubernetes/` at tag 26.8.2 of
   https://github.com/keycloak/keycloak-k8s-resources, vendored unmodified
-  in `components/keycloak-operator/vendor/26.8.1/` and rendered with
+  in `components/keycloak-operator/vendor/26.8.2/` and rendered with
   `#FileArtifact`, which gives the namespace-less manifests the namespace as
   `kubectl apply -n keycloak` would. It holds all four CRDs, `Keycloak`,
   `KeycloakRealmImport`, `KeycloakOIDCClient` and `KeycloakSAMLClient`: the
@@ -1594,7 +1594,9 @@ them:
   The CRDs carry `Prune=false,Delete=false`, since deleting one deletes
   every resource of its kind. The operator watches its own namespace only,
   registers no admission webhook, and gets a restricted security context
-  the release leaves out. This component renders the namespace, `keycloak`,
+  the release leaves out, and its image and the server's by digest
+  (`Keycloak.images`), where the release has tags. This component renders
+  the namespace, `keycloak`,
   in the mesh (`istio.io/dataplane-mode=ambient`).
 - `keycloak` is the `Keycloak` resource, its database, its credentials and
   its route. The operator runs the server as StatefulSet `keycloak`, one
@@ -1718,7 +1720,7 @@ field for the device grant, so the realm comes in two halves (interview Q50):
     realm default default scope, so every client gets it, the controller's
     included. An import that lists any client scope gets none of Keycloak's
     built-in ones, so those are listed too, as the master realm of a fresh
-    26.8.1 has them (`components/keycloak-realm/client-scopes.json`).
+    26.8.2 has them (`components/keycloak-realm/client-scopes.json`).
   - the public client `kubectl`, with the device grant, and the standard
     flow for kubelogin's loopback redirects. PKCE is not required on it:
     Keycloak 26.8.1 then demands a `code_challenge` on the device grant too,
@@ -1733,6 +1735,11 @@ field for the device grant, so the realm comes in two halves (interview Q50):
     Not `manage-realm`: aavis-ops grants it only for a `Group`'s
     `custodians`, which need fine-grained admin permissions, and nothing
     here uses them, so the realm leaves `adminPermissionsEnabled` off.
+    Keycloak 26.8.2 asks two more things of a client like this one (The
+    Admin API since 26.8.2, below): `kc-admin-api` among its default scopes,
+    and the realm attribute
+    `allowedProtocolMapperTypesForClientAdministrators` naming the mapper
+    the controller writes.
   - the user `jeff`, `jeff@bank.internal`, with the realm role
     `default-roles-default`. An imported user gets only the roles it lists, and
     without that role's `offline_access` Keycloak refuses the Secrets
@@ -1838,6 +1845,49 @@ password survive a re-import. This procedure was run once on treasury. The
 import Job's completed pod names both Secrets, so rotating either (Generated
 secrets, above) needs that pod gone first, and a re-import after, since the
 realm holds the values it was imported with.
+
+**The Admin API since 26.8.2.** Two security fixes in 26.8.2 change what the
+controller's client needs, and the import carries both, so a realm imported
+from 26.8.2 on has them:
+
+- The Admin REST API refuses a token without the built-in `kc-admin-api`
+  scope, and the audience it adds, with 401 (CVE-2026-19688). The migration
+  creates the scope in every realm but gives it only to `admin-cli` and
+  `security-admin-console`, so the master admin's calls in this README keep
+  working and the controller's stop: each `keycloak.holos.run` resource
+  reports the 401 at its next reconcile, and until then still reads Ready,
+  so Ready alone does not show the realm is fixed. No realm default carries
+  the scope, so `kubectl`'s and
+  every other client's tokens do not get that audience.
+- Only `manage-realm` may write a protocol mapper, unless the realm's
+  `allowedProtocolMapperTypesForClientAdministrators` lists its type. The
+  controller makes one `oidc-usermodel-client-role-mapper` on every `Client`
+  it reconciles, before it delivers the client's secret. One that has the
+  mapper is left alone, so a running Client does not notice, but a new one
+  gets 403 and never its secret.
+
+A realm imported before 26.8.2 needs both by hand, once, since the import is
+one-shot: the operator does not run its Job again for the new render. Run
+this after the server has started on 26.8.2, on each cluster; until then the
+controller cannot write, and logins are unaffected. `u` and `p` as above,
+with the restart's rollout finished before the check is read:
+
+```sh
+t=$(curl -s --cacert root.pem https://keycloak.$domain/realms/master/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$u" --data-urlencode "password=$p" | jq -r .access_token)
+a=https://keycloak.$domain/admin/realms/default
+sid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/client-scopes" | jq -r '.[] | select(.name=="kc-admin-api").id')
+cid=$(curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a/clients?clientId=svc-seabank-controller" | jq -r '.[0].id')
+curl -s --cacert root.pem -X PUT -H "Authorization: Bearer $t" "$a/clients/$cid/default-client-scopes/$sid" -w '%{http_code}\n'  # 204
+# A realm's PUT replaces its attributes, so the body keeps the ones it has.
+curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a" |
+  jq '{attributes: (.attributes + {allowedProtocolMapperTypesForClientAdministrators: "oidc-usermodel-client-role-mapper"})}' |
+  curl -s --cacert root.pem -X PUT -H "Authorization: Bearer $t" -H 'Content-Type: application/json' "$a" -d @- -w '%{http_code}\n'  # 204
+kubectl -n seabank-controller rollout restart deploy/seabank-controller-manager   # clears the failed reconciles' backoff
+kubectl -n seabank-controller rollout status deploy/seabank-controller-manager
+kubectl get clients.keycloak.holos.run,users.keycloak.holos.run,groups.keycloak.holos.run,groupmemberships.keycloak.holos.run -A   # READY True
+curl -s --cacert root.pem -H "Authorization: Bearer $t" "$a" | jq .attributes     # the mapper's type, beside the rest
+```
 
 jeff's password, to log in at
 `https://keycloak.$domain/realms/default/account` or to Argo CD:

@@ -8,8 +8,17 @@ package holos
 Keycloak: {
 	// version is the Keycloak Operator's release and the server's: the
 	// operator runs quay.io/keycloak/keycloak at its own version, so the two
-	// move together. 26.8.1 (2026-10-13) is the latest release.
-	version: "26.8.1"
+	// move together. 26.8.2 (2026-11-05) is the latest release.
+	version: "26.8.2"
+
+	// images are the operator's and the server's, by index digest. The
+	// release pins both by tag; the keycloak-operator component sets these
+	// over them, so the Keycloak resource names no image and the two still
+	// move together.
+	images: {
+		operator: "quay.io/keycloak/keycloak-operator:\(version)@sha256:3faeeb34df8da88bb0cacb0a8012f2f517d1b2f3a19e1f8f6884a3c1c67ce7ee"
+		server:   "quay.io/keycloak/keycloak:\(version)@sha256:3879c623248408de29a5303178b5816c77e8dfef3890c361f8c0bbeaa979ba3b"
+	}
 
 	// namespace holds the operator, the server and its database. The
 	// keycloak-operator component renders it, in the mesh, since it comes

@@ -2,14 +2,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    app.quarkus.io/build-timestamp: 2026-10-23 - 09:44:51 +0000
-    app.quarkus.io/commit-id: 24ed1dadf3f246a555adb6d3d4a99e9b3003fb3b
-    app.quarkus.io/quarkus-version: 3.40.1
+    app.quarkus.io/build-timestamp: 2026-11-05 - 16:06:23 +0000
+    app.quarkus.io/commit-id: e514445f9dcdabc5bdcf67cab56c1e49655de067
+    app.quarkus.io/quarkus-version: 3.40.1.1
     app.quarkus.io/vcs-uri: https://github.com/keycloak/keycloak.git
   labels:
     app.kubernetes.io/managed-by: quarkus
     app.kubernetes.io/name: keycloak-operator
-    app.kubernetes.io/version: 26.8.1
+    app.kubernetes.io/version: 26.8.2
   name: keycloak-operator
   namespace: keycloak
 spec:
@@ -20,25 +20,25 @@ spec:
   template:
     metadata:
       annotations:
-        app.quarkus.io/build-timestamp: 2026-10-23 - 09:44:51 +0000
-        app.quarkus.io/commit-id: 24ed1dadf3f246a555adb6d3d4a99e9b3003fb3b
-        app.quarkus.io/quarkus-version: 3.40.1
+        app.quarkus.io/build-timestamp: 2026-11-05 - 16:06:23 +0000
+        app.quarkus.io/commit-id: e514445f9dcdabc5bdcf67cab56c1e49655de067
+        app.quarkus.io/quarkus-version: 3.40.1.1
         app.quarkus.io/vcs-uri: https://github.com/keycloak/keycloak.git
       labels:
         app.kubernetes.io/managed-by: quarkus
         app.kubernetes.io/name: keycloak-operator
-        app.kubernetes.io/version: 26.8.1
+        app.kubernetes.io/version: 26.8.2
     spec:
       containers:
       - env:
+        - name: kc.operator.keycloak.image
+          value: quay.io/keycloak/keycloak:26.8.2@sha256:3879c623248408de29a5303178b5816c77e8dfef3890c361f8c0bbeaa979ba3b
+        - name: RELATED_IMAGE_KEYCLOAK
+          value: quay.io/keycloak/keycloak:26.8.2@sha256:3879c623248408de29a5303178b5816c77e8dfef3890c361f8c0bbeaa979ba3b
         - name: KUBERNETES_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        - name: kc.operator.keycloak.image
-          value: quay.io/keycloak/keycloak:26.8.1
-        - name: RELATED_IMAGE_KEYCLOAK
-          value: quay.io/keycloak/keycloak:26.8.1
         - name: QUARKUS_OPERATOR_SDK_CONTROLLERS_KEYCLOAKREALMIMPORTCONTROLLER_NAMESPACES
           value: JOSDK_WATCH_CURRENT
         - name: QUARKUS_OPERATOR_SDK_CONTROLLERS_KEYCLOAKSAMLCLIENTCONTROLLER_NAMESPACES
@@ -47,7 +47,7 @@ spec:
           value: JOSDK_WATCH_CURRENT
         - name: QUARKUS_OPERATOR_SDK_CONTROLLERS_KEYCLOAKOIDCCLIENTCONTROLLER_NAMESPACES
           value: JOSDK_WATCH_CURRENT
-        image: quay.io/keycloak/keycloak-operator:26.8.1
+        image: quay.io/keycloak/keycloak-operator:26.8.2@sha256:3faeeb34df8da88bb0cacb0a8012f2f517d1b2f3a19e1f8f6884a3c1c67ce7ee
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 3

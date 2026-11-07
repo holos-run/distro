@@ -19,6 +19,8 @@ spec:
                 key: password
                 name: svc-quay-controller
     realm:
+        attributes:
+            allowedProtocolMapperTypesForClientAdministrators: oidc-usermodel-client-role-mapper
         clientScopes:
             - attributes: {}
               description: AuthnContextClassRef Level of Authentiation
@@ -125,6 +127,21 @@ spec:
                   name: email verified
                   protocol: openid-connect
                   protocolMapper: oidc-usermodel-property-mapper
+            - attributes:
+                display.on.consent.screen: "false"
+                include.in.token.scope: "true"
+              description: Grants access to the Keycloak Admin REST API by adding its required audience to the token
+              name: kc-admin-api
+              protocol: openid-connect
+              protocolMappers:
+                - config:
+                    access.token.claim: "true"
+                    introspection.token.claim: "true"
+                    lightweight.claim: "true"
+                  consentRequired: false
+                  name: admin-api-audience
+                  protocol: openid-connect
+                  protocolMapper: oidc-admin-api-audience-mapper
             - attributes:
                 display.on.consent.screen: "false"
                 include.in.token.scope: "true"
@@ -560,6 +577,18 @@ spec:
                 - https://argocd.treasury.bank.internal
             - clientAuthenticatorType: client-secret
               clientId: svc-seabank-controller
+              defaultClientScopes:
+                - role_list
+                - saml_organization
+                - AuthnContextClassRef
+                - profile
+                - email
+                - roles
+                - web-origins
+                - acr
+                - basic
+                - groups
+                - kc-admin-api
               directAccessGrantsEnabled: false
               enabled: true
               implicitFlowEnabled: false

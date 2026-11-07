@@ -3,7 +3,7 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: keycloak-operator
-    app.kubernetes.io/version: 26.8.1
+    app.kubernetes.io/version: 26.8.2
   name: keycloakoidcclientcontroller-cluster-role
 rules:
 - apiGroups:
