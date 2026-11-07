@@ -6,7 +6,7 @@ metadata:
     storageclass.kubernetes.io/is-default-class: "true"
   labels:
     app: ceph-csi-rbd
-    chart: ceph-csi-rbd-3.17.1
+    chart: ceph-csi-rbd-3.17.2
     heritage: Helm
     release: ceph-csi-rbd
   name: ceph-rbd

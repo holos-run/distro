@@ -24,13 +24,16 @@ import "encoding/yaml"
 //
 // ceph-csi registers no admission webhook and no APIService.
 //
-// 3.17.1, not the latest, 3.18.1: from 3.18.0 the cephcsi image is built on
+// 3.17.2, not the latest, 3.18.2: from 3.18.0 the cephcsi image is built on
 // Rocky Linux 10, whose glibc needs x86-64-v3 (AVX2), and the garage's Xeon
 // E5-2670 hosts have AVX but no AVX2, so 3.18's plugin exits at once with
-// "CPU does not support x86-64-v3". 3.17.1 is the latest release on CentOS
+// "CPU does not support x86-64-v3". 3.17.2 is the latest release on CentOS
 // Stream 9 (x86-64-v2), built with Tentacle's client libraries, the same
 // release as the Ceph cluster. Stay on 3.17 until the hosts are replaced.
-CephCSIVersion: "3.17.1"
+CephCSIVersion: "3.17.2"
+
+// CephCSIDigest is the cephcsi image's index digest at that tag.
+CephCSIDigest: "sha256:e93b8b689179bf4f5b501563e85780d2bc127b19bd9bbe36c52a6ceb0c51092d"
 
 // The node plugin runs privileged with host networking and kubelet's
 // plugin paths, which Talos's baseline Pod Security enforcement refuses, so
@@ -111,6 +114,10 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		// NoSchedule taint would keep it off anyway; the affinity states it
 		// the way istio-cni's and ztunnel's do.
 		nodeplugin: affinity: offControlPlane
+		// The cephcsi image, of the node plugin and the provisioner alike.
+		// The chart joins repository and tag with a colon, so the digest
+		// goes in the tag.
+		nodeplugin: plugin: image: tag: "v\(CephCSIVersion)@\(CephCSIDigest)"
 		// Three replicas, the chart's default. With more than one the chart
 		// adds a required pod anti-affinity on the hostname, so they land
 		// on the three workers, one each; this affinity sits beside it.

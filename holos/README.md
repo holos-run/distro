@@ -362,7 +362,7 @@ optional entries have no hand step.
 | `management-namespaces` | The Secrets Manager's management organization `seabank-org-platform` and project `seabank-prj-platform`, and the `RoleBinding` granting the server its `secrets` verbs in the project |
 | `ingress-gateway` | The `ingress` `Gateway` in `istio-ingress` at the pinned address, its `*.treasury.bank.internal` certificate, the HTTP to HTTPS redirect, Argo CD's `HTTPRoute`, the `ate` passthrough listener for `*.ate.treasury.bank.internal` on a cluster that names `substrate-shim`, and the `k8s` passthrough listener for `k8s.treasury.bank.internal` |
 | `hello` | An echo service in the ambient namespace `hello`, at `hello.treasury.bank.internal` |
-| `ceph-csi-rbd` | ceph-csi 3.17.1's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
+| `ceph-csi-rbd` | ceph-csi 3.17.2's RBD driver from its `ceph-csi-rbd` chart, in `ceph-csi-rbd` (privileged), against the hosts' Ceph, and the default StorageClass `ceph-rbd` |
 | `local-path` | local-path-provisioner v0.0.37 from its release manifest, in `local-path-storage` (privileged), and the `local-path` StorageClass, not the default |
 | `rustfs` | RustFS 1.0.4 standalone from its `rustfs` chart 1.0.4, in the ambient namespace `rustfs`: one pod, one `ceph-rbd` volume, the S3 endpoint `rustfs-svc.rustfs.svc:9000`, generated keys, and a Job that registers the `quay` bucket and user, and `substrate`'s on a cluster that names it |
 | `keycloak-operator` | The Keycloak Operator 26.8.2 from the release's manifests, vendored, in the ambient namespace `keycloak`, with its four CRDs; no `Keycloak` |
@@ -1140,10 +1140,10 @@ node. Volumes are `ReadWriteOnce`. There is no CephFS, no snapshot controller
 and no `VolumeSnapshotClass`; the provisioner's `csi-snapshotter` sidecar,
 which the chart always renders, is patched out until CNPG backups need it.
 
-- ceph-csi is 3.17.1, not the latest, 3.18.1: from 3.18.0 its image is built
+- ceph-csi is 3.17.2, not the latest, 3.18.2: from 3.18.0 its image is built
   on Rocky Linux 10, whose glibc needs x86-64-v3, and the garage's Xeon
   E5-2670 hosts have no AVX2, so the plugin exits with `Fatal glibc error:
-  CPU does not support x86-64-v3`. 3.17.1 is on CentOS Stream 9 with
+  CPU does not support x86-64-v3`. 3.17.2 is on CentOS Stream 9 with
   Tentacle's client libraries.
 - The monitors are listed by their v1 addresses, port 6789, which the kernel
   RBD client maps with by default. RBD is built into the Talos kernel, so the
