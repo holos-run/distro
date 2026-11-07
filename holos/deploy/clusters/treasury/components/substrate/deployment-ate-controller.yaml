@@ -38,7 +38,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/atecontroller@sha256:01b9cd6d6843e82cc321c416ba2d829b89fff721e7a17275ce07b80c5af11e1e
+        image: ghcr.io/holos-run/substrate/atecontroller@sha256:c47fb0951ee96c69b5c4faeeb0e915cceafdf4d6305bf51d0e227491bdf9a48c
         name: ate-controller
         ports:
         - containerPort: 8080

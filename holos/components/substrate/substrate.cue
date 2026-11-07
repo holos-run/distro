@@ -247,18 +247,21 @@ let BootstrapOwners = [S.client.principal, Kagent.controller.spiffeID]
 // PreviewGates are the --preview gates ate-api-server runs with. Every ko
 // binary accepts the flag (internal/preview), and ate-setup appends
 // --preview=<gates> to every ko container (injectPreviewArg), empty when none
-// are enabled; here the flag goes only to the binary that reads the one gate
-// enabled, which is ate-api-server (cmd/ateapi).
+// are enabled; here the flag goes only to the binary that reads the two gates
+// enabled, which is ate-api-server (cmd/ateapi). kagent's own installer enables
+// the same two (go/core/pkg/install/plan.go).
 // PerTemplateSnapshotLocation lets an ActorTemplate's
 // snapshotConfig.storageLocation override the cluster --snapshot-location.
 // kagent sets that field on every template it creates, from the Harness's
 // required substrate.snapshotPolicy.location, and since upstream #3357 the
 // API server refuses the field while the gate is off, so kagent cannot run
-// without it. kagent's own installer enables the same gate
-// (go/core/pkg/install/plan.go). With it, an agent's snapshots go under the
-// Harness's location, s3://substrate/kagent/ on treasury, which the
-// location allowlist (#2784) accepts.
-let PreviewGates = ["PerTemplateSnapshotLocation"]
+// without it. With it, an agent's snapshots go under the Harness's location,
+// s3://substrate/kagent/ on treasury, which the location allowlist (#2784)
+// accepts. GoldenEgressPolicy lets an ActorTemplate set golden_egress_policy,
+// the egress its golden actor runs with. kagent sets it on every template, so
+// the golden actor can reach the controller for its bootstrap bundle, and has
+// no fallback, so kagent cannot run without this gate either.
+let PreviewGates = ["PerTemplateSnapshotLocation", "GoldenEgressPolicy"]
 
 // CredentialProvider is the bundled Kubernetes Secrets provider, ate-setup's
 // {"name":"k8s.io"}: the egress gateway's flags name it, its Service's

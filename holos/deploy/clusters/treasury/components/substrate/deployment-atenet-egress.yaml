@@ -25,7 +25,7 @@ spec:
         - atenet-egress
         - --service-cluster
         - atenet-egress
-        image: ghcr.io/holos-run/substrate/envoy-dataplane@sha256:590650c5db48cc88b4c363ab91dce076e15be4e76c6bbb83316068d44b6c553f
+        image: ghcr.io/holos-run/substrate/envoy-dataplane@sha256:a81bdc703ae10e34ec48ae24a1044a985ad82a4d585e3fa61d7e2858547879a9
         lifecycle:
           preStop:
             exec:
@@ -110,7 +110,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/atenet@sha256:eab33c963d7a6eb2a83647b13e1ef906ef02897362cebcbce1d933f88325f766
+        image: ghcr.io/holos-run/substrate/atenet@sha256:c0a6b860d47e290ffe0eaeda032c67353a2b42f56375fa103a4ce5ffb0d9fada
         name: ext-proc
         ports:
         - containerPort: 50051
@@ -153,7 +153,7 @@ spec:
         env:
         - name: GOMEMLIMIT
           value: 640MiB
-        image: ghcr.io/holos-run/substrate/atenet@sha256:eab33c963d7a6eb2a83647b13e1ef906ef02897362cebcbce1d933f88325f766
+        image: ghcr.io/holos-run/substrate/atenet@sha256:c0a6b860d47e290ffe0eaeda032c67353a2b42f56375fa103a4ce5ffb0d9fada
         name: sdsmint
         resources:
           limits:

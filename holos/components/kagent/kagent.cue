@@ -218,9 +218,8 @@ let Values = {
 
 	// The controller's RBAC and its watch, in this namespace alone: Roles
 	// here in place of ClusterRoles. It verifies no token and takes the
-	// namespace from the request, so cluster-wide its read of every core
-	// resource and its writes to core, apps and batch would be anyone's
-	// with a login. Agents, Harnesses, ModelConfigs and the placeholder
+	// namespace from the request, so cluster-wide its reads and writes of
+	// Secrets and ConfigMaps would be anyone's with a login. Agents, Harnesses, ModelConfigs and the placeholder
 	// pool are all here. rbac.namespaces, not global.watchNamespaces,
 	// which the tool server's subchart would read too and scope its
 	// cluster-wide read to this namespace.
@@ -259,7 +258,7 @@ let Values = {
 
 	"oauth2-proxy": {
 		enabled: true
-		image: tag: "v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916"
+		image: tag: "v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048"
 		// client-id, client-secret and cookie-secret, from the
 		// ExternalSecret below.
 		config: existingSecret: Secrets.oidc

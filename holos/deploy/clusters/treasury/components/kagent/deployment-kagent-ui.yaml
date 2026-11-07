@@ -6,8 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: kagent
     app.kubernetes.io/part-of: kagent
-    app.kubernetes.io/version: 0.0.0-holos.20261030.e1696d8
-    helm.sh/chart: kagent-0.0.0-holos.20261030.e1696d8
+    app.kubernetes.io/version: 0.0.0-holos.20261107.3af6ae5
+    helm.sh/chart: kagent-0.0.0-holos.20261107.3af6ae5
   name: kagent-ui
   namespace: kagent
 spec:
@@ -20,8 +20,8 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/configmap: de64a257ff72c56ffd3fc2554ae6fef8d7b9c1b84f563df793f2ebe09617a74a
-        checksum/ui-config: c966ef6b6a37ed6171dac505ab90be6581f64e58267aefe68f38b8b38c58c95f
+        checksum/configmap: e8206375ea9c572fd7ecff0496a8921866501efb31796db6f2b44fb771190bf0
+        checksum/ui-config: cd38506c564af57ecb992cd6c684ca0fc11e58809ca82642c6fb1e16ae018622
       labels:
         app.kubernetes.io/component: ui
         app.kubernetes.io/instance: kagent
@@ -31,7 +31,7 @@ spec:
       - envFrom:
         - configMapRef:
             name: kagent-ui
-        image: ghcr.io/holos-run/kagent/ui:0.0.0-holos.20261030.e1696d8@sha256:e4ed5be8ddec69fbc15d0a8f468255d2091f45314ae072bc40fd1c8b40335552
+        image: ghcr.io/holos-run/kagent/ui:0.0.0-holos.20261107.3af6ae5@sha256:2eb18ef5bf788c5af382506a30f5354681872cc69ddd5b200d82f6ab5b0f43c6
         imagePullPolicy: IfNotPresent
         name: ui
         ports:
