@@ -2,6 +2,11 @@
 
 package holos
 
+import (
+	"list"
+	"strings"
+)
+
 // kagent is kagent on Agent Substrate (interview Q26), from the holos-run
 // fork's kagent chart (Kagent, kagent.cue), at
 // https://kagent.treasury.bank.internal behind a Keycloak login. kagent-crds,
@@ -11,9 +16,11 @@ package holos
 // proxies the API to the controller), the read-only kagent-tools MCP server
 // and oauth2-proxy. The controller keeps its state in kagent's own schema and
 // roles in Substrate's database, substrate-db, and runs every agent as a
-// Substrate actor in the kagent atespace, on the platform's gVisor pool,
-// which it selects by the pool's two kagent.dev labels, through a
-// placeholder pool of the same name here. It dials the API
+// Substrate actor in the atespace of the agent's namespace: the kagent
+// atespace, on the platform's gVisor pool, which it selects by the pool's two
+// kagent.dev labels, through a placeholder pool of the same name here; and a
+// bound claim's, whose binding renders the agent, its placeholder and its
+// pool (components/product-planboard). It dials the API
 // server and the router over mutual TLS with its pod identity certificate,
 // whose SPIFFE ID the substrate component already trusts (Kagent.controller).
 //
@@ -79,7 +86,7 @@ let Secrets = {
 	cookie:       "kagent-oauth2-proxy-cookie"
 	oidc:         "kagent-oidc"
 	anthropic:    "kagent-anthropic"
-	anthropicKey: "ANTHROPIC_API_KEY"
+	anthropicKey: Kagent.modelKey
 	// platform is the platform secret, in seabank-prj-platform, written by
 	// hand through the Secrets Manager.
 	platform: "anthropic-api-key"
@@ -216,14 +223,20 @@ let Values = {
 		}
 	}
 
-	// The controller's RBAC and its watch, in this namespace alone: Roles
-	// here in place of ClusterRoles. It verifies no token and takes the
-	// namespace from the request, so cluster-wide its reads and writes of
-	// Secrets and ConfigMaps would be anyone's with a login. Agents, Harnesses, ModelConfigs and the placeholder
-	// pool are all here. rbac.namespaces, not global.watchNamespaces,
-	// which the tool server's subchart would read too and scope its
-	// cluster-wide read to this namespace.
-	rbac: namespaces: [NS]
+	// The controller's RBAC and its watch, in this namespace and the
+	// namespaces of the claims it runs agents for (Kagent.claims), sorted:
+	// Roles in each in place of ClusterRoles. It verifies no token and takes
+	// the namespace from the request, so cluster-wide its reads and writes of
+	// Secrets and ConfigMaps would be anyone's with a login. A claim's
+	// Agents, Harness, ModelConfigs and placeholder pool are in the claim's
+	// namespace, which its binding renders (components/product-planboard),
+	// and the controller has to watch them and the Secrets they name there;
+	// a claim with no agent here is not watched. On a cluster with no such
+	// claim the list is this namespace alone, as it was.
+	// rbac.namespaces, not global.watchNamespaces, which the tool server's
+	// subchart would read too and scope its cluster-wide read to these
+	// namespaces.
+	rbac: namespaces: list.SortStrings(list.Concat([[NS], K.claims]))
 
 	// The platform's gVisor pool, not the chart's: the agents' Harness
 	// names it, gvisor, and the actors land on its workers in ate-workers
@@ -301,7 +314,29 @@ let Values = {
 		// session's refresh token for a new ID token on a request once the
 		// session is a minute old. The refresh token is the SSO session's,
 		// so a login lasts as long as the realm's session.
-		extraArgs: "cookie-refresh": "1m"
+		//
+		// allowed-group, only where kagent runs a claim's agent: the
+		// platform's owners and those claims' owner and editor groups
+		// (Kagent.allowedGroups), so a user of the realm in none of them is
+		// refused at the login, a claim's viewers among them. oauth2-proxy
+		// v7.15.6 reads a session's groups from the ID token's groups claim,
+		// oidc-groups-claim's default (providers/provider_data.go,
+		// buildSessionFromClaims), for its own login, on every refresh and for
+		// a bearer token skip-jwt-bearer-tokens admits (providers/oidc.go,
+		// CreateSessionFromToken), and checks them against these on the
+		// callback and on every request with a session (oauthproxy.go,
+		// Authorize in OAuthCallback and getAuthenticatedSession). The realm
+		// writes full paths there, so these are full paths. The chart writes
+		// each key of extraArgs as one --key=value, so the groups are one
+		// value joined by commas, which the flag, a pflag StringSlice read
+		// through viper, splits again. On a cluster with no such claim the
+		// flag is not set and any user of the realm may log in, as before.
+		extraArgs: {
+			"cookie-refresh": "1m"
+			if len(K.claims) > 0 {
+				"allowed-group": strings.Join(K.allowedGroups, ",")
+			}
+		}
 		resources: {
 			requests: {cpu: "10m", memory: "32Mi"}
 			limits: memory: "128Mi"

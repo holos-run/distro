@@ -1,0 +1,12 @@
+apiVersion: api.kagent.dev/v1alpha3
+kind: ModelConfig
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: splunk-planning
+    namespace: splunk
+spec:
+    apiKeySecret: planboard-anthropic
+    apiKeySecretKey: ANTHROPIC_API_KEY
+    model: claude-sonnet-5-5
+    provider: Anthropic

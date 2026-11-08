@@ -1,0 +1,16 @@
+apiVersion: api.kagent.dev/v1alpha3
+kind: EgressPolicy
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: github
+    namespace: splunk
+spec:
+    destinations:
+        - authentication:
+            header: Authorization
+            prefix: 'Basic '
+            secretKeyRef:
+                key: authorization
+                name: planboard-git
+          origin: https://github.com:443

@@ -52,7 +52,16 @@ import (
 //     originates TLS to the shim with the hostname as SNI, against the private
 //     root; and a TrafficExtension whose Lua copies the project query
 //     parameter into x-planboard-project and strips what Planboard should not
-//     see.
+//     see;
+//   - the agent, on kagent's Claude harness, which the controller runs as
+//     actors in the claim's atespace: a Harness claude with the binding's
+//     repository in its environment; a ModelConfig, an AgentTemplate and an
+//     Agent for each of <claim>-planning, on Sonnet, and
+//     <claim>-planning-test, on Haiku, which read the owner's
+//     planboard-anthropic; an EgressPolicy github, which reads the owner's
+//     planboard-git; a placeholder WorkerPool gvisor, which kagent reads the
+//     sandbox class from; and the pool the actors run on, gvisor-<claim>, in
+//     ate-workers beside the platform's.
 //
 // The project bucket, the claim's own Application, holds the waypoint's
 // RequestAuthentication and AuthorizationPolicy, which decide who reads which
@@ -234,6 +243,60 @@ let ActorScript = """
 	  *) exit "$status" ;;
 	  esac
 	done
+	"""
+
+// AgentRepo is where the agent clones the planning repository: under
+// /data/workspace, the Claude harness's workspace and Claude's working
+// directory, on the actor's durable /data (kagent's go/harness/claude,
+// executor.go).
+let AgentRepo = "/data/workspace/repo"
+
+// AgentPrompt is the agent's system prompt, the AgentTemplate's systemPrompt,
+// which kagent passes to Claude Code as --append-system-prompt-file, after
+// Claude Code's own; it is the one lever on the agent's behaviour, since the
+// plugin's skills are Planboard's as they ship. It holds no value of the
+// binding's: the repository, branch and planning root are the Harness's
+// environment (AgentEnv, below), so a change to the binding changes no prompt.
+//
+// What it says, and why each:
+//
+//   - clone on the first turn: every session is a fresh actor, with an empty
+//     workspace;
+//   - pull with rebase before every write, autostashed, since a round makes
+//     several writes before its commit: other sessions and people push to
+//     the same branch;
+//   - planning requests are the planboard skill's: the skill does not start on
+//     its own, and a user in kagent's chat does not know to type /planboard;
+//   - commit and push after every round and after the items are written,
+//     against the skill's rule that the user commits: there is no user at a
+//     terminal here, and what is not pushed is lost with the session;
+//   - the question's number and name in its text: kagent's UI shows an
+//     AskUserQuestion's question and its options' labels, and drops the
+//     header and the descriptions;
+//   - who it is talking to: PLANBOARD_USER names the agent, for claims and
+//     commits, and the skill would attribute the user's quotes to it;
+//   - no web fetches: the actor's egress is github.com and the model, and a
+//     fetch elsewhere only fails.
+let AgentPrompt = """
+	You are the planning agent of this project. You keep its Planboard planning tree, which lives in a git repository: the environment variable REPO_URL names the repository and REPO_REF its branch. Your workspace is /data/workspace.
+
+	Every session starts in a fresh workspace. On your first turn, before anything else, clone the repository into \(AgentRepo):
+
+	    git clone --branch "$REPO_REF" "$REPO_URL" \(AgentRepo)
+
+	If \(AgentRepo) already exists, run `git -C \(AgentRepo) pull --rebase --autostash` instead. PLANBOARD_ROOT is the planning root inside that checkout, so every planboard command finds it without a flag.
+
+	Before every write to the planning tree, run `git -C \(AgentRepo) pull --rebase --autostash`: other people, and other sessions, push to the same branch, and --autostash keeps the round's uncommitted writes across the pull.
+
+	Treat any request about planning, whether a project, an interview, items, a plan, a sequence or the board, as the planboard skill's job, and use that skill for it at once. Do not wait for the user to type /planboard or to name the skill.
+
+	Commit and push your work yourself: after every round of interview questions, and again after the items are written. Commit with a short message saying what changed, then run `git -C \(AgentRepo) push`; if the push is refused, run `git -C \(AgentRepo) pull --rebase --autostash` and push again. This overrides the planboard skill's rule that the user makes the commits: nobody else can commit here, and work that is not pushed is lost when the session ends.
+
+	When you ask with AskUserQuestion, start each question's text with its number and short name, for example "Q3, the release date: ...". The chat shows only the question text and each option's label. It drops the header and the option descriptions, so put anything the user needs to choose into the question text and the labels.
+
+	At the start of a session, ask the user who they are. Attribute their quotes to the name they give, in "> [!quote] <Name>" blocks. PLANBOARD_USER names you, the agent, as the author of claims and commits; it is not the user's name.
+
+	Your network reaches github.com and nothing else. Do not fetch web pages or search the web: work from the repository and from what the user tells you.
 	"""
 
 if ProjectName != "" {
@@ -677,6 +740,89 @@ if ProjectName != "" {
 		env:    JobEnv
 	}
 
+	// The agent (overview §7) is kagent's, in the claim's namespace, which is
+	// also the atespace kagent puts its actors in: an Agent and its
+	// AgentTemplate in a namespace compile to an ActorTemplate in the atespace
+	// of that name, and kagent only gets an atespace that exists, the claim's
+	// (kagent's go/core/internal/substrate/actor_template.go and client.go).
+	// The controller watches the namespace because kagent's values list it
+	// (Kagent.claims, components/kagent).
+
+	// Identity is the agent's name and address in git and in Planboard,
+	// <claim> planning agent and planboard-agent@<the claim's zone>: the
+	// harness image has no git identity, and Planboard's writer names the
+	// author of a claim from PLANBOARD_USER.
+	let Identity = {
+		name:  "\(CLAIM) planning agent"
+		email: "planboard-agent@\(Zone.domain)"
+	}
+
+	// AgentEnv is the Harness's env, literal values on the actor's container,
+	// which the Claude harness passes on to claude and so to every git and
+	// planboard it runs. An AgentTemplate has no env, so the binding's values
+	// reach the agent here and the prompt names them by variable
+	// (AgentPrompt). kagent refuses names the Claude harness owns and the
+	// trust variables, and adds those itself: GIT_SSL_CAINFO among them, set to
+	// the egress gateway's bundle at /run/kagent/egress/trust-bundle.pem, the
+	// systemInfo trustBundle volume egress-trust it mounts on every actor
+	// (go/core/internal/substrate/actor_template.go, egressTrustEnvironment
+	// and ActorTemplateForRevision), so git trusts the gateway's https
+	// interception with nothing set here.
+	let AgentEnv = [
+		{name: "PLANBOARD_USER", value: Identity.name},
+		{name: "GIT_AUTHOR_NAME", value: Identity.name},
+		{name: "GIT_AUTHOR_EMAIL", value: Identity.email},
+		{name: "GIT_COMMITTER_NAME", value: Identity.name},
+		{name: "GIT_COMMITTER_EMAIL", value: Identity.email},
+		{name: "REPO_URL", value: Read.values.repo.url},
+		{name: "REPO_REF", value: Read.values.repo.ref},
+		{name: "PLANBOARD_ROOT", value: "\(AgentRepo)\(Read.values.repo.path)"},
+	]
+
+	// Models are the agent's two models, by the name of the ModelConfig, the
+	// AgentTemplate and the Agent that use each, since modelConfig is a field
+	// of the template: Sonnet for the agent people plan with, and Haiku for
+	// every test, which costs a fraction of it. Each is the newest of its
+	// family the Anthropic API listed (GET /v1/models) when pinned,
+	// 2026-11-07.
+	let Models = {
+		"\(CLAIM)-planning": {
+			model:       "claude-sonnet-5-5"
+			description: "Plans the \(CLAIM) project with Planboard, in its planning repository."
+		}
+		"\(CLAIM)-planning-test": {
+			model:       "claude-haiku-5-5"
+			description: "The \(CLAIM) planning agent on Haiku, for tests."
+		}
+	}
+
+	// AgentTemplateBody is what the two AgentTemplates share: the prompt, and
+	// the planboard plugin from the claim's planboard-plugin image by digest,
+	// whose directory plugin holds .claude-plugin/plugin.json (Dockerfile).
+	// kagent mounts the image as a volume and passes the directory to claude
+	// as a plugin directory, whole: skills does not filter it, so all of
+	// Planboard's skills load, and it is written for what the agent is for.
+	let AgentTemplateBody = {
+		systemPrompt: AgentPrompt
+		plugins: [{
+			source: {
+				oci:  "\(Quay.host)/\(CLAIM)/planboard-plugin@\(Read.product.images.plugin)"
+				path: "plugin"
+			}
+			skills: ["planboard"]
+		}]
+	}
+
+	// Pool is the platform's gVisor pool, which the agent's pools copy.
+	let Pool = Substrate.workerPool
+
+	// HarnessName is the Harness's name, which both Agents refer to.
+	let HarnessName = "claude"
+
+	// GitEgress is the agent's one grant beyond its model and the
+	// controller, by its EgressPolicy's name.
+	let GitEgress = "github"
+
 	holos: spec: artifacts: (Read & {
 		platform: {
 			// Public, so atelet pulls with no pull secret, as demo/echo is. Orphan,
@@ -1091,6 +1237,156 @@ if ProjectName != "" {
 					phase: "AUTHZ"
 					lua: inlineCode: Lua
 				}
+			}
+
+			// The agent's runtime: kagent's Claude harness with planboard
+			// (Dockerfile), from the claim's planboard-agent image by digest,
+			// which the controller requires of an image; it keeps the stock
+			// entrypoint, which the Claude adapter runs whatever command a
+			// Harness gives. The env is the binding's (AgentEnv). Its actors
+			// land on the workers of gvisor-<claim> (below), and their snapshots
+			// go under a directory of the claim's own in Substrate's bucket,
+			// which ate-api-server's PerTemplateSnapshotLocation gate admits
+			// (components/substrate). The platform's, rendered and healed by Argo
+			// CD, so neither kubectl nor Argo CD lets the owner point it at
+			// another image or pool. kagent's API still lets anyone it admits
+			// create Harnesses and EgressPolicies of their own here
+			// (Agent_Substrate_Day_Tech_Debt, security-a-kagent-user-can-send-a-
+			// bound-claims-secrets-to).
+			Harness: (HarnessName): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					claude: {}
+					workload: image: "\(Quay.host)/\(CLAIM)/planboard-agent@\(Read.product.images.agent)"
+					env: AgentEnv
+					substrate: {
+						workerPoolRef: name:      Pool.name
+						snapshotPolicy: location: "\(Substrate.snapshots.location)\(CLAIM)/"
+					}
+				}
+			}
+
+			// The Harness's workerPoolRef is a local reference, and the
+			// controller reads the pool's sandbox class from the WorkerPool of
+			// that name in the Harness's namespace, reporting
+			// WorkerPoolNotFound without one, as for kagent's own
+			// (components/kagent). This one exists to be found: the platform
+			// pool's name and class, no workers, and no kagent.dev labels, so
+			// no actor selects a worker of it. ate-controller still makes its
+			// worker Deployment, at 0, and an unused ateworker ServiceAccount.
+			WorkerPool: (Pool.name): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: {
+					replicas:       0
+					workerImage:    Pool.spec.workerImage
+					sandboxClasses: Pool.spec.sandboxClasses
+				}
+			}
+
+			// The workers the agent's actors run on. kagent selects workers by
+			// two labels, the Harness's pool name and the Harness's namespace,
+			// and Substrate matches them across every worker in the cluster
+			// (actor_template.go, workerSelectorForPool). The platform pool's
+			// carry kagent's namespace, and a label has one value, so the claim
+			// gets a pool of its own: the platform pool's spec
+			// (Substrate.workerPool.spec), beside it in its privileged
+			// namespace, labeled for the claim. It also keeps the claim's agent
+			// sessions off another claim's workers; an actor whose template has
+			// no worker selector, such as the board, can still land on any
+			// pool's. Workers in the claim's own
+			// namespace would need it privileged.
+			WorkerPool: "\(Pool.name)-\(CLAIM)": {
+				metadata: {
+					namespace: Pool.namespace
+					labels: Labels & {
+						"kagent.dev/worker-pool-name":      Pool.name
+						"kagent.dev/worker-pool-namespace": CLAIM
+					}
+				}
+				spec: Pool.spec
+			}
+
+			// The agent's models, through the owner's Secret
+			// planboard-anthropic, key ANTHROPIC_API_KEY, the key name kagent's
+			// own Secret uses (README.md, The agent). kagent puts the key on
+			// the actor's requests to api.anthropic.com at the egress gateway,
+			// as an ate-secret:// reference to this namespace, which the
+			// credential provider resolves through CredentialReader's Role, so
+			// it never enters the sandbox. The key is the claim's: the
+			// credential provider authorizes by atespace and namespace and not
+			// by destination, so a platform key shared to the claim could be
+			// sent anywhere by its owner (overview §7).
+			for NAME, M in Models {
+				ModelConfig: (NAME): {
+					metadata: {
+						namespace: CLAIM
+						labels:    Labels
+					}
+					spec: {
+						provider:        "Anthropic"
+						model:           M.model
+						apiKeySecret:    Secrets.anthropic
+						apiKeySecretKey: Kagent.modelKey
+					}
+				}
+			}
+
+			// One AgentTemplate per model, since the model is the template's;
+			// the rest is AgentTemplateBody.
+			for NAME, M in Models {
+				AgentTemplate: (NAME): {
+					metadata: {
+						namespace: CLAIM
+						labels:    Labels
+					}
+					spec: AgentTemplateBody & {
+						description: M.description
+						modelConfig: name: NAME
+					}
+				}
+			}
+
+			// The Agents, which kagent's UI lists for chat: each its template
+			// on the Harness, with github.com beside the egress kagent infers
+			// from the model and gives every actor for the controller.
+			for NAME, _ in Models {
+				Agent: (NAME): {
+					metadata: {
+						namespace: CLAIM
+						labels:    Labels
+					}
+					spec: {
+						harnessRef: name: HarnessName
+						template: ref: name: NAME
+						egressPolicyRefs: [{name: GitEgress}]
+					}
+				}
+			}
+
+			// github.com for the agent's clone, pulls and pushes, with the
+			// owner's planboard-git on a request that carries the placeholder
+			// Authorization the image's /etc/gitconfig sends, as the board's
+			// own egress rule does (EgressRules). kagent compiles it to the
+			// same ate-secret:// reference, in this namespace.
+			EgressPolicy: (GitEgress): {
+				metadata: {
+					namespace: CLAIM
+					labels:    Labels
+				}
+				spec: destinations: [{
+					origin: "https://github.com:443"
+					authentication: {
+						header: "Authorization"
+						prefix: "Basic "
+						secretKeyRef: {name: Secrets.git, key: "authorization"}
+					}
+				}]
 			}
 		}
 

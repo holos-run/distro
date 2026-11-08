@@ -121,6 +121,16 @@ import (
 	// (components/substrate). Namespaced too.
 	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}
 
+	// kagent's Harness, AgentTemplate, Agent, ModelConfig and EgressPolicy,
+	// api.kagent.dev/v1alpha3, the one version the fork's CRDs serve
+	// (components/kagent-crds), which a binding renders for its agent in the
+	// claim's namespace (components/product-planboard). Namespaced too.
+	Harness?: [_]: {apiVersion: "api.kagent.dev/v1alpha3", metadata: {...}, ...}
+	AgentTemplate?: [_]: {apiVersion: "api.kagent.dev/v1alpha3", metadata: {...}, ...}
+	Agent?: [_]: {apiVersion: "api.kagent.dev/v1alpha3", metadata: {...}, ...}
+	ModelConfig?: [_]: {apiVersion: "api.kagent.dev/v1alpha3", metadata: {...}, ...}
+	EgressPolicy?: [_]: {apiVersion: "api.kagent.dev/v1alpha3", metadata: {...}, ...}
+
 	// ToolHive's MCPServer, MCPOIDCConfig and MCPAuthzConfig,
 	// toolhive.stacklok.dev/v1beta1, the storage version of its 0.63.0 CRDs
 	// (components/toolhive). Namespaced too.

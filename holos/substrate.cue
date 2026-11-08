@@ -131,6 +131,30 @@ Substrate: {
 		// SandboxConfig is gvisor-default. kagent's placeholder pool
 		// (components/kagent) names the same class.
 		sandboxClass: "gvisor"
+		// spec is the pool's spec: three workers on the general worker nodes,
+		// with no anti-affinity, from the fork's gVisor worker image. Each
+		// worker reports its whole node as its capacity, so two pools on the
+		// same nodes overcommit them. The substrate component renders it,
+		// and each claim kagent runs agents for gets a copy of it, labeled for
+		// the claim (components/product-planboard), so a bump or a new replica
+		// count moves every pool at once.
+		spec: {
+			replicas:    3
+			workerImage: images["ateworker-gvisor"]
+			sandboxClasses: [{name: sandboxClass}]
+			template: nodeSelector: "holos.run/nodepool": "general"
+		}
+	}
+
+	// snapshots is where actors' durable snapshots are kept: RustFS's bucket
+	// substrate (components/rustfs), and location, ate-api-server's
+	// cluster-wide --snapshot-location, which the substrate component sets. A
+	// kagent Harness names a location of its own under it, one directory per
+	// namespace, which ate-api-server takes with its PerTemplateSnapshotLocation
+	// gate (components/substrate).
+	snapshots: {
+		bucket:   "substrate"
+		location: "s3://\(bucket)/"
 	}
 
 	// trustDomain is the pod identity signer's SPIFFE trust domain, fixed
