@@ -24,6 +24,45 @@ import "list"
 // a conflict (README.md, "Taking objects over from the hand applies").
 let SyncOptions = ["ServerSideApply=true"]
 
+// BoundClaims are the claims with a binding on this cluster (clusterBindings,
+// collections.cue). Read here, where the cluster is known, and not in
+// #ProjectRegistrations, which reads projects alone because #Cluster.components
+// reads it.
+let BoundClaims = {for B in clusterBindings[Cluster.name] {(B.project): true}}
+
+// OwnerSyncPolicy is what a bound claim's project-<claim> leaves to the claim's
+// owners: the automated block of the claim's own Application, <claim>, which
+// Argo CD's Sync Policy panel writes whole when an owner checks or unchecks
+// auto-sync, prune or self-heal (components/project, OwnerPolicies). Without
+// it, project-<claim>'s self-heal would put selfHeal: true back within
+// minutes; with it, the owner can leave self-heal off while they edit the
+// claim's policy live, and turn it on again to return the policy to the
+// render (README.md, Editing a bound claim's policy live). ignoreDifferences
+// alone keeps the field from being a difference, which self-heal never
+// syncs; RespectIgnoreDifferences=true also keeps any sync of project-<claim>,
+// such as one a commit changing its render starts, from applying the render's value
+// over the owner's: Argo CD copies the live value of an ignored field into
+// what it applies (v3.5.7, controller/sync.go, normalizeTargetResources).
+//
+// Only automated, not the whole of syncPolicy: syncOptions, such as
+// ServerSideApply=true, and retry stay the render's, since working on the
+// policy needs neither changed. A rebuild renders the Application afresh, so every claim
+// starts enforced, and a change to automated in the render no longer reaches
+// a bound claim's Application that exists already. Only where the claim is
+// bound, as the owner role is, so a cluster with no binding renders as it did
+// (Second_Cluster Q6).
+let OwnerSyncPolicy = {
+	project: string
+	ignoreDifferences: [{
+		group:     "argoproj.io"
+		kind:      "Application"
+		name:      project
+		namespace: ArgoCD.namespace
+		jsonPointers: ["/spec/syncPolicy/automated"]
+	}]
+	syncOptions: ["RespectIgnoreDifferences=true"]
+}
+
 holos: spec: artifacts: [(#ResourcesArtifact & {
 	resources: {
 		// The project every platform Application belongs to. Argo CD syncs a
@@ -51,6 +90,18 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 		// it does not take can never move its waves. Nothing else reads the
 		// index.
 		for WAVE, C in clusterRegistry[Cluster.name] {
+			// The owner's part of a bound claim's own Application, on that
+			// claim's project-<claim> (OwnerSyncPolicy), and nothing on
+			// every other entry.
+			let Owner = [
+				if C.component == "project"
+				if BoundClaims[C.parameters.project] != _|_ {
+					OwnerSyncPolicy & {project: C.parameters.project}
+				},
+			]
+			let Ignore = list.Concat([C.ignoreDifferences, for O in Owner {O.ignoreDifferences}])
+			let Options = list.Concat([SyncOptions, C.syncOptions, for O in Owner {O.syncOptions}])
+
 			// No resources-finalizer: deleting an Application, or the root
 			// pruning one the platform stopped rendering, leaves the
 			// component's objects in place rather than deleting them.
@@ -68,8 +119,8 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 						// The component's OutputDir (components/component.cue).
 						path: "holos/deploy/clusters/\(Cluster.name)/components/\(C.name)"
 					}
-					if len(C.ignoreDifferences) > 0 {
-						ignoreDifferences: C.ignoreDifferences
+					if len(Ignore) > 0 {
+						ignoreDifferences: Ignore
 					}
 					syncPolicy: {
 						// Every commit on main is synced as it is seen, and a
@@ -81,7 +132,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 							prune:    true
 							selfHeal: true
 						}
-						syncOptions: list.Concat([SyncOptions, C.syncOptions])
+						syncOptions: Options
 						// An automated sync is not retried for a commit it
 						// failed on, and after bootstrap the components sync in
 						// parallel, so a component whose dependency is not

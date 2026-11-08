@@ -1096,7 +1096,9 @@ if ProjectName != "" {
 
 		// The waypoint's policy, the owner's to edit live (overview §6), so
 		// in the claim's own Application, where self-heal off leaves an edit
-		// in place and self-heal on returns it to this.
+		// in place until the next commit on main is synced, auto-sync off
+		// until the owner turns it on again, and self-heal on returns it to
+		// this (README.md, Editing a bound claim's policy live).
 		project: {
 			// A bearer token, if the request carries one, must be a Keycloak ID
 			// token from the realm for the board's client, the token the login

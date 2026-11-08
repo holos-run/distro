@@ -8,6 +8,13 @@ metadata:
 spec:
     destination:
         server: https://kubernetes.default.svc
+    ignoreDifferences:
+        - group: argoproj.io
+          jsonPointers:
+            - /spec/syncPolicy/automated
+          kind: Application
+          name: splunk
+          namespace: argocd
     project: platform
     source:
         path: holos/deploy/clusters/cartography/components/project-splunk
@@ -25,3 +32,4 @@ spec:
             limit: 10
         syncOptions:
             - ServerSideApply=true
+            - RespectIgnoreDifferences=true
