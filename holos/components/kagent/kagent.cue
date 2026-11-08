@@ -3,6 +3,7 @@
 package holos
 
 import (
+	"encoding/yaml"
 	"list"
 	"strings"
 )
@@ -42,6 +43,10 @@ import (
 // The controller decodes bearer tokens without verifying them and has no
 // authorizer for users, so oauth2-proxy is the only way in and the network
 // keeps everyone else out (Isolation, below).
+//
+// Where kagent runs a claim's agent the namespace is closed to the claim's
+// users (Closed, below): no default ModelConfig, no tool server, no
+// kagent-api RemoteMCPServer, no Anthropic key, and no management Role.
 //
 // Every kind's CRD comes from an earlier component: ModelConfig and
 // RemoteMCPServer from kagent-crds, WorkerPool from substrate, Client and the security.holos.run
@@ -91,6 +96,24 @@ let Secrets = {
 	// hand through the Secrets Manager.
 	platform: "anthropic-api-key"
 }
+
+// Closed is true where kagent runs a claim's agent (Kagent.claims): the
+// claim's users log in, and kagent has no authorizer, so what its UI offers
+// them in this namespace its API does for them. The platform runs no agent
+// here, so the namespace offers nothing to use or change: the chart's
+// default ModelConfig, the tool server, whose ClusterRole reads pods, logs,
+// ConfigMaps, Services, events and namespaces across the cluster, and the
+// kagent-api RemoteMCPServer are left out, and so is the Anthropic key, the
+// store that copies it and the credential provider's grant on it, so a
+// ModelConfig made here would have no key to name. The controller cannot
+// write kagent's objects, Secrets or ConfigMaps here either: its management
+// Role, which only the API's writes for a user need, is left out in this
+// namespace and kept in the claims'. The controller still watches and reads
+// here: the chart refuses an rbac.namespaces without its own namespace, and
+// the API lists ModelProviderConfigs here (model discovery). Its own state
+// here is its leader election Lease, under a Role of its own, which stays.
+// On a cluster with no such claim nothing changes.
+let Closed = len(K.claims) > 0
 
 // modelKeys are the Secrets here the credential provider may read, the model
 // keys agents' egress may carry: kagent-anthropic alone.
@@ -150,7 +173,28 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	}
 	values:    Values
 	resources: _Resources
+	patches:   ClosedPatches
 }).artifact]
+
+// ClosedPatches drop what the chart renders in this namespace and no value
+// turns off, where it is closed (Closed): the kagent-api RemoteMCPServer,
+// which toolserver-api.yaml renders unconditionally, and the management Role
+// and its binding here, which rbac.namespaces renders in every namespace it
+// lists. The Role and binding of the same names in a claim's namespace stay,
+// so the targets name the namespace.
+let ClosedPatches = [if Closed for P in [
+	{group: "api.kagent.dev", version: "v1alpha3", kind: "RemoteMCPServer", name: "\(K.release)-api"},
+	{group: "rbac.authorization.k8s.io", version: "v1", kind: "Role", name: "\(K.release)-management-role"},
+	{group: "rbac.authorization.k8s.io", version: "v1", kind: "RoleBinding", name: "\(K.release)-management-rolebinding"},
+] {
+	target: P & {namespace: NS}
+	patch: yaml.Marshal({
+		apiVersion: "\(P.group)/\(P.version)"
+		kind:       P.kind
+		metadata: {name: P.name, namespace: NS}
+		"$patch": "delete"
+	})
+}]
 
 // Values are the chart's. Every image is pinned by digest: the chart puts a
 // tag with an @digest after the colon as it is.
@@ -246,19 +290,31 @@ let Values = {
 
 	// Anthropic, with the chart's model, through Secret kagent-anthropic,
 	// which the ExternalSecret below copies. apiKey stays unset, so the
-	// chart renders no Secret of its own.
-	providers: {
-		default: "anthropic"
-		anthropic: {
-			apiKeySecretRef: Secrets.anthropic
-			apiKeySecretKey: Secrets.anthropicKey
+	// chart renders no Secret of its own. Where the namespace is closed,
+	// null, which drops the chart's default providers, so it renders no
+	// ModelConfig.
+	if !Closed {
+		providers: {
+			default: "anthropic"
+			anthropic: {
+				apiKeySecretRef: Secrets.anthropic
+				apiKeySecretKey: Secrets.anthropicKey
+			}
 		}
+	}
+	if Closed {
+		providers: null
 	}
 
 	// The tool server reads the cluster and changes nothing: readOnly
 	// binds a ClusterRole of get, list and watch, without Secrets, in
-	// place of cluster-admin.
+	// place of cluster-admin. Where the namespace is closed it is off:
+	// the subchart, its ClusterRole and the kagent-tool-server
+	// RemoteMCPServer are not rendered.
 	"kagent-tools": {
+		if Closed {
+			enabled: false
+		}
 		tools: {
 			image: tag: "0.3.0@sha256:cb89eb76216195a90cac73846b447525b6e6e33e45154d1ded9621bf11340315"
 			// The server's own read-only mode, which leaves out every tool
@@ -454,58 +510,62 @@ _Resources: #Resources & {
 		}
 	}
 
-	// The model key, from the platform secret anthropic-api-key, key
-	// ANTHROPIC_API_KEY, which is written by hand through the Secrets
-	// Manager (README.md, kagent). Until it is, this reports an error, and
-	// it and the kagent Application are Degraded; an agent cannot resolve
-	// its model, and the root Application's own sync waits too, since kagent
-	// is the last component before it (registry.cue). Owner, as
-	// ceph-csi-rbd's key: the platform secret is the truth.
-	ExternalSecret: (Secrets.anthropic): {
-		metadata: namespace: NS
-		spec: {
-			refreshInterval: "1h"
-			secretStoreRef: {kind: "SecretStore", name: "platform"}
-			target: creationPolicy: "Owner"
-			data: [{
-				secretKey: Secrets.anthropicKey
-				remoteRef: {key: Secrets.platform, property: Secrets.anthropicKey}
+	// Where the namespace is closed (Closed) none of the model key's
+	// objects are made: no copy, and no grant to the credential provider.
+	if !Closed {
+		// The model key, from the platform secret anthropic-api-key, key
+		// ANTHROPIC_API_KEY, which is written by hand through the Secrets
+		// Manager (README.md, kagent). Until it is, this reports an error, and
+		// it and the kagent Application are Degraded; an agent cannot resolve
+		// its model, and the root Application's own sync waits too, since kagent
+		// is the last component before it (registry.cue). Owner, as
+		// ceph-csi-rbd's key: the platform secret is the truth.
+		ExternalSecret: (Secrets.anthropic): {
+			metadata: namespace: NS
+			spec: {
+				refreshInterval: "1h"
+				secretStoreRef: {kind: "SecretStore", name: "platform"}
+				target: creationPolicy: "Owner"
+				data: [{
+					secretKey: Secrets.anthropicKey
+					remoteRef: {key: Secrets.platform, property: Secrets.anthropicKey}
+				}]
+			}
+		}
+
+		// The credential provider resolves ate-secret:// references for the
+		// kagent atespace in this namespace alone (the substrate component's
+		// namespace policy), so the egress gateway can put the model key on a
+		// sandbox's requests to Anthropic. The substrate component dropped
+		// upstream's cluster-wide binding. Here it may get the model keys by
+		// name and nothing else: a ModelConfig names its key Secret, so with
+		// the whole namespace an agent's author could point one at the OIDC
+		// client or cookie secret, or a connection string, with a base URL of
+		// their own, and have the egress gateway send it there. A model key
+		// added another way, such as through the UI, must be added to
+		// modelKeys. get is the provider's one call (kubeprovider.go).
+		Role: "k8s-credential-provider-model-keys": {
+			metadata: namespace: NS
+			rules: [{
+				apiGroups: [""]
+				resources: ["secrets"]
+				resourceNames: modelKeys
+				verbs: ["get"]
 			}]
 		}
-	}
-
-	// The credential provider resolves ate-secret:// references for the
-	// kagent atespace in this namespace alone (the substrate component's
-	// namespace policy), so the egress gateway can put the model key on a
-	// sandbox's requests to Anthropic. The substrate component dropped
-	// upstream's cluster-wide binding. Here it may get the model keys by
-	// name and nothing else: a ModelConfig names its key Secret, so with
-	// the whole namespace an agent's author could point one at the OIDC
-	// client or cookie secret, or a connection string, with a base URL of
-	// their own, and have the egress gateway send it there. A model key
-	// added another way, such as through the UI, must be added to
-	// modelKeys. get is the provider's one call (kubeprovider.go).
-	Role: "k8s-credential-provider-model-keys": {
-		metadata: namespace: NS
-		rules: [{
-			apiGroups: [""]
-			resources: ["secrets"]
-			resourceNames: modelKeys
-			verbs: ["get"]
-		}]
-	}
-	RoleBinding: "k8s-credential-provider-model-keys": {
-		metadata: namespace: NS
-		roleRef: {
-			apiGroup: "rbac.authorization.k8s.io"
-			kind:     "Role"
-			name:     "k8s-credential-provider-model-keys"
+		RoleBinding: "k8s-credential-provider-model-keys": {
+			metadata: namespace: NS
+			roleRef: {
+				apiGroup: "rbac.authorization.k8s.io"
+				kind:     "Role"
+				name:     "k8s-credential-provider-model-keys"
+			}
+			subjects: [{
+				kind:      "ServiceAccount"
+				name:      "k8s-credential-provider"
+				namespace: S.namespace
+			}]
 		}
-		subjects: [{
-			kind:      "ServiceAccount"
-			name:      "k8s-credential-provider"
-			namespace: S.namespace
-		}]
 	}
 
 	// The connection strings, from the generated passwords in Substrate's
@@ -675,24 +735,27 @@ _Resources: #Resources & {
 			}]
 		}
 	}
-	// The tool server, which reads every namespace: the controller, which
-	// lists its tools, and the egress gateway, through which agents call
-	// it. Without this any pod in the cluster could read through it.
-	NetworkPolicy: "\(K.release)-tools": {
-		metadata: namespace: NS
-		spec: {
-			podSelector: matchLabels: Pods.tools
-			policyTypes: ["Ingress"]
-			ingress: [{
-				from: [
-					{podSelector: matchLabels: Pods.controller},
-					{
-						namespaceSelector: matchLabels: "kubernetes.io/metadata.name": S.namespace
-						podSelector: matchLabels: app:                                 "atenet-egress"
-					},
-				]
-				ports: [{protocol: "TCP", port: 8084}]
-			}]
+	if !Closed {
+		// The tool server, which reads every namespace: the controller, which
+		// lists its tools, and the egress gateway, through which agents call
+		// it. Without this any pod in the cluster could read through it. None
+		// where the namespace is closed, which has no tool server.
+		NetworkPolicy: "\(K.release)-tools": {
+			metadata: namespace: NS
+			spec: {
+				podSelector: matchLabels: Pods.tools
+				policyTypes: ["Ingress"]
+				ingress: [{
+					from: [
+						{podSelector: matchLabels: Pods.controller},
+						{
+							namespaceSelector: matchLabels: "kubernetes.io/metadata.name": S.namespace
+							podSelector: matchLabels: app:                                 "atenet-egress"
+						},
+					]
+					ports: [{protocol: "TCP", port: 8084}]
+				}]
+			}
 		}
 	}
 
@@ -736,7 +799,8 @@ _Resources: (#GeneratedSecret & {
 // The stores: users, here, that may get the passwords in Substrate's
 // namespace, for the connection strings; oidc, here, that may get the
 // Client's secret and the cookie secret in this namespace; and platform,
-// that may get the Anthropic key in seabank-prj-platform.
+// that may get the Anthropic key in seabank-prj-platform, except where the
+// namespace is closed (Closed), which copies no key.
 _Resources: (#ScopedSecretStore & {
 	name:      Secrets.users
 	namespace: NS
@@ -749,8 +813,10 @@ _Resources: (#ScopedSecretStore & {
 	source:    NS
 	secrets: [K.oidcSecret.name, Secrets.cookie]
 }).resources
-_Resources: (#ScopedSecretStore & {
-	name:      "platform"
-	namespace: NS
-	secrets: [Secrets.platform]
-}).resources
+if !Closed {
+	_Resources: (#ScopedSecretStore & {
+		name:      "platform"
+		namespace: NS
+		secrets: [Secrets.platform]
+	}).resources
+}
