@@ -336,7 +336,9 @@ entries have no hand step.
 15. *Only with `kagent`.* **The Anthropic key** (Adding the Anthropic key, under
     kagent, below). A rebuild skips this only if `state restore` listed
     the key as created or left as is. If it skipped the key, this step stands:
-    `kagent` stays `Degraded` until the key is in.
+    `kagent` stays `Degraded` until the key is in. Where a binding runs an
+    agent, `kagent` copies no key and does not wait for it, but the step
+    stands all the same, since `state save` requires the platform secret.
 16. **Finish the root's sync.** If its retries ran out during these steps, sync
     it again (Bootstrap Argo CD, below). Every `Application` the cluster takes
     is then `Synced` and `Healthy`; `kagent`, on a cluster that takes it, is the
@@ -399,7 +401,7 @@ entries have no hand step.
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, the gVisor `WorkerPool` `gvisor` in `ate-workers`, and the `NetworkPolicy` that admits the claims' atespace Jobs to the API server |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace of the platform's (`demo`, `kagent`; a claim brings its own), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
-| `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod; on a cluster where a binding runs an agent, the controller's `Role`s in each such claim's namespace too, and a login limited to `/platform/owners` and those claims' owner and editor groups (The agent, below) |
+| `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod; on a cluster where a binding runs an agent, the controller's `Role`s in each such claim's namespace too, a login limited to `/platform/owners` and those claims' owner and editor groups, and `kagent` closed to those users: no default `ModelConfig`, tool server, `kagent-api` `RemoteMCPServer`, Anthropic key or management `Role` there (The agent, below) |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
 | `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim; and on a cluster where a binding names it, its zone on the ingress Gateway, a `ListenerSet` with a wildcard of its own |
 | `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>`, and the waypoint the login reaches the board through: its `Gateway` and parameters `ConfigMap` `planboard-waypoint`, the `ServiceEntry` and `DestinationRule` `planboard-shim` and the `TrafficExtension` `planboard-waypoint`, in the claim's namespace, with the waypoint's `RequestAuthentication` and `AuthorizationPolicy` `planboard` in the claim's own directory (The board's hostname and The board's login, below); and the agent, on kagent's Claude harness: the `Harness` `claude`, the `ModelConfig`, `AgentTemplate` and `Agent` `<claim>-planning` and `<claim>-planning-test`, the `EgressPolicy` `github` and a placeholder `WorkerPool` `gvisor` in the claim's namespace, and the `WorkerPool` `gvisor-<claim>` in `ate-workers` that its actors run on (The agent, below) |
@@ -3200,7 +3202,8 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   Agents, Harnesses, ModelConfigs, Secrets and placeholder pool are in
   `kagent`, and a claim's in the claim's namespace; on a cluster with no such
   binding the list is `kagent` alone. The tool server's subchart is not scoped: its
-  read-only role covers the cluster, so agents can read it.
+  read-only role covers the cluster, so agents can read it. Where a binding
+  runs an agent, `kagent` is closed (The agent, below).
 - **Exposure.** `kagent.treasury.bank.internal` is under the Gateway's
   wildcard. The `HTTPRoute` `kagent` sends every path to oauth2-proxy on 4180,
   never to the UI or the controller; the chart's own route is off.
@@ -3213,7 +3216,10 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
 A cluster that does not name `kagent` skips this (Adding a cluster, above), and
 so does a rebuild whose `state restore` put the key back, which happens before
 `kagent` exists (Rebuilding a cluster, under Bootstrap Argo CD, below). A
-rebuild that skipped the key enters it here. The model key is the platform
+rebuild that skipped the key enters it here. Where a binding runs an agent,
+`kagent` copies no key and is `Healthy` without it (The agent, below), but the
+platform secret is still entered: `state save` requires it on every cluster
+that names `kagent`, and the copy comes back if the binding goes. The model key is the platform
 secret `anthropic-api-key`, key
 `ANTHROPIC_API_KEY` (Adding a platform secret, under Secrets Manager,
 above). The `ExternalSecret` `kagent/kagent-anthropic` copies it within the
@@ -3288,7 +3294,7 @@ the fork's base.
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
-kubectl -n kagent get pods,client,externalsecret   # four pods 1/1; Client READY True; all SecretSynced but kagent-anthropic
+kubectl -n kagent get pods,client,externalsecret   # four pods 1/1 (three, no tool server, where kagent is closed); Client READY True; all SecretSynced but kagent-anthropic
 kubectl -n ate-system exec substrate-db-1 -c postgres -- psql -d substrate -At \
   -c "select version_id from kagent.schema_migrations" \
   -c "select usename, ssl from pg_stat_activity join pg_stat_ssl using (pid) where usename like 'kagent%'"
@@ -5017,6 +5023,24 @@ security tech debt in the planning board
 `a-group-to-namespace-authorizer-for-kagent` closes; until then no second binding
 of a product that runs kagent merges.
 
+The same holds in `kagent`'s own namespace, which the controller watches too,
+so on a cluster where a binding runs an agent the kagent component closes it
+(`Closed` in `components/kagent/kagent.cue`). The platform runs no agent there,
+so it renders none of what a claim's user could use or change: no
+`default-model-config` (`providers` is null); no tool server
+(`kagent-tools.enabled: false`, which drops its `ClusterRole` and the
+`kagent-tool-server` `RemoteMCPServer`), and no `kagent-api` `RemoteMCPServer`,
+which the chart renders unconditionally and a Kustomize patch deletes; no
+`kagent-anthropic`, its store or the credential provider's `Role` on it, so a
+`ModelConfig` made there would have no key to name; and no management `Role`
+there, deleted by a patch, so the controller cannot write kagent's objects,
+Secrets or ConfigMaps in `kagent` for anyone. Only the API's writes for a user
+need that `Role`; the controller's own state there is its leader election
+`Lease`, under a `Role` of its own. Its reconciliation `Role` and its watch of
+`kagent` stay: the chart refuses an `rbac.namespaces` without its own
+namespace, and the API lists `ModelProviderConfig`s there. A claim's user sees
+the claim's agents and `ModelConfig`s and no MCP server.
+
 To check it, once the owner has made both Secrets:
 
 ```sh
@@ -5441,7 +5465,8 @@ fails at `quay` and retries, and creates nothing after it until `quay` is
 `Healthy`.
 
 Last, on a cluster that takes it, comes `kagent`, which stays `Degraded`
-until the Anthropic key is in (Adding the Anthropic key, under kagent,
+until the Anthropic key is in, unless a binding runs an agent there and
+`kagent` copies no key (Adding the Anthropic key, under kagent,
 above); the platform secret can be written before `kagent` exists. The
 root's sync retries 10 times, backing off from 5 seconds to 3 minutes. That
 is about 17 minutes for the whole bootstrap, shared by every hand step that
@@ -5540,7 +5565,7 @@ claude VM unless a step says otherwise:
    | --- | --- |
    | 10, Trust the new root | Restart `argocd-server`. Export nothing: the laptop and the claude VM keep the root they trust. |
    | 13, The workers' trust | Still needed. The patch went with the old nodes. |
-   | 15, The Anthropic key | Skipped if `state restore` listed the key as created or left as is: `kagent/kagent-anthropic` copies it. If it skipped the key, enter it here. |
+   | 15, The Anthropic key | Skipped if `state restore` listed the key as created or left as is: `kagent/kagent-anthropic` copies it. If it skipped the key, enter it here, even where a binding runs an agent and `kagent` copies no key, since `state save` requires it. |
 
 8. **Keep the file.** `~/$cluster-state.json.gpg` holds the cluster's root key.
    It stays on the claude VM beside the only secret key that opens it, so

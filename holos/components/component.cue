@@ -118,13 +118,15 @@ holos: core.#BuildPlan & {
 // #KustomizePatch is one entry of a kustomization's patches: a strategic
 // merge or JSON 6902 patch, inline, and the objects it applies to, by kind
 // and name or by label (labelSelector, a JSON 6902 patch for objects of any
-// kind).
+// kind), and by namespace where a chart makes objects of one name in more
+// than one.
 #KustomizePatch: {
 	target: {
 		group?:         string
 		version?:       string
 		kind?:          string
 		name?:          string
+		namespace?:     string
 		labelSelector?: string
 	}
 	patch: string

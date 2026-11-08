@@ -190,7 +190,9 @@ let OTel = {
 // NamespacePolicy is the credential provider's: an atespace may resolve
 // ate-secret:// references to Secrets in the namespaces listed for it, and
 // in no other. kagent's atespace reads kagent's namespace, where its model
-// key is. A claim with a binding on this cluster may read its own namespace
+// key is on a cluster where no binding runs an agent (where one does, kagent
+// drops the key and the provider's Role there, so the entry resolves nothing).
+// A claim with a binding on this cluster may read its own namespace
 // (clusterBindings, collections.cue), and only what the product's Role there
 // gives the provider, since this component drops upstream's cluster-wide
 // binding: the entry opens nothing by itself. It is here and not in the product
