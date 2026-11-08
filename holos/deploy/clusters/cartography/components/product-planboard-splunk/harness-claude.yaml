@@ -1,0 +1,33 @@
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: claude
+    namespace: splunk
+spec:
+    claude: {}
+    env:
+        - name: PLANBOARD_USER
+          value: splunk planning agent
+        - name: GIT_AUTHOR_NAME
+          value: splunk planning agent
+        - name: GIT_AUTHOR_EMAIL
+          value: planboard-agent@splunk.cartography.bank.internal
+        - name: GIT_COMMITTER_NAME
+          value: splunk planning agent
+        - name: GIT_COMMITTER_EMAIL
+          value: planboard-agent@splunk.cartography.bank.internal
+        - name: REPO_URL
+          value: https://github.com/holos-run/splunk-planning
+        - name: REPO_REF
+          value: main
+        - name: PLANBOARD_ROOT
+          value: /data/workspace/repo
+    substrate:
+        snapshotPolicy:
+            location: s3://substrate/splunk/
+        workerPoolRef:
+            name: gvisor
+    workload:
+        image: quay.cartography.bank.internal/splunk/planboard-agent@sha256:908e537f6f2e3b60ce2504de37ae1ccc9864eba1a82421a7676237d38b317d29

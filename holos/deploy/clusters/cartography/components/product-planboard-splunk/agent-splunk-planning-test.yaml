@@ -1,0 +1,15 @@
+apiVersion: api.kagent.dev/v1alpha3
+kind: Agent
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: splunk-planning-test
+    namespace: splunk
+spec:
+    egressPolicyRefs:
+        - name: github
+    harnessRef:
+        name: claude
+    template:
+        ref:
+            name: splunk-planning-test

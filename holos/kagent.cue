@@ -89,6 +89,11 @@ Kagent: {
 	// without it every SandboxTemplate is refused as unpinned.
 	guestImage: "\(upstream.registry)/sandbox-guest:\(upstream.release)@sha256:8521d7e41097fb2964570ce1e65115056098d1c0c17c5dab1c2a4f30a7e06939"
 
+	// modelKey is the key of a model's Secret that a ModelConfig reads,
+	// ANTHROPIC_API_KEY: kagent-anthropic's in kagent's namespace and each
+	// claim's planboard-anthropic (components/product-planboard).
+	modelKey: "ANTHROPIC_API_KEY"
+
 	// release is the Helm release name. The chart names its objects after
 	// it, <release>-controller among them, which is the controller's
 	// ServiceAccount below.

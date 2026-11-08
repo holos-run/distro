@@ -399,10 +399,10 @@ entries have no hand step.
 | `substrate` | Agent Substrate from the holos-run fork's install tree at the submodule's commit, images from `ghcr.io/holos-run/substrate` by digest, in `ate-system` (privileged, not in the mesh) and `podcertificate-controller-system`: the pod certificate controller, the API server, the IdP, the controller, the router, the egress gateway, the Kubernetes Secrets credential provider and atelet; its one-instance CloudNativePG cluster `substrate-db` and role Job, snapshots in RustFS's bucket `substrate`, the gVisor `WorkerPool` `gvisor` in `ate-workers`, and the `NetworkPolicy` that admits the claims' atespace Jobs to the API server |
 | `substrate-shim` | The Substrate shim: the ClusterIP `Gateway` `ate` in `substrate-shim` behind `ingress`'s `ate` listener, a listener and `*.<atespace>.ate.treasury.bank.internal` certificate per atespace of the platform's (`demo`, `kagent`; a claim brings its own), the Keycloak token and group policy, the Lua `TrafficExtension` that sets `ate-target-actor` from the host, the `HTTPRoute`s in `ate-system` and the mutual TLS to the router |
 | `kagent-crds` | kagent's eight `api.kagent.dev` CRDs from the holos-run fork's `kagent-crds` OCI chart, which Argo CD neither prunes nor deletes |
-| `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod |
+| `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod; on a cluster where a binding runs an agent, the controller's `Role`s in each such claim's namespace too, and a login limited to `/platform/owners` and those claims' owner and editor groups (The agent, below) |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
 | `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim; and on a cluster where a binding names it, its zone on the ingress Gateway, a `ListenerSet` with a wildcard of its own |
-| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>`, and the waypoint the login reaches the board through: its `Gateway` and parameters `ConfigMap` `planboard-waypoint`, the `ServiceEntry` and `DestinationRule` `planboard-shim` and the `TrafficExtension` `planboard-waypoint`, in the claim's namespace, with the waypoint's `RequestAuthentication` and `AuthorizationPolicy` `planboard` in the claim's own directory (The board's hostname and The board's login, below) |
+| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>`, and the waypoint the login reaches the board through: its `Gateway` and parameters `ConfigMap` `planboard-waypoint`, the `ServiceEntry` and `DestinationRule` `planboard-shim` and the `TrafficExtension` `planboard-waypoint`, in the claim's namespace, with the waypoint's `RequestAuthentication` and `AuthorizationPolicy` `planboard` in the claim's own directory (The board's hostname and The board's login, below); and the agent, on kagent's Claude harness: the `Harness` `claude`, the `ModelConfig`, `AgentTemplate` and `Agent` `<claim>-planning` and `<claim>-planning-test`, the `EgressPolicy` `github` and a placeholder `WorkerPool` `gvisor` in the claim's namespace, and the `WorkerPool` `gvisor-<claim>` in `ate-workers` that its actors run on (The agent, below) |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -3132,10 +3132,13 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   with them, and the router admits it by
   `spiffe://cluster.local/ns/kagent/sa/kagent-controller`. The namespace
   carries `ate.dev/api-access: "true"`, which the API server's NetworkPolicy
-  admits. kagent creates its atespace, `kagent`, itself, on its first agent
-  or sandbox, and writes each actor's egress policy itself, through the API,
-  from the agent's model and `EgressPolicy` references: the model's origin
-  with its key as an `ate-secret://k8s.io/default/kagent/<secret>/<key>`
+  admits. An agent's actors are in the atespace of the agent's namespace.
+  kagent creates its own, `kagent`, itself, on its first agent or sandbox; a
+  bound claim's is the claim's, which `project-<claim>` makes, and kagent uses
+  it as it is, being among the API server's bootstrap owners (The agent,
+  below). It writes each actor's egress policy itself, through the API, from
+  the agent's model and `EgressPolicy` references: the model's origin with
+  its key as an `ate-secret://k8s.io/default/<namespace>/<secret>/<key>`
   reference, and the controller's URL with an actor JWT. The platform writes
   no egress policy. The credential provider resolves the reference through
   the `Role` `k8s-credential-provider-model-keys` here, which lets it get
@@ -3176,7 +3179,12 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   SSO session lasts. `reverse-proxy` is off. The ingress Gateway passes a
   client's `X-Forwarded-*` headers through, and with `reverse-proxy`
   oauth2-proxy matches its skip-auth rules against `X-Forwarded-Uri`, so a
-  request claiming `/login` would skip the login.
+  request claiming `/login` would skip the login. On a cluster where a
+  binding runs an agent (`Kagent.claims` in `components/kagent.cue`),
+  `--allowed-group` admits `/platform/owners` and those claims' owner and
+  editor groups alone, so a claim's viewer, or a user of the realm in no
+  group, is refused at the login (The agent, below); elsewhere any user of
+  the realm may log in.
 - **Isolation.** The controller accepts any well-formed token it is handed,
   so the network keeps everyone but the proxy out. The namespace is not in
   the mesh, and each pod's NetworkPolicy admits only the hop before it: the
@@ -3184,11 +3192,14 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   oauth2-proxy, the ingress Gateway's pods; the tool server, the controller
   and the egress gateway. Anyone who may port-forward or exec into `kagent`
   bypasses this.
-- **The controller's RBAC** is `Role`s in `kagent` alone (the chart's
-  `rbac.namespaces`), and it watches only `kagent`: whoever reaches it acts
+- **The controller's RBAC** is `Role`s in `kagent` and in the namespace of
+  each claim a binding runs an agent for (the chart's `rbac.namespaces`,
+  `Kagent.claims`), and it watches those alone: whoever reaches it acts
   with its rights, so the chart's `ClusterRole`s, which read and write
-  Secrets and ConfigMaps in every namespace, would be theirs. Agents, Harnesses, ModelConfigs, Secrets and the placeholder pool
-  are all in `kagent`. The tool server's subchart is not scoped: its
+  Secrets and ConfigMaps in every namespace, would be theirs. The platform's
+  Agents, Harnesses, ModelConfigs, Secrets and placeholder pool are in
+  `kagent`, and a claim's in the claim's namespace; on a cluster with no such
+  binding the list is `kagent` alone. The tool server's subchart is not scoped: its
   read-only role covers the cluster, so agents can read it.
 - **Exposure.** `kagent.treasury.bank.internal` is under the Gateway's
   wildcard. The `HTTPRoute` `kagent` sends every path to oauth2-proxy on 4180,
@@ -3234,6 +3245,13 @@ same name and sandbox class, `replicas: 0`, and no `kagent.dev` labels.
 `kagent` enforces baseline Pod Security, which refuses a worker pod, so the
 placeholder cannot run one even if scaled up. ate-controller still makes its
 worker `Deployment`, at 0, and an unused `ateworker` ServiceAccount.
+
+A label has one value, so the platform's pool serves the `kagent` namespace
+alone. A claim with an agent gets a pool of its own beside it,
+`ate-workers/gvisor-<claim>`, labeled for the claim's namespace, and a
+placeholder `gvisor` in that namespace, both from its binding (The agent,
+below). Every pool reads one spec, `Substrate.workerPool.spec`
+(`substrate.cue`).
 
 A Harness for the platform pool, with snapshots in RustFS's `substrate`
 bucket:
@@ -4609,7 +4627,8 @@ answers 504 to a request still waiting after ten seconds, and the next one finds
 it awake. A new template boots cold, keeping `/data`; a suspended actor does not
 sync until something wakes it.
 
-The owner does one thing by hand, with the admin their claim gives them: make a
+For the board the owner does one thing by hand, with the admin their claim gives
+them, and the agent a second (The agent, below): make a
 fine-grained personal access token on the planning repository, with contents
 read and write, and put it in the claim's namespace. The credential never enters
 the sandbox: both images send a placeholder `Authorization`, and the egress
@@ -4906,6 +4925,113 @@ A viewer's token, where the claim has a viewer, gets 200 on `$board/` and
 for a `<P>` the binding does not list, on the same with a listed `<P>` named only
 in a client's own `x-planboard-project` header, and on
 `-X POST $board/api/agent/turn`.
+
+### The agent
+
+A binding of `planboard` also runs the claim's planning agent, R.I. Pienaar's
+Planboard agent on kagent's Claude harness, which people chat with in kagent's
+UI at `https://kagent.<domain>`. It writes to the planning repository the board
+serves. `product-planboard-<claim>` renders it in the claim's namespace, in the
+`platform` bucket, which Argo CD renders and heals, so neither `kubectl` nor
+Argo CD lets the owner point it at another image, model or pool; kagent's API
+still lets anyone it admits create objects of their own there (below):
+
+| Object | Name | What it is |
+| --- | --- | --- |
+| `Harness` | `claude` | The Claude harness, with the claim's `planboard-agent` image by digest: kagent's `claude-harness` with `planboard` copied in (Building the Planboard images, below). Its `env` is the agent's git and Planboard identity, `<claim> planning agent` and `planboard-agent@<claim>.<domain>`, as `PLANBOARD_USER` and git's author and committer, and the binding's repository, as `REPO_URL`, `REPO_REF` and `PLANBOARD_ROOT=/data/workspace/repo<path>`. `workerPoolRef` `gvisor`, and snapshots under `s3://substrate/<claim>/` |
+| `ModelConfig` | `<claim>-planning`, `<claim>-planning-test` | Anthropic, `claude-sonnet-5-5` and `claude-haiku-5-5`, the newest of each the API listed when pinned, with the key from the owner's `planboard-anthropic` |
+| `AgentTemplate` | `<claim>-planning`, `<claim>-planning-test` | One per model, since the model is the template's. The `planboard` plugin from the claim's `planboard-plugin` image by digest, and the system prompt (`AgentPrompt` in `components/product-planboard/product-planboard.cue`) |
+| `Agent` | `<claim>-planning`, `<claim>-planning-test` | Each template on `claude`, with the `EgressPolicy` `github`. Sonnet is the agent people plan with; Haiku is for every test |
+| `EgressPolicy` | `github` | `https://github.com:443`, with `Authorization` replaced by `Basic ` and the owner's `planboard-git`, as the board's own egress does |
+| `WorkerPool` | `gvisor`, in `<claim>` | A placeholder, for the controller to read the sandbox class from: no workers and no `kagent.dev` labels, as `kagent/gvisor` is (Agents and the worker pool, under kagent, above) |
+| `WorkerPool` | `gvisor-<claim>`, in `ate-workers` | The workers the agent's actors run on: the platform pool's spec, labeled `kagent.dev/worker-pool-name: gvisor` and `kagent.dev/worker-pool-namespace: <claim>` |
+
+kagent runs an agent's actors in the atespace of the agent's namespace, here the
+claim's, which `project-<claim>` makes; the controller only reads an atespace,
+and may write in it as one of the API server's bootstrap owners. It places them
+by two labels, the `Harness`'s pool name and its namespace, which Substrate
+matches against every worker in the cluster. The platform's pool carries
+`kagent`'s namespace, and a label has one value, so each claim gets a pool of
+its own, `gvisor-<claim>`, which also keeps one claim's agent sessions off
+another's workers; an actor whose template names no workers, such as a board,
+can still land on any pool's. It costs three more worker pods per claim with an
+agent, on the same nodes as the platform's, each of which reports the whole node
+as its capacity.
+
+Every session is a fresh actor, with `/data/workspace` its working directory.
+The system prompt is kagent's one lever on the agent, which it passes to
+Claude Code as `--append-system-prompt-file`. It has the agent clone the
+repository into `/data/workspace/repo` on its first turn; pull with rebase
+before every write, with `--autostash`, since a round makes several writes
+before its commit; take any planning request as the `planboard` skill's,
+without waiting for `/planboard`; commit and push after every interview round
+and after the items are written, which overrides the skill's rule that the user
+commits; put each question's number and name into the question's text, since
+kagent's UI shows only the question and its options' labels; ask who it is
+talking to and attribute quotes to that name, since `PLANBOARD_USER` names the
+agent; and skip web fetches, since its egress is `github.com` alone, beside the
+model and the controller. The harness runs Claude Code with permissions
+skipped, and pauses only for `AskUserQuestion` and MCP servers marked
+`requireApproval`, of which it has none, so the agent's writes are its
+commits. git trusts the egress gateway through `GIT_SSL_CAINFO`, which kagent
+itself sets on every actor to the bundle it mounts at
+`/run/kagent/egress/trust-bundle.pem`, and refuses from a `Harness`.
+
+The model key is the claim's own, in a second Secret the owner makes by hand,
+`planboard-anthropic`, key `ANTHROPIC_API_KEY`. A key shared from the platform
+was ruled out: the credential provider authorizes a reference by atespace and
+namespace, never by destination, so the claim's owner could send it anywhere.
+The credential provider's `Role` `k8s-credential-provider-planboard` already
+names it. With the key in `$KEY`:
+
+```sh
+kubectl -n $claim create secret generic planboard-anthropic \
+  --from-literal=ANTHROPIC_API_KEY="$KEY"
+```
+
+Like `planboard-git`, it is not in git and `cmd/state` does not carry it. Until
+it exists each `ModelConfig`'s `ResolvedRefs` is False, and so is each
+`Agent`'s `Ready`.
+
+kagent's values follow the bindings (`Kagent.claims` and
+`Kagent.allowedGroups` in `components/kagent.cue`): `rbac.namespaces` gains each
+claim with an agent on the cluster, so the controller watches its namespace and
+holds `Role`s there, and oauth2-proxy's `--allowed-group` becomes
+`/platform/owners` and those claims' owner and editor groups, full paths, as
+the ID token's `groups` claim carries them. oauth2-proxy checks them on its
+callback and on every request with a session, the bearer ID tokens
+`skip-jwt-bearer-tokens` admits included, so a viewer, or a user of the realm
+in no group, is refused at kagent's login: editors drive the agent, viewers
+only read the board. A claim with no agent on the cluster is in neither. On
+a cluster with no binding nothing changes, and `treasury` renders as before.
+kagent has no authorizer for users (`NoopAuthorizer`), so whoever is admitted
+may chat with every agent in every watched namespace, and through its API, in
+a watched claim's namespace: point a `ModelConfig` at that claim's Secrets with a
+base URL of their own; overwrite any Secret there through a `ModelConfig`'s key,
+since the chart's management Role lets the controller write Secrets; and create
+`Harness`es and `EgressPolicy`s of their own. With one bound claim those are
+people who already use both Secrets, and an editor gains write on the claim's
+Secrets; a second bound claim makes it cross-tenant. It is high-priority
+security tech debt in the planning board
+(`security-a-kagent-user-can-send-a-bound-claims-secrets-to`), which
+`a-group-to-namespace-authorizer-for-kagent` closes; until then no second binding
+of a product that runs kagent merges.
+
+To check it, once the owner has made both Secrets:
+
+```sh
+kubectl -n $claim get agents                       # both READY True
+kubectl -n $claim get modelconfig,harness,agenttemplate,egresspolicy,workerpool
+kubectl -n ate-workers get workerpool gvisor-$claim   # 3 ready, RESOLVED True
+kubectl ate get actor-templates -a $claim          # <claim>-planning-<12 hex> and <claim>-planning-test-<12 hex>, beside the board's
+```
+
+Then a session: log in to `https://kagent.<domain>` as a member of the claim's
+owner or editor group, open `<claim>-planning-test`, and ask it to clone the
+repository and run `planboard api version`. It answers with the version, and
+`kubectl ate get actors -a $claim` shows its actor `RUNNING`, whose
+`workerAssignment` in `-o yaml` names the pool `gvisor-<claim>`. A viewer of the claim, such as `morgan` on cartography,
+gets oauth2-proxy's 403 after Keycloak's login.
 
 ### Editing a bound claim's policy live
 

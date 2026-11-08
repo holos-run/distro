@@ -22,6 +22,7 @@ data:
       namespace: kagent
       watchNamespaces:
       - kagent
+      - splunk
     logging:
       level: info
     metrics:

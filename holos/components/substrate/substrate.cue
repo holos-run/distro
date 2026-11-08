@@ -103,12 +103,13 @@ let DSN = {
 }
 
 // RustFS is the snapshot store: rustfs-svc in rustfs (components/rustfs),
-// its bucket substrate and the keys its Job registers for it. The bucket is
-// the snapshot location's host; the plugins ignore its scheme on S3.
+// its bucket substrate (Substrate.snapshots) and the keys its Job registers
+// for it. The bucket is the snapshot location's host; the plugins ignore its
+// scheme on S3.
 let RustFS = {
 	namespace: "rustfs"
 	endpoint:  "http://rustfs-svc.\(namespace).svc:9000"
-	bucket:    "substrate"
+	bucket:    S.snapshots.bucket
 	keys:      "rustfs-\(bucket)"
 }
 
@@ -160,7 +161,7 @@ let EnvVars = {
 	ATE_API_POSTGRES_OWNER_ROLE:               Roles.owner.role
 	ATE_API_ACTOR_JWT_ISSUER:                  S.issuer
 	ATE_API_SNAPSHOT_TRANSFER_SERVICE_ACCOUNT: ""
-	ATE_API_SNAPSHOT_LOCATION:                 "s3://\(RustFS.bucket)/"
+	ATE_API_SNAPSHOT_LOCATION:                 S.snapshots.location
 }
 
 // DSNs is the template of ate-api-server-secret-envvars, the keys ateapi
@@ -937,7 +938,11 @@ _Resources: #Resources & {
 	// whose namespace is kagent's, the agents', not the pool's. kagent also
 	// reads the class from a WorkerPool of the same name in its own
 	// namespace, so the kagent component renders a placeholder there with
-	// no workers (components/kagent).
+	// no workers (components/kagent). A label has one value, so this pool
+	// serves kagent's namespace alone: each claim kagent runs agents for has
+	// a pool of its own beside it, gvisor-<claim>, with this spec
+	// (Substrate.workerPool.spec), which the claim's binding renders
+	// (components/product-planboard).
 	Namespace: (Pool.namespace): metadata: labels: "pod-security.kubernetes.io/enforce": "privileged"
 	WorkerPool: (Pool.name): {
 		metadata: {
@@ -947,12 +952,7 @@ _Resources: #Resources & {
 				"kagent.dev/worker-pool-name":      Pool.name
 			}
 		}
-		spec: {
-			replicas:    3
-			workerImage: S.images["ateworker-gvisor"]
-			sandboxClasses: [{name: Pool.sandboxClass}]
-			template: nodeSelector: "holos.run/nodepool": "general"
-		}
+		spec: Pool.spec
 	}
 }
 
