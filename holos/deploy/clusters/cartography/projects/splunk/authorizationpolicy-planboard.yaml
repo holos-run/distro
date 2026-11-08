@@ -46,6 +46,40 @@ spec:
             - key: request.auth.claims[groups]
               values:
                 - /projects/splunk/roles/viewer
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.cartography.bank.internal/realms/default/*
+          to:
+            - operation:
+                methods:
+                    - GET
+                    - HEAD
+                paths:
+                    - /api/document
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /projects/splunk/roles/viewer
+            - key: request.headers[x-planboard-project]
+              values:
+                - Splunk_BYOC
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.cartography.bank.internal/realms/default/*
+          to:
+            - operation:
+                methods:
+                    - GET
+                    - HEAD
+                paths:
+                    - /files/Splunk_BYOC/*
+                    - /present/Splunk_BYOC/*
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /projects/splunk/roles/viewer
     targetRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway
