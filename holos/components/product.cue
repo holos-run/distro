@@ -69,13 +69,7 @@ package holos
 	project: #Resources & {
 		[_]: [_]: metadata: namespace: projectName
 
-		// What the claim's AppProject would refuse (above). Gateway,
-		// ListenerSet, TrafficExtension and ServiceEntry are not among them
-		// yet, though a product's waypoint keeps them in the platform bucket
-		// (components/product-planboard): the AppProject takes them today, and
-		// denying them there and here, while security.istio.io stays the
-		// owner's, is self-heal-off-for-live-policy-edits, in the
-		// Planboard_On_Holos planning project.
+		// What the claim's AppProject would refuse (above).
 		Application?:                    _|_
 		AppProject?:                     _|_
 		Bundle?:                         _|_
@@ -97,9 +91,43 @@ package holos
 		RoleBinding?:                    _|_
 		User?:                           _|_
 
-		// holos-controller's ReferenceGrant shares the kind with the Gateway
-		// API's (#Resources), so it is told apart by version.
-		ReferenceGrant?: [_]: apiVersion: "gateway.networking.k8s.io/v1beta1"
+		// A product has a binding, so the claim is bound, and its AppProject
+		// also refuses six API groups whole (BoundBlacklist,
+		// components/project): the Gateway API, Istio's networking,
+		// extensions and telemetry groups, ate.dev and argoproj.io, whose
+		// Application and AppProject are above. Resources are keyed by kind
+		// alone, so these are every kind the platform's CRDs define in those
+		// groups but ate.dev's two cluster-scoped ones, which no namespace can
+		// hold, and a kind a later release adds is to be added here. What a
+		// product needs of them, such as a waypoint's Gateway or a route, goes
+		// in the platform bucket (components/product-planboard). security.istio.io
+		// stays the owner's. Gateway is a kind in both the Gateway API and
+		// Istio, and ReferenceGrant in both the Gateway API and
+		// holos-controller's security.holos.run, which the AppProject refuses
+		// too, so neither has a group left that the owner may sync.
+		BackendTLSPolicy?: _|_
+		GatewayClass?:     _|_
+		Gateway?:          _|_
+		GRPCRoute?:        _|_
+		HTTPRoute?:        _|_
+		ListenerSet?:      _|_
+		ReferenceGrant?:   _|_
+		TCPRoute?:         _|_
+		TLSRoute?:         _|_
+		UDPRoute?:         _|_
+		DestinationRule?:  _|_
+		EnvoyFilter?:      _|_
+		ProxyConfig?:      _|_
+		ServiceEntry?:     _|_
+		Sidecar?:          _|_
+		VirtualService?:   _|_
+		WorkloadEntry?:    _|_
+		WorkloadGroup?:    _|_
+		TrafficExtension?: _|_
+		WasmPlugin?:       _|_
+		Telemetry?:        _|_
+		WorkerPool?:       _|_
+		ApplicationSet?:   _|_
 
 		ConfigMap?: [_]: metadata: name: !="project"
 	}

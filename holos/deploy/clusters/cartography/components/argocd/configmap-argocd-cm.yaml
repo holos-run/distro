@@ -5,6 +5,7 @@ data:
   application.resourceTrackingMethod: annotation
   application.sync.impersonation.enabled: "false"
   exec.enabled: "false"
+  helm.valuesFileSchemes: ""
   oidc.config: |
     name: Keycloak
     issuer: https://keycloak.cartography.bank.internal/realms/default

@@ -3787,7 +3787,12 @@ Q66), and on any other cluster it renders nothing:
   bucket (Products and bindings, below). Every render removes `deploy/clusters` first, so a file
   added there by hand is gone at the next render and fails CI; a project's
   own manifests are future work, to be rendered from CUE or kept outside
-  `deploy/clusters`.
+  `deploy/clusters`. On a cluster where a binding names the claim, the
+  `AppProject` also has a role, `owner`, for the owner group (Owners in Argo
+  CD, below), and refuses six API groups whole: the Gateway API
+  (`gateway.networking.k8s.io`), Istio's `networking.istio.io`,
+  `extensions.istio.io` and `telemetry.istio.io`, Substrate's `ate.dev` and
+  Argo CD's `argoproj.io`.
 - **The platform authenticator**: the owners' usernames and the owner group join
   `PlatformAuthenticator.users` and `.groups` on that cluster, so the
   authenticator forwards the group and may impersonate the owners. The
@@ -3835,6 +3840,118 @@ editor and viewer groups, whose members have Quay, and what a binding opens to
 them, and nothing else of the project. `projects/` holds four claims: `payments`, `ledger`
 and `checkout`, each selecting `treasury`, and `splunk`, selecting
 `cartography`.
+
+**Owners in Argo CD.** Where a binding names the claim, its owners log in to
+Argo CD through Keycloak (Logging in, below) and work on the claim's own
+`Application`, `<name>`, and on nothing else. The `AppProject` `<name>` has a
+role, `owner`, whose `groups` is the owner group,
+`/projects/<name>/roles/owner`, the full path the groups claim carries. Its
+policies, each on `<name>/*`, let an owner:
+
+- see the `Application` and what it manages, and its diff;
+- sync it;
+- change it, such as its sync policy or its source, by editing its YAML
+  (the `Application`'s page, **Details**, **Edit**), `argocd app set` or
+  `argocd app patch`. The **Parameters** panel, and the source panel that
+  reads the repository, answer 403: they call `GetAppDetails`, which checks
+  `repositories, get` on the repository, a global one that a project role
+  cannot grant;
+- run a resource action, such as restarting a `Deployment`;
+- read its pods' logs.
+
+Argo CD gives every project role `get` on its own `AppProject`, so an owner
+can read `<name>`'s too. An owner cannot delete the `Application`, create one,
+sync it from local manifests (`override`), open a terminal (`exec`), or change
+a resource it manages from Argo CD: Argo CD 3 checks that as an `update` of
+the resource itself, which no role here grants. The platform's
+`Applications` for the claim, `project-<name>` and `product-<product>-<name>`,
+are in the `platform` `AppProject`, where the owner has no role, so they do
+not see them. The role is in the `AppProject` and not in `policy.csv`: Argo
+CD loads a project role's policies only for that project's objects, so the
+role grants nothing outside `<name>`, and it goes with the claim. Argo CD
+checks the policy strings themselves only when a project is changed through
+its API, not when the `AppProject` is synced, so the render is what keeps them
+right.
+
+`project-<name>`, which renders the `Application`, self-heals with a
+server-side apply. That puts back, within minutes, every field the render
+sets, such as `selfHeal: true`, so turning self-heal off does not last yet:
+that is the next piece of work (`self-heal-off-for-live-policy-edits` in the
+planning board). It does not remove a field the owner adds that the render
+does not set: the field belongs to the `argocd-server` field manager, and the
+server-side diff does not see it. Three such fields matter:
+
+- `spec.sources`, which Argo CD uses instead of `spec.source` when both are
+  set, so an owner can repoint the `Application` for good;
+- `spec.syncPolicy.automated.enabled: false`, which turns automated sync off
+  while `selfHeal` stays `true`;
+- `metadata.finalizers`, such as `resources-finalizer.argocd.argoproj.io`, with
+  which deleting the `Application` also deletes what it synced.
+
+Such a change stays until someone removes it or the cluster is rebuilt. A
+platform owner, with `kubectl` as `/platform/owners`, restores the
+`Application` by removing the field with `kubectl -n argocd edit application
+<name>`, or by deleting it, `kubectl -n argocd delete application <name>`,
+and letting `project-<name>` sync it again from the render. The render's
+`Application` has no finalizer, so deleting it leaves what it synced; check
+`metadata.finalizers` first, since with the resources finalizer an owner added
+the delete cascades to everything in `<name>` it synced.
+
+`update` lets an owner point the `Application` at another path in this
+repository, at another signed commit, with Helm parameters or Kustomize
+patches of their own: a vendored chart, say, with only the objects they
+choose. So the `AppProject` is what bounds it: this repository, commits signed
+with the platform's keys, the namespace `<name>`, no cluster-scoped kind, and
+none of the kinds it refuses. On a bound claim it refuses six API groups
+whole, since their objects act beyond the namespace or beyond what the
+owner's `admin` there allows:
+
+- **The Gateway API.** The ingress Gateway's HTTPS listener, `*.<domain>`,
+  admits routes from every namespace, so an `HTTPRoute` in `<name>` could take
+  a path on any platform hostname, `argocd` and `keycloak` among them. A
+  `Gateway` or `ListenerSet` there would be the owner's own proxy or listener.
+- **Istio's `networking.istio.io`.** A `ServiceEntry`, `VirtualService` or
+  `DestinationRule` is exported to every namespace unless it says otherwise,
+  so it changes how the whole mesh reaches a host; a `Gateway`, `Sidecar`,
+  `EnvoyFilter` or `WorkloadEntry` programs proxies or adds endpoints.
+- **Istio's `extensions.istio.io`.** A `TrafficExtension` or `WasmPlugin` runs
+  code in the proxies it selects, the binding's waypoint among them.
+- **Istio's `telemetry.istio.io`.** A `Telemetry` changes what those proxies
+  record and report.
+- **Substrate's `ate.dev`.** Substrate's controller reconciles a `WorkerPool` in
+  any namespace into a `Deployment` of workers that run as root with
+  `SYS_ADMIN` and `NET_ADMIN`, seccomp `Unconfined` and a `hostPath`; only the
+  cluster's default Pod Security level, `baseline`, stops those pods in
+  `<name>`.
+- **Argo CD's `argoproj.io`.** An `Application`, `ApplicationSet` or
+  `AppProject` is the platform's to make.
+
+A whole group, so a kind a later release adds is refused too. What a product
+needs of these groups, such as its waypoint and its `HTTPRoute`, is the
+platform's, in the binding's `product-<product>-<name>`, and a product's
+`project` bucket refuses them at the render (Products and bindings, below).
+This is wider than `self-heal-off-for-live-policy-edits` planned: it kept
+`HTTPRoute` on the premise that an owner attaches only to their own listener,
+which the shared listener's `allowedRoutes` `from: All` breaks.
+`security.istio.io` stays: the `AuthorizationPolicy` and
+`RequestAuthentication` a bound product leaves in the claim's directory are
+what an owner is meant to edit. That reaches further than those two. Through
+Argo CD an owner can change any `AuthorizationPolicy` in `<name>`, the
+platform's included, such as `planboard-waypoint` and `planboard-oauth2-proxy`
+from `product-planboard-<name>`, by syncing an object of the same name, or
+open what they refuse by adding an `ALLOW` policy. That they have no `kubectl`
+access to these kinds does not stop it. The effect stays inside the owner's
+own product: the Substrate shim's own rule for the board, in `substrate-shim`,
+still admits only the claim's groups and `/platform/owners`.
+
+On a cluster with a binding, Argo CD also refuses a Helm value file named by
+URL: `argocd-cm` sets `helm.valuesFileSchemes` to `""`, which allows no scheme.
+Otherwise an owner could point the `Application` at a vendored chart with a
+value file at an `http://` address, and the repo server, which has no egress
+rule, would fetch unsigned content from it, past the signed commits the
+`AppProject` requires.
+
+A claim with no binding has no role, so its owners see nothing in Argo CD.
 
 ### Adding a project
 
@@ -4001,7 +4118,9 @@ have editors push to those.
   is dropped from what is forwarded, so they have nothing in `<name>`. A change
   that binds one of these groups adds it to `#ProjectOwnerGroupClaims` too.
 - **Argo CD.** `policy.csv` names `/platform/owners` alone, `policy.default` is
-  empty and the project's `AppProject` has no roles, so they see nothing there.
+  empty, and the project's `AppProject` has one role at most, on a bound claim,
+  whose group is the owner group (Owners in Argo CD, above), so they see
+  nothing there.
 - **Substrate.** The atespace's `AuthorizationPolicy` admits the owner group and
   `/platform/owners`, and its access policy binds `<name>/ate-client` alone.
 
@@ -4655,8 +4774,12 @@ The `RequestAuthentication` and `AuthorizationPolicy` are in the claim's own
 directory, `deploy/clusters/<cluster>/projects/<claim>`, synced by the claim's own
 `Application`, because they are what the owner may come to edit live: with
 self-heal off on that `Application` an edit stays, and with it on again Argo CD
-returns the policy to the render. The access to do that is not built yet
-(`self-heal-off-for-live-policy-edits` in the planning board). The waypoint's
+returns the policy to the render. An owner may change that `Application` in
+Argo CD (Owners in Argo CD, above), but `project-<claim>` puts `selfHeal` back
+within minutes, and the owner has no `kubectl` access to the policy. They can
+still change it through Argo CD, by changing what the `Application` syncs.
+The procedure is not built yet (`self-heal-off-for-live-policy-edits` in the
+planning board). The waypoint's
 `Gateway` and its parameters `ConfigMap`, the `ServiceEntry`, the
 `DestinationRule` and the `TrafficExtension` decide where the board's traffic goes,
 what it is checked against and what the policy reads, so they are the platform's,
@@ -5219,8 +5342,10 @@ the realm's issuer, the public client `argocd` with PKCE and the scopes
 checks Keycloak's certificate against the private root without it being in
 git: it mounts the namespace's `private-ca` ConfigMap and adds it to Go's
 system trust with `SSL_CERT_DIR`, so `oidc.config` has no `rootCA`. Groups are
-matched by full path, leading slash included. Nobody else from Keycloak gets a
-role.
+matched by full path, leading slash included. The one other role is a bound
+claim's `owner`, in the claim's `AppProject`, which its owner group logs in to
+the same way and which reaches the claim's own `Application` alone (Owners in
+Argo CD, above). Nobody else from Keycloak gets a role.
 
 That member is the realm's one user, `jeff` (`jeff@bank.internal`), imported
 with the realm and put in `/platform/owners` by the platform controller (The realm,
