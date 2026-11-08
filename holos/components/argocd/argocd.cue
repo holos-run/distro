@@ -1,6 +1,7 @@
 package holos
 
 import (
+	"encoding/json"
 	"encoding/yaml"
 	"strings"
 )
@@ -379,4 +380,20 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	}
 
 	resources: Namespace: (ArgoCD.namespace): _
+
+	// No Helm value file from a URL, on a cluster with a binding. There a
+	// bound claim's owner may change their claim's Application
+	// (components/project), and so name a value file by URL, which the repo
+	// server would fetch, unsigned, from any address it reaches, past the
+	// signed commits the claim's AppProject requires. helm.valuesFileSchemes
+	// lists the schemes allowed, http and https when the key is missing; an
+	// empty value allows none, so a value file must be a path in the
+	// repository. The chart drops an empty value from configs.cm, so the key
+	// is a patch. Only there, so a cluster with no binding renders as it did.
+	if len(clusterBindings[Cluster.name]) > 0 {
+		patches: [{
+			target: {version: "v1", kind: "ConfigMap", name: "argocd-cm"}
+			patch: json.Marshal([{op: "add", path: "/data/helm.valuesFileSchemes", value: ""}])
+		}]
+	}
 }).artifact]

@@ -23,9 +23,32 @@ spec:
           kind: '*'
         - group: security.holos.run
           kind: '*'
+        - group: gateway.networking.k8s.io
+          kind: '*'
+        - group: networking.istio.io
+          kind: '*'
+        - group: extensions.istio.io
+          kind: '*'
+        - group: telemetry.istio.io
+          kind: '*'
+        - group: ate.dev
+          kind: '*'
+        - group: argoproj.io
+          kind: '*'
     namespaceResourceWhitelist:
         - group: '*'
           kind: '*'
+    roles:
+        - description: The owners of the project splunk
+          groups:
+            - /projects/splunk/roles/owner
+          name: owner
+          policies:
+            - p, proj:splunk:owner, applications, get, splunk/*, allow
+            - p, proj:splunk:owner, applications, sync, splunk/*, allow
+            - p, proj:splunk:owner, applications, update, splunk/*, allow
+            - p, proj:splunk:owner, applications, action/*, splunk/*, allow
+            - p, proj:splunk:owner, logs, get, splunk/*, allow
     signatureKeys:
         - keyID: 7716CCA9F8F7BE25
         - keyID: B5690EEEBB952194

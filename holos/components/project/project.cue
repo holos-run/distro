@@ -20,7 +20,8 @@ import (
 //   - the RoleBinding that gives the owner group ownerAccess, admin by
 //     default, in the namespace, and nowhere else;
 //   - its Argo CD AppProject, confined to the namespace, and its
-//     Application, which syncs the project's own directory in deploy/;
+//     Application, which syncs the project's own directory in deploy/, and,
+//     where it is bound, a role in the AppProject for its owners;
 //   - on a cluster that names substrate and substrate-shim, its Substrate
 //     atespace, named for it, and the atespace's route through the Substrate
 //     shim, https://<actor>.<project>.ate.<domain> (Atespace, below);
@@ -142,6 +143,40 @@ let Zone = IG.claimed[NAME]
 // renders as it did (Second_Cluster Q6).
 let Bound = len([for B in clusterBindings[Cluster.name] if B.project == NAME {B}]) > 0
 let KeycloakKinds = ["Group", "User", "GroupMembership", if Bound {"Client"}]
+
+// OwnerPolicies are what the owner role on a bound claim's AppProject may do
+// to the claim's Applications (AppProject, below), each on <claim>/*: see them,
+// sync them, change them, which is how an owner is to turn self-heal off and
+// on (project-<claim>'s server-side self-heal puts back the fields this render
+// sets, selfHeal among them, until self-heal-off-for-live-policy-edits, in the
+// planning board; a field the owner adds and the render does not set, such as
+// spec.sources or metadata.finalizers, stays, README.md, Owners in Argo CD),
+// run their resources' actions, such as a Deployment's restart, and read their
+// pods' logs. Not delete, create or override, and nothing on exec. update is
+// the Application alone: Argo CD 3 checks a change to a resource it manages as
+// update/<group>/<kind>/<namespace>/<name>, which nothing here grants, since
+// server.rbac.disableApplicationFineGrainedRBACInheritance is left at its
+// default, true. Argo CD adds get on the AppProject itself to every role.
+let OwnerPolicies = [
+	{resource: "applications", action: "get"},
+	{resource: "applications", action: "sync"},
+	{resource: "applications", action: "update"},
+	{resource: "applications", action: "action/*"},
+	{resource: "logs", action: "get"},
+]
+
+// BoundBlacklist are the API groups a bound claim's AppProject refuses whole,
+// beside the kinds every claim's refuses (AppProject, below): the Gateway API,
+// Istio's networking, extensions and telemetry groups, Substrate's ate.dev and
+// Argo CD's argoproj.io. security.istio.io is not among them.
+let BoundBlacklist = [
+	{group: "gateway.networking.k8s.io", kind: "*"},
+	{group: "networking.istio.io", kind: "*"},
+	{group: "extensions.istio.io", kind: "*"},
+	{group: "telemetry.istio.io", kind: "*"},
+	{group: "ate.dev", kind: "*"},
+	{group: "argoproj.io", kind: "*"},
+]
 
 // ProjectClient is the ServiceAccount the claim makes in its namespace, the
 // one principal of the atespace's access policy. A token for it owns this
@@ -645,6 +680,74 @@ if ProjectName != "" {holos: spec: artifacts: [
 			//     and an Organization here is reconciled with the platform's
 			//     Quay credential.
 			//
+			// Where the claim is bound, the owner group also has a role here,
+			// owner, so an owner can work on the claim's Application in Argo
+			// CD (OwnerPolicies, below). The role's groups field maps the group
+			// to it, not a line in the argocd component's policy.csv: Argo CD
+			// loads a project role's policies only for this AppProject's own
+			// objects, so the role can grant nothing beyond the claim's
+			// Applications, and removing the claim removes the grant with it.
+			// Argo CD checks the policy strings only when a project changes
+			// through its API, not when this is synced, so OwnerPolicies must
+			// be right as rendered.
+			// The group is the full path the groups claim carries, as the
+			// RoleBinding's subject is, since Argo CD compares the two as
+			// strings.
+			//
+			// update lets the owner point the Application at any path in this
+			// repository, at any signed commit, with Helm parameters or
+			// Kustomize patches of their own, such as a vendored chart's with
+			// only the objects they choose, so this AppProject is all that
+			// bounds what the owner can sync: any namespaced object of a kind
+			// it allows. A Helm value file by URL would get past the signed
+			// commits, so on a cluster with a binding Argo CD allows none
+			// (components/argocd). On a bound claim this AppProject also
+			// refuses six API groups whole (BoundBlacklist), whose objects act
+			// beyond the namespace or beyond what the owner's admin there
+			// allows:
+			//
+			//   - the Gateway API: a route attaches to the ingress Gateway's
+			//     shared HTTPS listener, *.<domain>, which admits routes from
+			//     every namespace (components/ingress-gateway), so an HTTPRoute
+			//     here could take a path on any platform hostname, Argo CD's
+			//     and Keycloak's among them; and a Gateway or a ListenerSet
+			//     here would be a proxy or a listener of the owner's;
+			//   - Istio's networking group: a ServiceEntry, VirtualService or
+			//     DestinationRule is exported to every namespace unless it says
+			//     otherwise, so it would change where, and how, the whole mesh
+			//     sends a host; a Gateway, Sidecar, EnvoyFilter or WorkloadEntry
+			//     programs proxies or adds endpoints;
+			//   - Istio's extensions group, TrafficExtension and WasmPlugin,
+			//     code run in the proxies it selects, the binding's waypoint
+			//     among them, which sets the header the board's policy reads;
+			//   - Istio's telemetry group, which changes what the proxies it
+			//     selects record and report, the binding's waypoint among
+			//     them;
+			//   - Substrate's ate.dev: Substrate's controller reconciles a
+			//     WorkerPool in any namespace into a Deployment of workers
+			//     that run as root with SYS_ADMIN and NET_ADMIN, seccomp
+			//     Unconfined and a hostPath, which only the cluster's default
+			//     Pod Security level, baseline, stops in this namespace;
+			//   - Argo CD's argoproj.io: an Application, ApplicationSet or
+			//     AppProject is the platform's to make, in AppProject platform.
+			//
+			// A whole group, not a list of kinds, so a kind the next Istio or
+			// Gateway API release adds is refused too. That is wider than
+			// self-heal-off-for-live-policy-edits, in the planning board,
+			// planned: it kept HTTPRoute on the premise that an owner attaches
+			// only to their own listener, which the shared listener's
+			// allowedRoutes from All breaks. The binding's own Application, in
+			// AppProject platform, syncs what the product needs of these groups.
+			// security.istio.io stays: the AuthorizationPolicy and
+			// RequestAuthentication a bound product leaves in the claim's
+			// directory are what the owner is meant to edit. It also lets the
+			// owner replace a policy of the platform's in the namespace, such
+			// as planboard-waypoint, by syncing one of the same name, or add an
+			// ALLOW policy beside it; the Substrate shim's rule for the board
+			// still admits only the claim's groups, so the effect stays inside
+			// the owner's own product. Only where the claim is bound, so a
+			// cluster with no binding renders as it did.
+			//
 			// Wave -1, so it exists before the Application that names it.
 			AppProject: (NAME): {
 				metadata: {
@@ -666,8 +769,19 @@ if ProjectName != "" {holos: spec: artifacts: [
 						{group: "keycloak.holos.run", kind: "*"},
 						{group: "quay.holos.run", kind: "*"},
 						{group: "security.holos.run", kind: "*"},
+						if Bound for K in BoundBlacklist {K},
 					]
 					signatureKeys: [for K in ArgoCD.signingKeys {keyID: K.id}]
+					if Bound {
+						roles: [{
+							name:        "owner"
+							description: "The owners of the project \(NAME)"
+							policies: [for X in OwnerPolicies {
+								"p, proj:\(NAME):owner, \(X.resource), \(X.action), \(NAME)/*, allow"
+							}]
+							groups: [Groups.owner.claim]
+						}]
+					}
 				}
 			}
 

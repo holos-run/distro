@@ -63,11 +63,13 @@ import (
 // admits nothing stay in the platform bucket, since they decide where the
 // board's traffic goes, what it is checked against and what the policy reads,
 // and the last makes the waypoint refuse everything the owner's policy does
-// not admit, whichever Application syncs first. Denying those kinds in the
-// claim's AppProject is self-heal-off-for-live-policy-edits, in the
-// Planboard_On_Holos planning project, and not done here; until then the
-// owner, admin in the namespace, can edit them live, and self-heal on the
-// platform's Application puts them back.
+// not admit, whichever Application syncs first. The claim's AppProject refuses
+// the Gateway API and Istio's networking, extensions and telemetry groups whole
+// (BoundBlacklist, components/project), so an owner, who may change the claim's
+// Application in Argo CD, cannot sync a Gateway, a ServiceEntry, a
+// DestinationRule, a TrafficExtension or a route of their own into the
+// namespace; and self-heal on the platform's Application puts back an edit to
+// these.
 //
 // A logged-in request takes this path:
 //
