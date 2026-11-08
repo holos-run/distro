@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: GroupMembership
+metadata:
+    labels:
+        holos.run/project: splunk
+    name: splunk-roles-viewer
+    namespace: splunk
+spec:
+    groupRef:
+        name: splunk-roles-viewer
+    instanceRef:
+        name: default
+        namespace: keycloak
+    members:
+        - email: morgan@bank.internal

@@ -4,6 +4,7 @@ data:
     ownerAccess: admin
     ownerGroup: /projects/splunk/roles/owner
     owners: alex@bank.internal
+    viewers: morgan@bank.internal
 kind: ConfigMap
 metadata:
     labels:
