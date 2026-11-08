@@ -919,11 +919,15 @@ entry its cluster takes, its list in `clusterRegistry` (The stack, above):
   annotation cannot hold the Gateway API's 429KB HTTPRoute CRD. Diffs are
   server-side too (`controller.diff.server.side`), so a field another
   manager owns, such as the `caBundle` cert-manager's cainjector writes into
-  each webhook configuration, is not a difference. The one
-  `ignoreDifferences`, a registry entry's (`registry.cue`), is
+  each webhook configuration, is not a difference. There are two
+  `ignoreDifferences`. A registry entry's (`registry.cue`) is
   `keycloak-realm`'s, for the `Instance`'s `caBundle`, which its `PostSync`
   Job writes under its own field manager: the server-side diff already
-  leaves that field alone, and the entry says so where a reader looks.
+  leaves that field alone, and the entry says so where a reader looks. The
+  other is `argocd-apps`' own, on a claim's `project-<claim>` where a binding
+  names the claim: `/spec/syncPolicy/automated` of the claim's `Application`
+  `<claim>`, with `RespectIgnoreDifferences=true`, so the claim's owners can
+  turn its self-heal off and on (Editing a bound claim's policy live, below).
 - `cilium-resources` also has `SkipDryRunOnMissingResource=true`: its kinds
   exist once the Cilium operator has registered their CRDs, after `cilium`
   is synced.
@@ -1050,6 +1054,15 @@ digest, and the trust domain, `cluster.local`. A workload's mesh identity is
   `istio.io/dataplane-mode=ambient` (`Istio.ambient`). Substrate's
   namespaces stay out: their port-scoped NetworkPolicies would have to admit
   the mesh port 15008, and with it every mesh identity.
+- On a cluster with a binding, `istio-base` also renders the `ClusterRole`
+  `istio-security-admin`, labeled `rbac.authorization.k8s.io/aggregate-to-admin`,
+  which adds `AuthorizationPolicy` and `RequestAuthentication` of
+  `security.istio.io`, and no other Istio or Gateway API kind, to the built-in
+  `admin`, with the verbs `admin` holds on any other namespaced kind. A claim's
+  owner group is `admin` in its own namespace, so its owners can edit a bound
+  product's policy there with `kubectl` (Editing a bound claim's policy live,
+  below). Nothing vendored aggregates an Istio kind into `admin`, `edit` or
+  `view`, and a cluster with no binding renders no such role.
 
 istiod serves three configurations: the validator
 `istio-validator-istio-system`, `istio-base`'s `istiod-default-validator`
@@ -3777,7 +3790,9 @@ Q66), and on any other cluster it renders nothing:
 - **RBAC**: the `RoleBinding` `<name>-owners` in `<name>`, the owner group
   bound to the `admin` `ClusterRole` (`ownerAccess`), in that namespace and
   no other. Its subject is the group's full path, with the leading slash
-  the groups claim carries: the bare path matches nothing.
+  the groups claim carries: the bare path matches nothing. On a cluster with a
+  binding `admin` also covers Istio's `AuthorizationPolicy` and
+  `RequestAuthentication` (Istio, above).
 - **Argo CD**: the `AppProject` `<name>`, which may sync only from this
   repository, at signed commits, into `<name>`, no cluster-scoped kind, and
   neither RBAC nor the platform controller's kinds; and the `Application` `<name>`
@@ -3875,16 +3890,20 @@ right.
 
 `project-<name>`, which renders the `Application`, self-heals with a
 server-side apply. That puts back, within minutes, every field the render
-sets, such as `selfHeal: true`, so turning self-heal off does not last yet:
-that is the next piece of work (`self-heal-off-for-live-policy-edits` in the
-planning board). It does not remove a field the owner adds that the render
+sets but one: on a bound claim it ignores `spec.syncPolicy.automated`, the
+block Argo CD's Sync Policy panel writes, with `RespectIgnoreDifferences=true`,
+so an owner's change to auto-sync, prune or self-heal lasts, through any sync
+of `project-<name>`, until they change it back or the cluster is rebuilt,
+which renders the `Application` afresh, enforced (Editing a bound claim's
+policy live, below). It does not remove a field the owner adds that the render
 does not set: the field belongs to the `argocd-server` field manager, and the
 server-side diff does not see it. Three such fields matter:
 
 - `spec.sources`, which Argo CD uses instead of `spec.source` when both are
   set, so an owner can repoint the `Application` for good;
 - `spec.syncPolicy.automated.enabled: false`, which turns automated sync off
-  while `selfHeal` stays `true`;
+  while `selfHeal` stays `true`, and which on a bound claim is the owner's to
+  set anyway;
 - `metadata.finalizers`, such as `resources-finalizer.argocd.argoproj.io`, with
   which deleting the `Application` also deletes what it synced.
 
@@ -3935,14 +3954,17 @@ This is wider than `self-heal-off-for-live-policy-edits` planned: it kept
 which the shared listener's `allowedRoutes` `from: All` breaks.
 `security.istio.io` stays: the `AuthorizationPolicy` and
 `RequestAuthentication` a bound product leaves in the claim's directory are
-what an owner is meant to edit. That reaches further than those two. Through
-Argo CD an owner can change any `AuthorizationPolicy` in `<name>`, the
-platform's included, such as `planboard-waypoint` and `planboard-oauth2-proxy`
-from `product-planboard-<name>`, by syncing an object of the same name, or
-open what they refuse by adding an `ALLOW` policy. That they have no `kubectl`
-access to these kinds does not stop it. The effect stays inside the owner's
-own product: the Substrate shim's own rule for the board, in `substrate-shim`,
-still admits only the claim's groups and `/platform/owners`.
+what an owner is meant to edit, live with `kubectl`, since on a cluster with
+a binding `admin` covers both kinds (Istio, above), or through Argo CD. That
+reaches further than those two. An owner can change any `AuthorizationPolicy`
+in `<name>`, the platform's included, such as `planboard-waypoint` and
+`planboard-oauth2-proxy` from `product-planboard-<name>`, by syncing an object
+of the same name or by `kubectl`, or open what they refuse by adding an
+`ALLOW` policy. `product-planboard-<name>`'s self-heal puts back what its
+render sets, but `planboard-waypoint` renders no `rules`, so a rule an owner
+patches into it is no difference to Argo CD and stays. The effect stays inside
+the owner's own product: the Substrate shim's own rule for the board, in
+`substrate-shim`, still admits only the claim's groups and `/platform/owners`.
 
 On a cluster with a binding, Argo CD also refuses a Helm value file named by
 URL: `argocd-cm` sets `helm.valuesFileSchemes` to `""`, which allows no scheme.
@@ -4774,12 +4796,8 @@ The `RequestAuthentication` and `AuthorizationPolicy` are in the claim's own
 directory, `deploy/clusters/<cluster>/projects/<claim>`, synced by the claim's own
 `Application`, because they are what the owner may come to edit live: with
 self-heal off on that `Application` an edit stays, and with it on again Argo CD
-returns the policy to the render. An owner may change that `Application` in
-Argo CD (Owners in Argo CD, above), but `project-<claim>` puts `selfHeal` back
-within minutes, and the owner has no `kubectl` access to the policy. They can
-still change it through Argo CD, by changing what the `Application` syncs.
-The procedure is not built yet (`self-heal-off-for-live-policy-edits` in the
-planning board). The waypoint's
+returns the policy to the render (Editing a bound claim's policy live, below).
+The waypoint's
 `Gateway` and its parameters `ConfigMap`, the `ServiceEntry`, the
 `DestinationRule` and the `TrafficExtension` decide where the board's traffic goes,
 what it is checked against and what the policy reads, so they are the platform's,
@@ -4888,6 +4906,177 @@ A viewer's token, where the claim has a viewer, gets 200 on `$board/` and
 for a `<P>` the binding does not list, on the same with a listed `<P>` named only
 in a client's own `x-planboard-project` header, and on
 `-X POST $board/api/agent/turn`.
+
+### Editing a bound claim's policy live
+
+The policy a bound product leaves in the claim's own directory, the board's
+`AuthorizationPolicy` and `RequestAuthentication` `planboard` (The board's
+login, above), is the owner's to change, in one of two modes. Enforced is the
+default, and every claim starts in it: the claim's `Application`, `<claim>`,
+self-heals, so the policy is the render. Interactive is for working on the
+policy: the owner turns self-heal off, edits the policy live with `kubectl`,
+and turns self-heal on again when they are done, which returns the policy to
+the render. A change meant to stay goes into the binding, by pull request.
+
+Three things make it work, each only on a cluster with a binding, so a cluster
+with no binding has none of them:
+
+- the `AppProject` `<claim>`'s `owner` role, which lets the owner change the
+  `Application` `<claim>` in Argo CD (Owners in Argo CD, above);
+- `project-<claim>`, which renders that `Application`, ignores its
+  `spec.syncPolicy.automated` and syncs with `RespectIgnoreDifferences=true`,
+  so its own self-heal, and any sync of it, such as one a commit changing its
+  render starts, leave the owner's choice in place (Argo CD, above). Only `automated`: the rest of the
+  sync policy, `ServerSideApply=true` among it, stays the render's;
+- `admin`, which the owner group holds in `<claim>`, covers
+  `AuthorizationPolicy` and `RequestAuthentication` (Istio, above), so the
+  owner can change them with `kubectl` through `k8s.$domain` (Logging in with
+  kubectl, above). A claim whose `ownerAccess` is `edit` or `view` does not
+  get them.
+
+The claim's `AppProject` already refuses the rest of Istio and the Gateway API,
+and more, on a bound claim (Owners in Argo CD, above). It leaves
+`security.istio.io` whole, so an owner can sync three Istio kinds through Argo
+CD, `AuthorizationPolicy`, `RequestAuthentication` and `PeerAuthentication`,
+and change two of them with `kubectl`; `admin` does not cover
+`PeerAuthentication`.
+
+The example opens a Planboard project to the claim's viewers on cartography,
+`claim=splunk` and `domain=cartography.bank.internal`, as an owner of the
+claim, such as `alex`.
+
+1. **Self-heal off.** Log in to Argo CD at `https://argocd.$domain` through
+   Keycloak (Logging in, below), open the `Application` `<claim>`, then
+   **Details**, and in the **Sync Policy** panel uncheck **Self Heal** and
+   confirm. The panel writes `spec.syncPolicy.automated` as one block:
+   unchecking **Self Heal** leaves `{prune: true, selfHeal: false}`, and the
+   **Enable Auto-Sync** toggle writes `prune`, `selfHeal` and `enabled`. With the `argocd` CLI the same is
+   `argocd app set $claim --self-heal=false`; the owner does not need it.
+
+   Self-heal off holds an edit until the next commit on `main`, not longer.
+   Auto-sync is still on, and the edit leaves the `Application` `OutOfSync`, so
+   Argo CD syncs it to the next commit on `main` it sees, wherever in the
+   repository the commit changed, and the policy goes back to the render. To
+   hold an edit across merges, uncheck **Enable Auto-Sync** too: then nothing
+   syncs `<claim>` until it is checked again, the claim's other objects
+   included.
+
+2. **Grant.** The binding lists no Planboard project for viewers
+   (`bindings/splunk-planboard.cue`), so the policy has no project rules whose
+   header values could be changed. One patch appends the two rules the render
+   adds for a project in `values.planboard.access.viewers.projects`, character
+   for character: `/api/document` with the project in `x-planboard-project`,
+   and the project's `/files/` and `/present/`. It works the same where the
+   binding lists projects already. `P` is the Planboard project's name, of the
+   shape `^[A-Za-z0-9][A-Za-z0-9_-]*$`, since the waypoint's Lua sets the
+   header only from a name of that shape:
+
+   ```sh
+   P=<project>
+   kubectl -n $claim patch authorizationpolicy planboard --type=json -p '[
+     {"op": "add", "path": "/spec/rules/-", "value": {
+       "from": [{"source": {"requestPrincipals": ["https://keycloak.'$domain'/realms/default/*"]}}],
+       "to": [{"operation": {"methods": ["GET", "HEAD"], "paths": ["/api/document"]}}],
+       "when": [{"key": "request.auth.claims[groups]", "values": ["/projects/'$claim'/roles/viewer"]},
+         {"key": "request.headers[x-planboard-project]", "values": ["'$P'"]}]}},
+     {"op": "add", "path": "/spec/rules/-", "value": {
+       "from": [{"source": {"requestPrincipals": ["https://keycloak.'$domain'/realms/default/*"]}}],
+       "to": [{"operation": {"methods": ["GET", "HEAD"], "paths": ["/files/'$P'/*", "/present/'$P'/*"]}}],
+       "when": [{"key": "request.auth.claims[groups]", "values": ["/projects/'$claim'/roles/viewer"]}]}}
+   ]'
+   ```
+
+3. **Check.** The policy has the two rules more, the last two, and Argo CD
+   shows `<claim>` `OutOfSync`, with the two rules as the policy's diff. The
+   viewer's request runs from a pod in the claim's namespace, as in The
+   board's login, above; `$VIEWER` is a token of the board's client for a
+   member of the claim's viewer group:
+
+   ```sh
+   kubectl -n $claim get authorizationpolicy planboard \
+     -o jsonpath='{range .spec.rules[*]}{.to[*].operation.paths}{" "}{.when[*].values}{"\n"}{end}'
+   ```
+
+   A viewer of the claim, where it has one, now gets 200 on the project's
+   overview, and still 403 for any other project:
+
+   ```sh
+   kubectl -n $claim run waypoint-check --image=$curl --restart=Never --command -- sleep 3600
+   kubectl -n $claim wait --for=condition=Ready pod/waypoint-check
+   c() { kubectl -n $claim exec waypoint-check -- curl -s -o /dev/null -w '%{http_code}\n' "$@"; }
+   board=http://planboard.$claim.ate.$domain
+   c -H "Authorization: Bearer $VIEWER" "$board/api/document?project=$P&kind=overview"      # 200
+   c -H "Authorization: Bearer $VIEWER" "$board/api/document?project=<other>&kind=overview" # 403
+   kubectl -n $claim delete pod waypoint-check
+   ```
+
+4. **Self-heal on.** Check **Self Heal** again, and **Enable Auto-Sync** if it
+   was unchecked. Argo CD sees the change to the `Application` at once and
+   syncs the policy back to the render: within seconds, unless it has
+   self-healed the same commit several times in the last few minutes: the
+   first self-heal of a commit does not wait, and each after it waits 2
+   seconds, tripled for each attempt, to at most 5 minutes, counted from the
+   last sync's end (the application controller's defaults, which the platform
+   leaves alone). Where a newer commit is on `main`, turning auto-sync on syncs that
+   commit instead, and the policy is that commit's render. The `Application`
+   reads `Synced`, and the command in step 3 lists the render's rules again.
+
+5. **Keep it.** A grant meant to stay goes into the binding, by pull request,
+   and the render then has the same two rules. Add the one `values` line to
+   the binding's existing file, and change nothing else in it:
+
+   ```cue
+   // holos/bindings/splunk-planboard.cue
+   package bindings
+
+   bindings: "splunk-planboard": {
+   	project: "splunk"
+   	productRefs: [{name: "planboard"}]
+   	values: planboard: access: viewers: projects: ["<project>"]
+   }
+   ```
+
+   A file without its `package bindings` line still passes `cue vet` and
+   renders, but drops the binding: every `product-planboard-<claim>` file goes.
+
+   Render it (Render, below); the one file that changes is
+   `deploy/clusters/cartography/projects/splunk/authorizationpolicy-planboard.yaml`.
+   Once it is merged, the claim's `Application` syncs it at once, with
+   auto-sync on as step 4 leaves it.
+
+Turning self-heal on returns, of the objects the `Application` synced, every
+field the render sets. That includes the policy's `rules`, whole: Istio's CRDs
+leave a list atomic, so a rule added, changed or taken out is put back, and an
+object deleted is created again. It does not return:
+
+- a field the render does not set, such as a label or an annotation added to
+  `planboard`: it belongs to the field manager that added it, `kubectl-patch`
+  or `kubectl-edit`, and the server-side diff does not see it, as with the
+  `Application`'s own fields (Owners in Argo CD, above). `kubectl -n $claim get
+  authorizationpolicy planboard -o yaml --show-managed-fields` shows any manager
+  besides `argocd-controller` and what it holds;
+- an object made with `kubectl`, which has no tracking annotation and so is not
+  the `Application`'s to heal or prune. Delete it. `kubectl -n $claim get
+  authorizationpolicies,requestauthentications` lists the render's `planboard`,
+  and `product-planboard-<claim>`'s `planboard-waypoint` and
+  `planboard-oauth2-proxy`, and nothing else;
+- a change to one of the platform's policies in the namespace, such as a rule
+  added to `planboard-waypoint`, which renders no `rules`. Its own
+  `Application`, `product-planboard-<claim>`, puts back what its render sets,
+  within seconds, and leaves the rest (Owners in Argo CD, above);
+- anything an owner adds to the `Application` `<claim>` itself, such as an
+  `ignoreDifferences` on the policy's `rules`, after which self-heal never puts
+  the rules back though the mode reads enforced. It is the same gap as the
+  `Application`'s other added fields (Owners in Argo CD, above), and not a
+  boundary, since the owner can make policies with `kubectl` anyway.
+
+Nothing turns self-heal back on by itself: a claim left interactive stays so,
+since `project-<claim>` ignores the block, until its owner, or a platform owner,
+turns it on, or the cluster is rebuilt. A rebuild renders every claim's
+`Application` afresh, enforced, and keeps no live edit: `cmd/state` does not
+carry policies. A platform owner sees a claim's mode with
+`kubectl -n argocd get application <claim> -o jsonpath='{.spec.syncPolicy.automated}{"\n"}{.spec.ignoreDifferences}{"\n"}'`:
+enforced is `selfHeal: true` and no `ignoreDifferences`.
 
 ### Building the Planboard images
 

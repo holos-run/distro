@@ -146,13 +146,14 @@ let KeycloakKinds = ["Group", "User", "GroupMembership", if Bound {"Client"}]
 
 // OwnerPolicies are what the owner role on a bound claim's AppProject may do
 // to the claim's Applications (AppProject, below), each on <claim>/*: see them,
-// sync them, change them, which is how an owner is to turn self-heal off and
-// on (project-<claim>'s server-side self-heal puts back the fields this render
-// sets, selfHeal among them, until self-heal-off-for-live-policy-edits, in the
-// planning board; a field the owner adds and the render does not set, such as
-// spec.sources or metadata.finalizers, stays, README.md, Owners in Argo CD),
-// run their resources' actions, such as a Deployment's restart, and read their
-// pods' logs. Not delete, create or override, and nothing on exec. update is
+// sync them, change them, which is how an owner turns self-heal off and on
+// (project-<claim> leaves the Application's spec.syncPolicy.automated to the
+// owner, components/argocd-apps, OwnerSyncPolicy, and puts back with its
+// server-side self-heal every other field this render sets; a field the owner
+// adds and the render does not set, such as spec.sources or
+// metadata.finalizers, stays, README.md, Owners in Argo CD), run their
+// resources' actions, such as a Deployment's restart, and read their pods'
+// logs. Not delete, create or override, and nothing on exec. update is
 // the Application alone: Argo CD 3 checks a change to a resource it manages as
 // update/<group>/<kind>/<namespace>/<name>, which nothing here grants, since
 // server.rbac.disableApplicationFineGrainedRBACInheritance is left at its
@@ -740,7 +741,9 @@ if ProjectName != "" {holos: spec: artifacts: [
 			// AppProject platform, syncs what the product needs of these groups.
 			// security.istio.io stays: the AuthorizationPolicy and
 			// RequestAuthentication a bound product leaves in the claim's
-			// directory are what the owner is meant to edit. It also lets the
+			// directory are what the owner is meant to edit, live with kubectl
+			// while self-heal is off (components/istio-base, the ClusterRole
+			// istio-security-admin), or through Argo CD. It also lets the
 			// owner replace a policy of the platform's in the namespace, such
 			// as planboard-waypoint, by syncing one of the same name, or add an
 			// ALLOW policy beside it; the Substrate shim's rule for the board
