@@ -1,0 +1,84 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+    annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    labels:
+        app.kubernetes.io/name: atespace-setup
+        holos.run/project: lending
+    name: atespace-lending
+    namespace: ate-system
+spec:
+    activeDeadlineSeconds: 300
+    backoffLimit: 3
+    template:
+        metadata:
+            labels:
+                app.kubernetes.io/name: atespace-setup
+                holos.run/project: lending
+        spec:
+            automountServiceAccountToken: false
+            containers:
+                - command:
+                    - /bin/sh
+                    - -c
+                    - |-
+                      set -eu
+                      ATE_TOKEN=$(cat /var/run/ate/api/token)
+                      export ATE_TOKEN
+
+                      call() {
+                        status=0
+                        grpcurl -cacert /var/run/ate/api/ca.pem -max-time 30 \
+                          -expand-headers -H 'authorization: Bearer ${ATE_TOKEN}' \
+                          -d "$2" api.ate-system.svc:443 substrate.ateapi.v1.Control/"$1" || status=$?
+                        case "$status" in
+                        0) echo "$1: created" ;;
+                        70) echo "$1: already exists" ;;
+                        *) exit "$status" ;;
+                        esac
+                      }
+
+                      call CreateAtespace '{"atespace":{"metadata":{"name":"lending"}}}'
+                      call CreateAtespaceAccessPolicy '{"atespace":{"name":"lending"},"accessPolicy":{"metadata":{"name":"default"},"bindings":[{"role":"owner","members":["user:system:serviceaccount:lending:ate-client"]}]}}'
+                  image: docker.io/fullstorydev/grpcurl:v1.9.3-alpine@sha256:4614424ed58e9b9837c48b6b8eadb9ef40491d5af3499bcc8b378e9c64a9e4a9
+                  name: setup
+                  resources:
+                    limits:
+                        memory: 64Mi
+                    requests:
+                        cpu: 10m
+                        memory: 32Mi
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                        drop:
+                            - ALL
+                    readOnlyRootFilesystem: true
+                  volumeMounts:
+                    - mountPath: /var/run/ate/api
+                      name: api
+                      readOnly: true
+            restartPolicy: OnFailure
+            securityContext:
+                runAsGroup: 101
+                runAsNonRoot: true
+                runAsUser: 100
+                seccompProfile:
+                    type: RuntimeDefault
+            serviceAccountName: ate-client
+            volumes:
+                - name: api
+                  projected:
+                    sources:
+                        - serviceAccountToken:
+                            audience: api.ate-system.svc
+                            expirationSeconds: 600
+                            path: token
+                        - clusterTrustBundle:
+                            labelSelector:
+                                matchLabels:
+                                    podcert.ate.dev/canarying: live
+                            path: ca.pem
+                            signerName: servicedns.podcert.ate.dev/identity

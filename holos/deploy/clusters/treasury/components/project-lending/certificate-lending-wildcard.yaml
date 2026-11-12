@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+    labels:
+        holos.run/project: lending
+    name: lending-wildcard
+    namespace: substrate-shim
+spec:
+    dnsNames:
+        - '*.lending.ate.treasury.bank.internal'
+    issuerRef:
+        group: cert-manager.io
+        kind: ClusterIssuer
+        name: private-ca
+    privateKey:
+        algorithm: ECDSA
+        size: 256
+    secretName: lending-wildcard-tls
