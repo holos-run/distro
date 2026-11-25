@@ -2612,7 +2612,10 @@ their ten-minute progress deadline; the kubelet retries within about two
 minutes of their creation. Each command creates only what is missing, so a
 second run changes nothing. ate-setup uses `KUBECONFIG`'s current context
 (`--context` to choose), and `go run` builds it, about a minute the first
-time.
+time. `holos/vendor/substrate` is a submodule, empty in a fresh clone or
+worktree: check it out first with
+`git submodule update --init holos/vendor/substrate`, from the repository's
+root, before the ten minutes start.
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -3665,6 +3668,30 @@ go run ./providers/talos/cmd/talosvm restart -cluster "${cluster:?set cluster fi
 go run ./providers/talos/cmd/talosvm restart -cluster "${cluster:?set cluster first}"
 kubectl -n argocd get applications                                          # every one Synced and Healthy
 ```
+
+A pod that outlives its worker's reboot can come back outside the mesh. Its
+sandbox can be made before `istio-cni-node` starts and chains itself into the
+node's CNI configuration, so the pod gets its network from Cilium alone and is
+never added to the mesh. Its traffic then carries no identity, and a workload
+with an `AuthorizationPolicy` refuses it. Quay meets this, since `quay-redis`
+admits only Quay: it crash-loops on `Could not connect to Redis`, and `talosvm
+restart` waits for it until its deadline and exits 1, with the worker it stopped
+on rebooted and uncordoned. On marina, on 2026-11-25, that was the last of the
+three. Delete the pod, and its Deployment replaces it, then restart only the
+workers after the one it stopped on, with `-nodes`.
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+kubectl -n istio-system logs -l app=ztunnel --tail=-1 | grep quay-redis | grep -m1 'policy rejection'
+pod=   # the crash-looping quay pod, from: kubectl -n quay get pods
+kubectl -n istio-system logs -l k8s-app=istio-cni-node --tail=-1 | grep 'adding pod to the mesh' | grep "${pod:?}"   # nothing since the reboot
+kubectl -n quay delete pod "${pod:?}"
+kubectl -n quay rollout status deploy/quay
+```
+
+istio-cni's `failed to reconcile inpod rules` does not tell the two apart: on
+marina it named `keycloak-db-1` too, which was added to the mesh 13 seconds
+later.
 
 #### Rotation
 
