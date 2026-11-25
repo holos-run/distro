@@ -30,7 +30,8 @@ import (
 //     imperatively or what upstream does not ship: the API server's
 //     ConfigMaps, the CloudNativePG cluster and its role Job, the generated
 //     passwords and the connection strings, the copy of the RustFS keys,
-//     the WorkerPool and the NetworkPolicy additions.
+//     the WorkerPools, the microVM SandboxConfig where the cluster runs the
+//     class, and the NetworkPolicy additions.
 //  3. A Kustomize transformer applies the patches that reproduce
 //     ate-setup's render (Patches, below) and rewrites every ko:// image to
 //     ghcr.io by digest.
@@ -55,6 +56,7 @@ let S = Substrate
 let NS = S.namespace
 let DB = S.database
 let Pool = S.workerPool
+let MicroVM = S.microvm
 
 // PostgreSQLImage is the database's, which the role Job runs psql from
 // (Substrate.database.image).
@@ -969,6 +971,25 @@ _Resources: #Resources & {
 			}
 		}
 		spec: Pool.spec
+	}
+
+	// The microVM class, on a cluster whose sandboxClasses name it
+	// (Substrate.microvm), as ate-setup's applyMicroVMSandboxConfig applies it
+	// after the data plane: the class default SandboxConfig microvm, from
+	// upstream's template at the pin, whose assets atelet fetches from the
+	// asset bucket, and a pool of the class to test it on, beside the gVisor
+	// pool. The assets are staged by hand (README.md, Substrate, The microVM
+	// class); until they are, a microVM actor fails to start, and nothing else
+	// does. No kagent label: kagent runs nothing on it.
+	if MicroVM.enabled {
+		SandboxConfig: (MicroVM.sandboxConfig.metadata.name): MicroVM.sandboxConfig
+		WorkerPool: (MicroVM.workerPool.name): {
+			metadata: {
+				namespace: MicroVM.workerPool.namespace
+				labels:    MicroVM.workerPool.labels
+			}
+			spec: MicroVM.workerPool.spec
+		}
 	}
 }
 

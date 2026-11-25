@@ -46,6 +46,39 @@ data:
 
     register substrate "$SUBSTRATE_ACCESS_KEY" "$SUBSTRATE_SECRET_KEY"
     register quay "$QUAY_ACCESS_KEY" "$QUAY_SECRET_KEY"
+    register substrate-assets "$SUBSTRATE_ASSETS_ACCESS_KEY" "$SUBSTRATE_ASSETS_SECRET_KEY"
+
+    # grant_read lets the users whose access keys follow bucket $1 list and
+    # read it, and not write it, through group $1-readers and its policy
+    # $1-read, and removes every other member from the group.
+    grant_read() {
+      bucket=$1
+      shift
+      cat >"/tmp/$bucket-read.json" <<EOF
+    {
+      "Version": "2012-10-17",
+      "Statement": [{
+        "Effect": "Allow",
+        "Action": ["s3:ListBucket", "s3:GetBucketLocation", "s3:GetObject"],
+        "Resource": ["arn:aws:s3:::$bucket", "arn:aws:s3:::$bucket/*"]
+      }]
+    }
+    EOF
+      rc admin policy create rustfs "$bucket-read" "/tmp/$bucket-read.json"
+      members=$(echo "$@" | tr ' ' ',')
+      rc admin group add rustfs "$bucket-readers" --members "$members"
+      rc admin policy attach rustfs "$bucket-read" --group "$bucket-readers"
+      current=$(rc admin group info rustfs "$bucket-readers" --json | jq -er '.members[]')
+      for user in $current; do
+        case " $* " in
+          *" $user "*) ;;
+          *) rc admin group rm-members rustfs "$bucket-readers" "$user" ;;
+        esac
+      done
+      echo "granted read on $bucket"
+    }
+
+    grant_read substrate-assets "$SUBSTRATE_ACCESS_KEY"
 kind: ConfigMap
 metadata:
   name: rustfs-register

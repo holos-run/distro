@@ -1,3 +1,5 @@
+@extern(embed)
+
 package holos
 
 import "strings"
@@ -104,6 +106,59 @@ Substrate: {
 		}
 	}
 
+	// microvm is the microVM sandbox class, a Kata guest on Cloud Hypervisor,
+	// on a cluster whose sandboxClasses name it (clusters.cue). The substrate
+	// component renders its class default SandboxConfig and a pool to test it
+	// on, and rustfs its asset bucket; components/substrate.cue says whether
+	// the cluster runs it.
+	microvm: {
+		sandboxClass: "microvm"
+
+		// assets is where atelet fetches the class's four files per
+		// architecture from, through its object store plugin with the
+		// rustfs-substrate key: Cloud Hypervisor, virtiofsd, the Kata kernel
+		// and the Kata root image, each at <prefix>/<arch>/<sha256> in a
+		// bucket of their own, so that only the operator can change what a
+		// guest boots: atelet and ate-api-server hold snapshots.bucket's
+		// read-write key. (The plugin refuses only an object named like a
+		// snapshot or a tag, pkg/assetfetch/assetfetch.go, so the snapshot
+		// bucket would have served them.) rustfs gives the bucket a key that may write it,
+		// for the operator who stages the files
+		// (components/substrate/stage-microvm-assets.sh), and the
+		// rustfs-substrate key a grant to read it.
+		assets: {
+			bucket: "\(snapshots.bucket)-assets"
+			prefix: "microvm-assets"
+			// scheme is the object store plugin's backend's, which serves
+			// only its own (ate-setup's microVMBucketScheme).
+			scheme: "s3"
+		}
+
+		// workerPool is a pool of the class to test it on, in the platform
+		// pool's namespace: two workers of the fork's microVM worker image,
+		// the cluster's (components/substrate.cue). It selects the admin
+		// label the microvm nodes carry, which a node cannot set on itself,
+		// and not holos.run/nodepool. ate-controller places a microVM worker
+		// by the ate.dev/kvm resource alone, which atelet advertises on every
+		// node with /dev/kvm, the general workers too, so only this selector
+		// keeps the workers on the pool's nodes; it adds the toleration of
+		// their taint, ate.dev/sandboxClass=microvm:NoSchedule, itself. Each
+		// worker reports its whole node as its capacity, as the gVisor pool's
+		// do, so another pool on these nodes overcommits them. labels are
+		// what an ActorTemplate's workerSelector names to run on it, which
+		// Substrate matches against the pool's.
+		workerPool: {
+			namespace: Substrate.workerPool.namespace
+			name:      sandboxClass
+			labels: "holos.run/worker-pool": name
+			spec: {
+				replicas: 2
+				sandboxClasses: [{name: sandboxClass}]
+				template: nodeSelector: "node-restriction.kubernetes.io/sandbox-class": sandboxClass
+			}
+		}
+	}
+
 	// snapshots is where actors' durable snapshots are kept: RustFS's bucket
 	// substrate (components/rustfs), and location, ate-api-server's
 	// cluster-wide --snapshot-location, which the substrate component sets. A
@@ -135,3 +190,9 @@ Substrate: {
 	// workload projects: <signer, / as :>:primary-bundle.
 	trustBundles: [for S in signers {strings.Replace(S, "/", ":", 1) + ":primary-bundle"}]
 }
+
+// _microvmTemplates is upstream's microvm SandboxConfig template,
+// manifests/ate-install/sandboxconfig-microvm.yaml.tmpl, in each vendored
+// Substrate tree, by path. components/substrate.cue picks the cluster's
+// pin's. A tree whose commit has no template is not in it.
+_microvmTemplates: _ @embed(glob=vendor/substrate-*/manifests/ate-install/sandboxconfig-microvm.yaml.tmpl, type=text)

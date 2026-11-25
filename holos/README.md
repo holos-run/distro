@@ -390,7 +390,10 @@ entries have no hand step.
     even when it restored the root, since the patch went with the old nodes.
 14. *Only with `substrate`.* **The demo atespace and its actors** (Bringing
     Substrate up, under Substrate, below). Their image is copied into Quay, so
-    this comes after step 12.
+    this comes after step 12. *Only with the `microvm` class* in the
+    cluster's `sandboxClasses`, stage its assets too, once `rustfs` has synced
+    (The microVM class, under Substrate, below); a rebuild that did not
+    restore the bucket stages them again.
 15. *Only with `kagent`.* **The Anthropic key** (Adding the Anthropic key, under
     kagent, below). A rebuild skips this only if `state restore` listed
     the key as created or left as is. If it skipped the key, this step stands:
@@ -1609,6 +1612,11 @@ letters and digits each:
 - `rustfs-substrate` and `rustfs-quay`, keys `access-key` and `secret-key`,
   one per consumer. The access key is the user's name in RustFS. `substrate`
   is a consumer only on a cluster that names it.
+- `rustfs-substrate-assets`, the same two keys, on a cluster that runs
+  Substrate's microVM class (The microVM class, under Substrate, below): the
+  consumer of the bucket `substrate-assets`, whose key only the operator
+  uses, to stage the class's files from outside the cluster. Nothing in the
+  cluster copies it.
 
 Job `rustfs-register` registers them with RustFS's own client, `rc`
 (`rustfs/rc`), whose `admin` commands speak RustFS's IAM API. For each
@@ -1618,7 +1626,16 @@ that exists), attaches the policy, and removes any other user holding the
 policy. The policy allows listing the bucket, its location and its
 multipart uploads, and reading, writing and deleting its objects,
 multipart included, and nothing else: a consumer cannot set the bucket's
-policy, open it to anonymous access, or delete it. The Job mints nothing,
+policy, open it to anonymous access, or delete it. On a cluster that runs
+the microVM class, it then lets the `substrate` user read
+`substrate-assets`, since atelet fetches the class's files with
+`rustfs-substrate`: policy `substrate-assets-read`, which allows listing the
+bucket and its location and reading its objects, attached to group
+`substrate-assets-readers`, whose one member is that user. The grant is on a
+group because `rc admin policy attach` replaces a user's policies with the
+ones it names, so the user's own registration would drop it; a rotated key's
+user leaves the group when it is removed, and the Job removes any other
+member. The Job mints nothing,
 and every step converges. It is an Argo CD `PostSync` hook, so every sync
 of `rustfs` creates it once RustFS is `Healthy`; on a rebuilt cluster,
 whose keys are new, it makes users that match. Its delete policy is
@@ -2502,7 +2519,9 @@ The component is a pipeline, one artifact of four stages:
    `pkg/postgressetup/setup.sql`. Upstream's bundled PostgreSQL is not
    listed.
 2. **CUE.** A `Resources` generator makes what ate-setup creates
-   imperatively, and the platform's additions (below).
+   imperatively, and the platform's additions (below), and on a cluster that
+   runs the microVM class its SandboxConfig, from upstream's template at the
+   pin, and its pool (The microVM class, below).
 3. **Patches.** A `Kustomize` transformer reproduces ate-setup's render: the
    router's allowed SPIFFE IDs, the IdP's issuer, the API server's bootstrap
    owners and config hash, the egress gateway's credential provider flags,
@@ -2594,7 +2613,10 @@ What it runs, in `ate-system` unless named:
   `rustfs` is in the mesh and `ate-system` is not, so ztunnel takes the
   connection in plaintext. Both object store plugin sidecars, the API
   server's and atelet's, read the keys from `rustfs-substrate`, copied from
-  `rustfs` by `SecretStore` `rustfs`.
+  `rustfs` by `SecretStore` `rustfs`. On a cluster that runs the microVM
+  class, atelet reads its assets with the same key from a bucket of their
+  own, `substrate-assets`, which that key may read and not write (The microVM
+  class, below).
 - **The router.** Mutual TLS on 8443 (Service `atenet-router:443`), which
   accepts a client certificate from the pod identity signer whose SPIFFE ID
   is on `--ingress-allowed-spiffe-ids`, exactly: the Substrate shim's
@@ -2639,7 +2661,8 @@ What it runs, in `ate-system` unless named:
   anonymously. It carries `kagent.dev/worker-pool-namespace: kagent` and
   `kagent.dev/worker-pool-name: gvisor`, which kagent's generated
   ActorTemplates select on. ate-controller creates its ServiceAccount,
-  `ateworker`.
+  `ateworker`. On a cluster that runs the microVM class, `WorkerPool`
+  `microvm` is beside it (The microVM class, below).
 
 #### Bringing Substrate up
 
@@ -2720,6 +2743,8 @@ image=quay.$domain/demo/echo@$digest
 for a in echo other; do
   kubectl ate create actor-template -f - <<EOF
 metadata: {atespace: demo, name: $a}
+workerSelector:
+  matchLabels: {kagent.dev/worker-pool-name: gvisor}
 containers:
 - name: whoami
   image: $image
@@ -2733,6 +2758,161 @@ kubectl ate get actor-templates -a demo   # a GOLDEN TAG for each, within a minu
 for a in echo other; do kubectl ate create actor $a -a demo --template $a; done
 kubectl ate get actors -a demo            # both SUSPENDED until a request wakes them
 ```
+
+#### The microVM class
+
+A cluster whose `sandboxClasses` (`clusters.cue`) name `microvm` beside
+`gvisor`, marina alone, runs Substrate's second sandbox class, a Kata guest on
+Cloud Hypervisor, on nodes with `/dev/kvm` kept for it: the `microvm` pool of
+its `talosvm.json`, tainted `ate.dev/sandboxClass=microvm:NoSchedule` and
+carrying the admin label `node-restriction.kubernetes.io/sandbox-class=microvm`
+that `cluster.sh labels` sets ([A pool for one kind of
+workload](../providers/talos/README.md#a-pool-for-one-kind-of-workload)).
+`Substrate.microvm` (`substrate.cue`) names what the class takes. A cluster
+that does not name it renders none of this.
+
+- **The SandboxConfig.** `microvm`, cluster-scoped, the class default:
+  upstream's `manifests/ate-install/sandboxconfig-microvm.yaml.tmpl` at the
+  pin, which `substrate.cue` embeds, with `${BUCKET_SCHEME}` as `s3` and
+  `${ASSET_BUCKET_NAME}` as `substrate-assets`, as ate-setup applies it
+  (ATE-SETUP.md, rows 4a and 21). It names four files per architecture,
+  Cloud Hypervisor, virtiofsd, the Kata kernel and the Kata root image, each
+  at `s3://substrate-assets/microvm-assets/<arch>/<sha256>`. atelet fetches
+  them through its object store plugin with the `rustfs-substrate` key and
+  checks each digest before a worker of the class reports Ready.
+- **The bucket.** `substrate-assets` in RustFS, its own, so that only the
+  operator can change what a guest boots: atelet and ate-api-server hold the
+  `substrate` bucket's read-write key for snapshots, and assets in that bucket
+  would be theirs to overwrite. (The object store plugin refuses only an
+  object named like a snapshot or a tag, `.../atespaces/<a>/actors/<uid>/snapshots/<n>`
+  or `.../atespaces/<a>/tags/<uid>`, `pkg/assetfetch/assetfetch.go`, so the
+  same bucket would have worked.) `rustfs` registers it with a key of its own,
+  `rustfs/rustfs-substrate-assets`, which only the operator uses, and lets
+  the `rustfs-substrate` key read it and not write it (RustFS, above).
+- **The pool.** `WorkerPool` `microvm` in `ate-workers`: two workers of
+  `ateworker-microvm` by digest, class `microvm`, labeled
+  `holos.run/worker-pool: microvm` for a template's `workerSelector`, on the
+  admin label alone, not `holos.run/nodepool`. ate-controller places a
+  microVM worker by the `ate.dev/kvm` resource, which atelet advertises on
+  the general workers too, and adds the toleration of the taint itself, so
+  the selector is what keeps the workers on the microvm nodes;
+  `holos/rendertest` fails `go test` if a pool of the class selects anything
+  else. It is a pool to test the class on. Each worker reports its whole node
+  as its capacity, as the gVisor pool's do, so another pool on the same nodes
+  overcommits them: once a claim's own pool takes the nodes, this one goes
+  to zero. A template that selects no pool may have its golden snapshot cut
+  here, and then crashes on every restore (the CRNG, below), so the demo and
+  project templates select the gVisor pool by the label kagent reads it by,
+  `kagent.dev/worker-pool-name: gvisor`; an actor that has a snapshot keeps
+  its class.
+
+**The assets** are staged by hand, from a checkout, once per cluster, again
+after a rebuild that lost the bucket, and after a bump whose template names
+new digests, before it is applied. Nothing in the cluster reaches GitHub or
+holds the key that writes the bucket. The script downloads Kata's static
+archive and Cloud Hypervisor's static binary at the versions ate-setup's
+`steps/microvm.go` names at the cluster's commit, takes the four files out as
+ate-setup does, checks each sha256 against the template, uploads what the
+bucket lacks through a port-forward to RustFS with `rustfs-substrate-assets`'s
+key, and reads each back. It downloads about 1.7 GB for both architectures;
+`-w <dir>` keeps them for another run. It needs curl 8, zstd, GNU tar, jq, cue
+and kubectl.
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+components/substrate/stage-microvm-assets.sh $cluster    # from holos/; amd64 and arm64
+kubectl -n ate-workers get workerpool microvm            # READY 2, RESOLVED True
+kubectl -n ate-workers get pods -l ate.dev/worker-pool=microvm -o wide   # the microvm nodes only
+```
+
+**Checking it** takes an actor of the class in an atespace of its own,
+`microvm-test`, whose image answers with the guest's kernel, since nobody can
+exec into an actor: busybox's `httpd`, with a CGI script the container
+writes at start. The template selects the pool by its label. It reads one
+byte of `/dev/random` before it serves, which waits for the guest's CRNG
+(below), and counts the requests it has served in its root file system, which
+a MEMORY snapshot keeps, so a restore shows where it was:
+
+```sh
+kubectl ate create atespace microvm-test
+kubectl ate create actor-template -f - <<'EOF'
+metadata: {atespace: microvm-test, name: uname-seeded}
+workerSelector:
+  matchLabels: {holos.run/worker-pool: microvm}
+containers:
+- name: uname
+  image: docker.io/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+  command:
+  - /bin/sh
+  - -c
+  - |
+    set -e
+    head -c 1 /dev/random >/dev/null
+    mkdir -p /www/cgi-bin
+    cut -d" " -f1 /proc/uptime >/www/seeded-at
+    date -u +%Y-%m-%dT%H:%M:%SZ >/www/started
+    cat >/www/cgi-bin/info <<'CGI'
+    #!/bin/sh
+    printf 'Content-Type: text/plain\r\n\r\n'
+    echo "uname -a: $(uname -a)"
+    echo "/proc/version: $(cat /proc/version)"
+    echo "started: $(cat /www/started)"
+    echo "uptime: $(cut -d' ' -f1 /proc/uptime)s"
+    echo "crng ready at uptime: $(cat /www/seeded-at)s"
+    n=$(($(cat /www/count 2>/dev/null || echo 0) + 1))
+    echo "$n" >/www/count
+    echo "requests served: $n"
+    CGI
+    chmod 755 /www/cgi-bin/info
+    exec httpd -f -p 80 -h /www
+  wakeupProbe:
+    httpGet: {path: /cgi-bin/info, port: 80}
+    timeoutSeconds: 120
+resources:
+  limits: {cpuMillicores: 1000, memoryBytes: 536870912}
+snapshotConfig:
+  preferredFidelity: SNAPSHOT_FIDELITY_MEMORY
+EOF
+kubectl ate get actor-templates -a microvm-test   # a GOLDEN TAG within seconds
+kubectl ate create actor uname-seeded -a microvm-test --template uname-seeded
+```
+
+Then, from the `router-test` pod of Checking Substrate, below, with `$c` and
+`$id` as there, each request wakes the actor if it is suspended:
+
+```sh
+get() { kubectl -n substrate-shim exec router-test -- sh -c \
+  "curl -sS $c $id -H 'ate-target-actor: microvm-test/$1' https://atenet-router.ate-system.svc/cgi-bin/info"; }
+get uname-seeded                     # Linux actor 6.18.56, Kata's kernel, not the node's 6.18.65-talos
+kubectl ate suspend actor uname-seeded -a microvm-test --mode sync
+kubectl ate resume actor uname-seeded -a microvm-test
+get uname-seeded                     # requests served: one more than before, and one for the probe
+kubectl ate suspend actor uname-seeded -a microvm-test --mode sync
+kubectl ate create tag t1 --actor uname-seeded -a microvm-test
+get uname-seeded; get uname-seeded   # the count moves on
+kubectl ate revert actor uname-seeded -a microvm-test
+get uname-seeded                     # the count of the first request after the tag again
+kubectl ate create actor from-t1 -a microvm-test --template uname-seeded --tag t1
+get from-t1                          # the same count, from the tag
+```
+
+On the garage's Xeon E5-2670s, which have no RDRAND or RDSEED, Kata 4.3.1's
+guest kernel, which has no virtio-rng driver, has not made its CRNG ready by
+the time the template's golden snapshot is cut, about 1.5 s after boot,
+unless the workload waits for it. Every restore of such a snapshot then fails
+and the actor is `ACTOR_STATE_CRASHED`: the worker reseeds the guest's CRNG
+after a restore, and the kernel refuses `RNDRESEEDCRNG` with `ENODATA` while
+it is not ready (`while reseeding guest CRNG: agent ReseedRandomDev: ...
+ENODATA: No data available`, in `kubectl ate get actor <name> -a <atespace> -o
+yaml`). The same template without its first line does this on the first
+request. The read of `/dev/random` blocks until the kernel's jitter entropy
+has made the CRNG ready, about 2 s after boot here. Whether the platform
+relies on that, or on a guest kernel or hardware that seeds itself, is
+milestone-a-machine-boots-on-marina's to decide (Self_Hosted_Machines).
+
+The actors run until suspended: Substrate suspends nothing on its own.
+Suspend them when done, or delete them, their templates, `t1` and the
+atespace.
 
 #### Bumping the pin
 
@@ -2758,6 +2938,11 @@ git status --short deploy                         # only deploy/clusters/$cluste
 git diff deploy/clusters/$cluster/components/substrate
 git add ../.gitmodules vendor/substrate-$new pins/$cluster.cue components/substrate deploy
 ```
+
+On a cluster that runs the microVM class, the SandboxConfig `microvm` is the
+new tree's template. If the bump's diff changes its digests, stage the new
+files with the new checkout (The microVM class, above) before the bump is
+applied: until they are in the bucket, no worker of the class reports Ready.
 
 The component's patches are shared, and name containers of one tree by index and
 name. A patch only the new tree needs is guarded by the pin, such as
@@ -4434,6 +4619,8 @@ project=my-project a=echo
 image=quay.$domain/demo/echo@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
 kubectl ate create actor-template -f - <<EOF
 metadata: {atespace: $project, name: $a}
+workerSelector:
+  matchLabels: {kagent.dev/worker-pool-name: gvisor}
 containers:
 - name: whoami
   image: $image
@@ -4446,7 +4633,7 @@ kubectl ate get actor-templates -a $project   # a GOLDEN TAG, within a minute
 kubectl ate create actor $a -a $project --template $a
 ```
 
-The template names no pool, so the actor runs on `ate-workers/gvisor`, which
+The template selects the gVisor pool, so the actor runs on `ate-workers/gvisor`, which
 `kubectl ate get actors -a $project` shows once it is awake. Then, with an ID
 token (Reaching an actor, above), an owner of the project or a member of
 `/platform/owners` gets `Name: echo`, and anyone else 403:
@@ -5543,6 +5730,15 @@ configuration, conversion webhook or APIService that reaches its webhook by
 headless, or one whose selector matches no pod template or a pod template on
 `hostNetwork`. A configuration with the `holos.run/contract-exception`
 annotation is listed as an exception instead; none has one.
+
+`holos/rendertest` holds Go tests over the committed tree for what the CUE
+alone does not hold to, which CI's Go job runs with the rest of `go test
+./...`: that every `WorkerPool` of the `microvm` class selects its nodes by
+the class's admin label alone (The microVM class, under Substrate, above).
+
+```sh
+go test ../holos/rendertest
+```
 
 ## Bootstrap Argo CD
 

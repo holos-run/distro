@@ -1,5 +1,11 @@
 package holos
 
+import (
+	"encoding/yaml"
+	"list"
+	"strings"
+)
+
 // Substrate's commit and images on this cluster, from its pins
 // (pins/<cluster>.cue), and the images of what runs against it. The names are
 // in substrate.cue at the platform root.
@@ -45,4 +51,29 @@ Substrate: {
 	// The platform pool's worker image, which each claim's copy of the pool
 	// takes with its spec.
 	workerPool: spec: workerImage: images["ateworker-gvisor"]
+
+	// The microVM class, on a cluster that takes substrate and names the class
+	// in its sandboxClasses: whether it runs, the test pool's worker image, and
+	// the SandboxConfig upstream's template makes at the pin.
+	microvm: {
+		let Assets = Substrate.microvm.assets
+		enabled: Takes.substrate && list.Contains(Cluster.sandboxClasses, Substrate.microvm.sandboxClass)
+		workerPool: spec: workerImage: images["ateworker-microvm"]
+
+		// sandboxConfig is the template at the cluster's pin with the two
+		// variables ate-setup's applyMicroVMSandboxConfig fills: the backend's
+		// scheme and the asset bucket. Every asset's URL must end in
+		// <prefix>/<arch>/<sha256>, as loadMicroVMAssetDigests requires, since
+		// that is where the staging puts each file.
+		if enabled {
+			let Template = _microvmTemplates["\(tree)/manifests/ate-install/sandboxconfig-microvm.yaml.tmpl"]
+			let Schemed = strings.Replace(Template, "${BUCKET_SCHEME}", Assets.scheme, -1)
+			let Expanded = strings.Replace(Schemed, "${ASSET_BUCKET_NAME}", Assets.bucket, -1)
+			_noPlaceholder: true & !strings.Contains(Expanded, "${")
+			sandboxConfig:  yaml.Unmarshal(Expanded)
+			for V in sandboxConfig.spec.versions for ARCH, FILES in V.assets for NAME, F in FILES {
+				_assetPaths: "\(V.name)/\(ARCH)/\(NAME)": true & strings.HasSuffix(F.url, "/\(Assets.prefix)/\(ARCH)/\(F.sha256)")
+			}
+		}
+	}
 }
