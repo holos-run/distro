@@ -2512,7 +2512,8 @@ What it runs, in `ate-system` unless named:
   server's of its four ConfigMaps, the connection strings' template and the
   OpenTelemetry settings; ate-controller's, atelet's, the router's and the
   egress gateway's of the OpenTelemetry settings; the credential provider's
-  of its namespace policy. A change in git to any of them rolls its readers.
+  of its namespace policy and the OpenTelemetry settings. A change in git to any
+  of them rolls its readers.
   It does not cover the generated passwords, nor the router's and the egress
   gateway's Envoy ConfigMaps, which come from upstream's tree (Bumping the
   pin, below).
@@ -2718,9 +2719,15 @@ git diff deploy/clusters/*/components/kagent deploy/clusters/*/components/kagent
 git add kagent.cue components/kagent components/kagent-crds deploy
 ```
 
+kagent's harness images move with it, so a claim's agent image is rebuilt on the
+new `claude-harness` and pushed to its cluster's Quay before the bump is applied
+or merged (Building the Planboard images, below). Without it, the claim's new
+`Harness` revision cannot cut its golden and its Agents read not Ready.
+
 If the bump's diff changes ConfigMap `atenet-router-envoy-config` or
-`atenet-egress`, the Envoy bootstrap upstream ships, restart their readers
-once Argo CD has synced it, since no hash covers them:
+`atenet-egress`, the Envoy bootstrap upstream ships, as the 2026-11-25 bump
+does to both, restart their readers once Argo CD has synced it, since no hash
+covers them:
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
@@ -2728,22 +2735,33 @@ kubectl -n ate-system rollout restart deploy/atenet-router deploy/atenet-egress
 ```
 
 Test the bump on `$cluster` before it merges with automation paused on the
-root `argocd-apps` **and** on `substrate`, `kagent-crds` and `kagent`, and
+root `argocd-apps` **and** on `substrate`, `kagent-crds`, `kagent` and each
+claim's `product-planboard-<claim>`, whose render has the claim's pools, and
 keep the root paused until the merge: the root renders the children's
-`syncPolicy`, so restoring it alone re-applies `automated` to the three and
-`selfHeal` puts the old pins back within a poll. Apply the three renders
+`syncPolicy`, so restoring it alone re-applies `automated` to them and
+`selfHeal` puts the old pins back within a poll. A merge reaches every cluster
+at once, so every cluster that takes Substrate is either rolled by hand first or
+left paused through the merge and rolled after it, one cluster at a time. An
+unpaused one gets the whole bump in one unordered sync. The same goes for
+merging a revert. Apply the renders
 server-side as `argocd-controller` with Argo CD's tracking-id annotations,
-then restore all four after the merge. Substrate's skew policy
+then restore all of them after the merge. Substrate's skew policy
 (`docs/reference/version-skew-policy.md`) fixes the order within its render,
 which one Argo CD sync does not keep: the pod certificate controller, then
-`ds/atelet` and its rollout, then `WorkerPool` `gvisor` and its workers, then
-ate-controller and everything else, and `kagent-crds` and `kagent` after that.
-A worker must not be newer than its node's atelet, and ate-api-server not
-newer than any worker. A CRD gets no tracking id: Argo CD leaves every CRD
-without one, and one added by hand reads `OutOfSync` until the first sync takes
-it off, as `workerpools`, `sandboxconfigs` and `csidriverconfigs` did on the
-2026-11-06 bump. The two role Jobs are Sync hooks, so a hand apply leaves
-them out and they run at the first sync after the merge. While it is paused,
+`ds/atelet` and its rollout, then every `WorkerPool` and its workers, then
+ate-api-server and ate-idp-server, then the CRDs and ate-controller, then
+everything else, and `kagent-crds` and `kagent` after that. A move back is the
+same list reversed, except that the schemas stay as they are, and the pools roll
+at ate-controller first and then on the image. A worker must not be newer than its node's atelet, and
+ate-api-server not newer than any worker. The 2026-11-25 bump adds a reason: the
+new ate-api-server sends an execution UID with every run and restore (upstream
+#3735), which upstream says to move atelet and the workers first for. The policy
+has an older one refuse a field it does not know; the code at `94e0a26a` ignores
+it. A CRD gets no tracking id: Argo CD leaves every CRD without one, and one
+added by hand reads `OutOfSync` until the first sync takes it off, as
+`workerpools`, `sandboxconfigs` and `csidriverconfigs` did on the 2026-11-06
+bump. The role Jobs, and `product-planboard-<claim>`'s Job, are Sync hooks, so a
+hand apply leaves them out and they run at the first sync after the merge. While it is paused,
 each Application reads `OutOfSync`. One whose last sync operation failed reads
 `Degraded` as well, and the root with it, however long ago that failure was:
 `kagent`'s stale one did this on the 2026-11-06 bump, from the moment the
@@ -2752,26 +2770,41 @@ successful sync.
 
 The workers roll twice when a bump changes their pod template: once on the
 image, and again when ate-controller is upgraded, since ate-controller renders
-the template. The 2026-11-06 bump does, with new capability sets (upstream
-#2428), so the pools, `kagent/gvisor` included, move to the new image before
-ate-controller. Anything that checks a worker or touches an actor waits for the
-second roll. `rollout status` says done until ate-controller reaches the pool,
-so read the pods. A gVisor worker then lists 9 capabilities, with no `MKNOD`,
-`SETPCAP`, `SYS_CHROOT` or `SYS_PTRACE`:
+the template. The 2026-11-06 bump did, with new capability sets (upstream
+#2428), and the 2026-11-25 bump does, with `IPC_LOCK` added (#3983) and no
+ServiceAccount token (#3466), in both directions, so the pools, `kagent/gvisor`
+and each claim's included, move to the new image before ate-controller. A
+worker reads Ready only once ate-api-server has accepted its sandbox runtimes
+(#3414), which waits for its node's atelet. Anything that checks a worker or
+touches an actor waits for the second roll. `rollout status` says done until
+ate-controller reaches the pool, so read the pods. A gVisor worker then lists 10
+capabilities, `IPC_LOCK` among them, with no `MKNOD`, `SETPCAP`, `SYS_CHROOT` or `SYS_PTRACE`, and `false` for
+the token:
 
 ```sh
 kubectl -n ate-workers get pod <worker> \
-  -o jsonpath='{.spec.containers[0].securityContext.capabilities.add}'
+  -o jsonpath='{.spec.containers[0].securityContext.capabilities.add}{"\n"}{.spec.automountServiceAccountToken}{"\n"}'
 ```
 
 A Substrate bump rolls every worker, and an actor whose worker goes away is
-`ACTOR_STATE_CRASHED`, which the router does not resume. On a bump that keeps
+`ACTOR_STATE_CRASHED`, which the router does not resume. Substrate does not
+suspend it. The worker gives an actor 30 minutes, and only one that handles
+`SIGTERM` without exiting gets them: Planboard's board exits at once. So suspend
+every running actor first, the board included, and check that it is suspended. On a
+bump that keeps
 old snapshots restorable, `kubectl ate revert actor <name> -a <atespace>` puts
 it back to its latest snapshot, suspended, and the next request resumes it, so
 suspend what matters first.
 
+The 2026-11-25 bump keeps them, as far as the source says: no gVisor version,
+OCI spec, snapshot manifest or image cache layout changes, and no gVisor change
+is marked breaking. Nobody has restored one across it, so prove it before relying on it: on a demo
+actor suspended before the workers roll and resumed after the second roll, on a
+new actor from an old template, which restores the old golden, and on a
+VOLUMES snapshot such as a kagent session's. Recut as below if one crashes.
+
 A bump can break that, which its upstream `Breaking change` notes say. The
-2026-11-06 bump does: upstream #3533 and #3457 change a gVisor sandbox's mounts,
+2026-11-06 bump did: upstream #3533 and #3457 change a gVisor sandbox's mounts,
 so a MEMORY snapshot taken before them, a golden included, does not restore.
 `runsc restore` fails, the actor goes `CRASHED`, and no API restores such a
 snapshot without its memory. So `revert actor` only returns to the same
@@ -2779,8 +2812,8 @@ snapshot, suspending first only writes another, and a new actor from an old
 template restores the old golden and crashes. Recut instead, after the last
 worker roll: delete the actors and their templates, re-create the templates,
 wait for each one's golden, and re-create the actors. Whatever an actor held
-is lost. Moving back to `holos-2026-10-30` needs the same recut, since a
-snapshot taken on the new workers does not restore on the old ones. For the
+is lost. Moving back past it, to `holos-2026-10-30`, needs the same recut, since
+a snapshot taken on the new workers does not restore on the old ones. For the
 demo actors, which Substrate, above, then re-creates:
 
 ```sh
@@ -2794,7 +2827,8 @@ atelet keeps an image cache under `/var/lib/ate/image-cache` on each node
 with a layout version, and refuses to start on an older layout ("image
 cache ... has layout version "2" and this atelet supports "3", so delete it
 once no actor runs on this node"). The 2026-10-30 bump moved it from 2 to
-3 (upstream #2392), and the 2026-11-06 bump left it there. When it moves, the
+3 (upstream #2392), and the 2026-11-06 and 2026-11-25 bumps left it there. When
+it moves, the
 DaemonSet stalls, one node at a time, on a crash-looping atelet. On each such
 node, with no actor running there,
 delete the directory from a privileged pod with the host path mounted and
@@ -2832,7 +2866,8 @@ connection.
 
 kagent's schema is not always. A new file under
 `go/core/pkg/migrations/core/` is migrated by the controller on start, as
-`000002_runtime_bootstrap.sql` is on the 2026-11-06 bump, but kagent has also
+`000002_runtime_bootstrap.sql` is on the 2026-11-06 bump and
+`000003_session_revert_operation.sql` on the 2026-11-25 bump, but kagent has also
 changed `000001_initial.sql` in place: the 2026-10-30 bump added four columns
 to `runtime_revision` there (`actor_template_spec_digest`, `golden_retries`,
 `golden_failure_uid`, `golden_failed_at`). A schema migrated by the old
@@ -2855,6 +2890,20 @@ argocd app sync kagent
 The old controller keeps running until the sync rolls it; a pod of it
 started between the drop and the sync fails on the missing schema and is
 restarted.
+
+A move back does not undo a migration, so the old controllers start on the new
+schemas. From the 2026-11-25 bump they can. Substrate's schema does not change
+between the two pins, and its server drops a stored field it does not know.
+kagent's controller at `3af6ae59` finds nothing to migrate on a schema at
+version 3, which only allows one more value in
+`runtime_instance.operation`. It cannot read a session left in that value, so
+first check there is none, and delete any that is:
+
+```sh
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+kubectl -n ate-system exec substrate-db-1 -c postgres -- psql -d substrate -At \
+  -c "select id from kagent.runtime_instance where operation = 'RUNTIME_OPERATION_REVERT'"
+```
 
 #### Rotation
 
@@ -3142,10 +3191,10 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   `ghcr.io/holos-run/kagent`, by digest. The fork builds nothing else, so
   `config.harnessImages` (`kagent`, `claude`, `codex`) and
   `config.sandboxes.guestImage` are upstream kagent-dev's
-  `v1.0.0-rc3`, the release the fork is cut from: the harnesses by
+  `v1.0.1`, the release the fork is cut from: the harnesses by
   the index digests that release's chart lists in
   `files/builtin-harness-images.json`, and the guest, which that file does
-  not list, by the index digest of its `sandbox-guest:1.0.0-rc3` tag.
+  not list, by the index digest of its `sandbox-guest:1.0.1` tag.
   The catalog's fourth key, `release`, stays unset: the controller refuses to
   start when it is set and differs from its own version, which is the
   fork's tag. The tool server and oauth2-proxy images are the subcharts'
@@ -5326,7 +5375,7 @@ the digest the export did. `v0.0.1` gave:
 | Image | Digest |
 | --- | --- |
 | `board` | `sha256:b5a72ab690dd0a7e7eed6804765825a846ec04cc54680bdb54322892818dd069` |
-| `agent` | `sha256:908e537f6f2e3b60ce2504de37ae1ccc9864eba1a82421a7676237d38b317d29` |
+| `agent` | `sha256:b9d207e18537098c064364a1012c5a10a7dd3d7a219a152058ee0a20ad73a2c5` |
 | `plugin` | `sha256:f04a6b7f1680999d7eab2a97c4df14b988ead486fcc520db64e779c82a58e4bf` |
 
 `agent` and `plugin` should reproduce at any time. `board` reproduces only while
@@ -5360,6 +5409,12 @@ for pair in board:planboard agent:planboard-agent plugin:planboard-plugin; do
 done
 rm -rf $DOCKER_CONFIG $ctx; unset DOCKER_CONFIG
 ```
+
+For a new agent image on the same `planboard` tag, such as a kagent bump's, push
+`agent` alone, under a tag of its own such as `v0.0.1-harness-1.0.1`. Pushing it
+as `$tag` moves that tag off the image the last pin deployed, and Quay drops an
+untagged one after its time machine window, so a revert or an old session on a
+node without it cannot pull.
 
 This is the interim: the push uses the platform controller's token from the VM,
 until the workflow runner rebuilds the images in the cluster.

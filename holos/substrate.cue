@@ -15,14 +15,14 @@ import "strings"
 // components/substrate/ATE-SETUP.md against the new ate-setup (README.md,
 // Substrate). The render refuses a commit that is not the submodule's.
 Substrate: {
-	// commit is the fork's, on its holos-2026-11-06 branch, upstream
-	// agent-substrate/substrate main at 94e0a26a with nothing added, which
-	// is v1.0.0 in everything that runs (docs/forks.md). It must equal the
+	// commit is the fork's, on its holos-2026-11-25 branch, upstream
+	// agent-substrate/substrate main at e54c359a with nothing added, the
+	// newest commit kagent builds against (docs/forks.md). It must equal the
 	// submodule's HEAD (git -C holos/vendor/substrate rev-parse HEAD).
-	commit: "94e0a26ac90151886a76410568aaac2664a54d90"
+	commit: "e54c359a11c9ed30e0fff6bfbaa2ee2665d809b8"
 	// version is the tag publish-images.yaml published every image under, kept
 	// for the reader; the components pull by digest alone.
-	version:  "v0.0.0-holos.20261105.94e0a26"
+	version:  "v0.0.0-holos.20261124.e54c359"
 	registry: "ghcr.io/holos-run/substrate"
 
 	// digests are the index digests of the images the publish run pushed
@@ -33,17 +33,17 @@ Substrate: {
 	// envoy-dataplane is built from a Dockerfile, not by ko, and is the one
 	// image whose digest a local build does not reproduce.
 	digests: {
-		"ate-idp-server":     "sha256:59e1242ac8e7af0e4bd28615f7180ee39e6ec879ad8443cf9b5dbb48867a43f3"
-		ateapi:               "sha256:e8c0071e6327f7c689ee332af5b5ec302f9b4f385acf9f3240a421344a124cd6"
-		atecontroller:        "sha256:c47fb0951ee96c69b5c4faeeb0e915cceafdf4d6305bf51d0e227491bdf9a48c"
-		atelet:               "sha256:13057dbc2346c8b67dac2fb6ba0c820ff21d1ceb36d0a205a6875dea144cd744"
-		atenet:               "sha256:c0a6b860d47e290ffe0eaeda032c67353a2b42f56375fa103a4ce5ffb0d9fada"
-		"ateworker-gvisor":   "sha256:f1d6844f3037e6f27bd093c99bf38f0baa86f59641bf96265ba2eed517bd167e"
-		"ateworker-microvm":  "sha256:44ff2ab8554da86e6769df401a5429d4969728f155f67e7ee30686a783c072b1"
-		"envoy-dataplane":    "sha256:a81bdc703ae10e34ec48ae24a1044a985ad82a4d585e3fa61d7e2858547879a9"
-		"kubernetes-secrets": "sha256:236d44b1c4eabe385df3d1cf9f83a6914e5b915c71b3c6d15120eaeb8953c9a5"
-		"objectstore-plugin": "sha256:1648297ceac9200739fde63a702f2879809f82b6364b1dbaeb0196e445ce36a5"
-		podcertcontroller:    "sha256:c0be27d91dd46b107f0e632aa3421585175af51fc83d6bdc8f20f9cb1c49d078"
+		"ate-idp-server":     "sha256:1f6bb785e7f8c1fd77b893e6952756ba740add971ce53d446fb1626a6146a702"
+		ateapi:               "sha256:3d1eca0ec41506f64af2a91970f46bd7961c202fc4185f943f27dc7a786daad4"
+		atecontroller:        "sha256:5ed02c1701a130e496e81e3e8a37f95e014f6767771b6847d1857ed440a928e0"
+		atelet:               "sha256:d8a889cc247ceb7b76458d9a36146f2b34aac17ac82e8191b6a5442ceb8d7780"
+		atenet:               "sha256:783882a760d28a9e6674c74daed960684426e76b0ed1fb0dd2890081a8944702"
+		"ateworker-gvisor":   "sha256:0ab15956e9da7ef494c8318ed498885add98309892170e191b6ae8217aba6d21"
+		"ateworker-microvm":  "sha256:c694ac3ec823361220b160c69f843bb08cccb2511c54eb4ce536cfc1ea991031"
+		"envoy-dataplane":    "sha256:1254a96d87a1a2e216114614606a223a48e387c7d4c5cf6683b13d8f91df007d"
+		"kubernetes-secrets": "sha256:3903280cc6024acd1ce8ef247d759dac702a17a5dce1f6b10e714d201005f25d"
+		"objectstore-plugin": "sha256:89b60788cf49083a088175adf48749d38c9a847aa4d0bbd9db31ac5b3d977410"
+		podcertcontroller:    "sha256:4473113d8da57b74d72c611c57465a618aac78b9b25eeb162e8f2fae6396e08e"
 	}
 
 	// images are the full references, tag and digest, by name.

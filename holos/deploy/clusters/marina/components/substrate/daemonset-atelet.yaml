@@ -50,7 +50,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/atelet@sha256:13057dbc2346c8b67dac2fb6ba0c820ff21d1ceb36d0a205a6875dea144cd744
+        image: ghcr.io/holos-run/substrate/atelet@sha256:d8a889cc247ceb7b76458d9a36146f2b34aac17ac82e8191b6a5442ceb8d7780
         livenessProbe:
           httpGet:
             path: /healthz
@@ -144,7 +144,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1648297ceac9200739fde63a702f2879809f82b6364b1dbaeb0196e445ce36a5
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:89b60788cf49083a088175adf48749d38c9a847aa4d0bbd9db31ac5b3d977410
         name: objectstore-plugin
         resources:
           requests:

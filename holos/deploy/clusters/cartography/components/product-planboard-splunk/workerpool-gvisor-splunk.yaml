@@ -14,4 +14,4 @@ spec:
     template:
         nodeSelector:
             holos.run/nodepool: general
-    workerImage: ghcr.io/holos-run/substrate/ateworker-gvisor:v0.0.0-holos.20261105.94e0a26@sha256:f1d6844f3037e6f27bd093c99bf38f0baa86f59641bf96265ba2eed517bd167e
+    workerImage: ghcr.io/holos-run/substrate/ateworker-gvisor:v0.0.0-holos.20261124.e54c359@sha256:0ab15956e9da7ef494c8318ed498885add98309892170e191b6ae8217aba6d21

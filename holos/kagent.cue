@@ -29,16 +29,16 @@ Kagent: {
 	// through the API.
 	atespace: namespace
 
-	// commit is the fork's, on its holos-2026-11-06 branch, which is
-	// upstream kagent-dev/kagent's tag v1.0.0-rc3 at 3548b7aa with the
+	// commit is the fork's, on its holos-2026-11-25 branch, which is
+	// upstream kagent-dev/kagent's tag v1.0.1 at 558e3d76 with the
 	// fork's one change on top: the build against the holos-run Substrate
 	// fork at Substrate.commit, where upstream builds against
 	// kagent-dev/substrate v1.0.0 (docs/forks.md).
-	commit: "3af6ae590abcaaf4235006185ba47b82427a13bf"
+	commit: "c1dbae1b45eefc7d9f8872e660bc5eec6612f09f"
 	// version is the tag publish-images.yaml published the images and the
 	// charts under. It is also the controller's version.Version, which the
 	// controller compares with harnessImages.release.
-	version:  "0.0.0-holos.20261107.3af6ae5"
+	version:  "0.0.0-holos.20261125.c1dbae1"
 	registry: "ghcr.io/holos-run/kagent"
 
 	// charts are the fork's two OCI charts. The digests are for the reader:
@@ -47,19 +47,19 @@ Kagent: {
 	charts: {
 		crds: {
 			name:   "oci://\(registry)/helm/kagent-crds"
-			digest: "sha256:8bb8d1bcafaa180980225ca4809b6db53414872eee21cb2a368aec43b1dbb483"
+			digest: "sha256:953969c4ce578c9fa362bd32c4d2568ad42b30167f1261ae8ff7ff8d539288d8"
 		}
 		kagent: {
 			name:   "oci://\(registry)/helm/kagent"
-			digest: "sha256:48d31481b0634cc50cc7a77d01e0bebcd68c686b41f0f067bd83c11764aa599d"
+			digest: "sha256:4e38f415d0a7174c3ab37156cc1ba9fc96e1f7fca32bfa7c5dffdeac6ab3b673"
 		}
 	}
 
 	// digests are the index digests of the fork's two images, public and
 	// pulled anonymously, by the image's name under registry.
 	digests: {
-		controller: "sha256:6c6d1fef30e43f36cc77e090bc9221d1037287b2f1978c6fa5af442afc5b8057"
-		ui:         "sha256:2eb18ef5bf788c5af382506a30f5354681872cc69ddd5b200d82f6ab5b0f43c6"
+		controller: "sha256:953404be230941ea667307650f7663c49220a89aeaed89790d9c42a9eb3e34c5"
+		ui:         "sha256:81456ebc02822a0d678144cfbe3734ab892e4ca3a99ed2b69906bac06f898af3"
 	}
 
 	// upstream is the kagent-dev release the fork is cut from. The fork
@@ -71,7 +71,7 @@ Kagent: {
 	// fallback to the environment, so an older harness cannot start under
 	// this controller.
 	upstream: {
-		release:  "1.0.0-rc3"
+		release:  "1.0.1"
 		registry: "ghcr.io/kagent-dev/kagent"
 	}
 	// harnessImages are config.harnessImages, the built-in Harness images by
@@ -79,15 +79,15 @@ Kagent: {
 	// fourth key, release, stays unset: the controller refuses to start when
 	// it is set and differs from its own version, which is the fork's tag.
 	harnessImages: {
-		kagent: "\(upstream.registry)/golang-adk:\(upstream.release)@sha256:51859027b42b704c8f443876ef5155ace2f411752f297e5cb43e04d9b91545b7"
-		claude: "\(upstream.registry)/claude-harness:\(upstream.release)@sha256:216613bf155d3d437765675144fee19c9045cb21cd2e481189f2dcae36c24b3b"
-		codex:  "\(upstream.registry)/codex-harness:\(upstream.release)@sha256:84c3275e36c0d98472a8b930a628e47e08277e7ce4438908e2a44fd1d8a9efd2"
+		kagent: "\(upstream.registry)/golang-adk:\(upstream.release)@sha256:d3b1151d39c529a6f921a58a995ff699963012001d2e5075f69bf613abebc24d"
+		claude: "\(upstream.registry)/claude-harness:\(upstream.release)@sha256:111d28bc8552469b028d91ecd2352c9d44811aba07be12b1e6868db7948f904e"
+		codex:  "\(upstream.registry)/codex-harness:\(upstream.release)@sha256:6885f229b4ee70c9babf37f89ef5d93438eab049875e5bc129799fef6e4cfd19"
 	}
 	// guestImage is config.sandboxes.guestImage, the guest a SandboxTemplate's
 	// standalone sandbox runs in place of its image's entrypoint, from the
 	// same release, by the index digest of its tag. Agents do not use it;
 	// without it every SandboxTemplate is refused as unpinned.
-	guestImage: "\(upstream.registry)/sandbox-guest:\(upstream.release)@sha256:8521d7e41097fb2964570ce1e65115056098d1c0c17c5dab1c2a4f30a7e06939"
+	guestImage: "\(upstream.registry)/sandbox-guest:\(upstream.release)@sha256:16e84a2285119ce02cc6ba45ea7f68181eb1527335de85477614fb9a6b5ecf03"
 
 	// modelKey is the key of a model's Secret that a ModelConfig reads,
 	// ANTHROPIC_API_KEY: kagent-anthropic's in kagent's namespace (on a

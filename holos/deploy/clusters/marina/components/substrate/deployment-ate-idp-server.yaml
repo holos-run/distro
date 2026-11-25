@@ -17,12 +17,13 @@ spec:
       labels:
         app: ate-idp-server
     spec:
+      automountServiceAccountToken: false
       containers:
       - args:
         - --actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json
         - --server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem
         - --issuer=https://idp.ate-system.svc
-        image: ghcr.io/holos-run/substrate/ate-idp-server@sha256:59e1242ac8e7af0e4bd28615f7180ee39e6ec879ad8443cf9b5dbb48867a43f3
+        image: ghcr.io/holos-run/substrate/ate-idp-server@sha256:1f6bb785e7f8c1fd77b893e6952756ba740add971ce53d446fb1626a6146a702
         livenessProbe:
           httpGet:
             path: /healthz
