@@ -1,6 +1,7 @@
 package holos
 
 import (
+	"list"
 	"net"
 
 	pin "go.holos.run/distro/holos/pins"
@@ -60,6 +61,18 @@ import (
 	// vet. The order here does not matter: a cluster syncs them in the registry's
 	// order (clusterRegistry, registry.cue).
 	components: [...or(#OptionalComponents)]
+
+	// sandboxClasses are the Substrate sandbox classes the cluster runs, ate-setup's
+	// --sandbox-classes, on a cluster that names substrate. gvisor is always one:
+	// the platform's pool and every claim's are gVisor (Substrate.workerPool).
+	// microvm adds the class's SandboxConfig and its test pool to the substrate
+	// component, and its asset bucket to rustfs (Substrate.microvm). It needs
+	// nodes with /dev/kvm that carry the admin label the pool selects, and the
+	// assets staged by hand (README.md, Substrate, The microVM class).
+	sandboxClasses: *["gvisor"] | ["gvisor", "microvm"]
+	if list.Contains(sandboxClasses, "microvm") {
+		_microvmNeedsSubstrate: true & list.Contains(components, "substrate")
+	}
 
 	// ingressDomain is the zone the cluster's hostnames are in: every
 	// service is <service>.<ingressDomain>, by default
@@ -271,6 +284,8 @@ clusters: marina: {
 		"toolhive-operator",
 		"toolhive",
 	]
+	// The microvm pool's nodes run the microVM class beside gVisor.
+	sandboxClasses: ["gvisor", "microvm"]
 	// kubernetesVersion in its talosvm.json.
 	kubernetesVersion: "1.37.2"
 	loadBalancer: {

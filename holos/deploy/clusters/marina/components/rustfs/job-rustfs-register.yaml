@@ -51,6 +51,16 @@ spec:
             secretKeyRef:
               key: secret-key
               name: rustfs-quay
+        - name: SUBSTRATE_ASSETS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: rustfs-substrate-assets
+        - name: SUBSTRATE_ASSETS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: rustfs-substrate-assets
         image: docker.io/rustfs/rc:v0.1.36
         name: register
         resources:

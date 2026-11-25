@@ -120,6 +120,9 @@ import (
 	// Substrate's WorkerPool, ate.dev/v1, the one version its CRD serves
 	// (components/substrate). Namespaced too.
 	WorkerPool?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}
+	// Its SandboxConfig, cluster-scoped, the microvm class's
+	// (components/substrate); gvisor-default comes from upstream's tree.
+	SandboxConfig?: [_]: {apiVersion: "ate.dev/v1", metadata: {...}, ...}
 
 	// kagent's Harness, AgentTemplate, Agent, ModelConfig and EgressPolicy,
 	// api.kagent.dev/v1alpha3, the one version the fork's CRDs serve

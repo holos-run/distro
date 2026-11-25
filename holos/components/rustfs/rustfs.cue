@@ -1,6 +1,9 @@
 package holos
 
-import "strings"
+import (
+	"list"
+	"strings"
+)
 
 // rustfs is RustFS standalone, one pod and one volume, the base's one S3 store
 // (interview Q12): Substrate's snapshots, Quay's blobs, and later anything
@@ -17,9 +20,10 @@ import "strings"
 //
 // Every credential is generated in the cluster (#GeneratedSecret): rustfs-root,
 // the root user RustFS starts with, and rustfs-quay and, on a cluster that
-// names substrate, rustfs-substrate, an access key and a secret key for each
-// consumer. The rustfs-register Job reads them all and registers the consumers'
-// buckets, users and policies; it mints nothing. The consumers' copies, in
+// names substrate, rustfs-substrate, and, on one that runs the microVM class,
+// rustfs-substrate-assets, an access key and a secret key for each consumer.
+// The rustfs-register Job reads them all and registers the consumers' buckets,
+// users and policies; it mints nothing. The consumers' copies, in
 // their own namespaces, are made by the per-namespace stores, not here.
 let Pins = Cluster.pins.rustfs
 
@@ -34,8 +38,31 @@ let Endpoint = "http://rustfs-svc.\(Name).svc:9000"
 // Consumers are the buckets the Job registers, one per consumer, each with a
 // user whose keys are Secret rustfs-<bucket> and a policy of the same name
 // that allows that user to list, read, write and delete objects in that
-// bucket and nothing else. substrate is one on a cluster that names it.
-let Consumers = [if Takes.substrate {"substrate"}, "quay"]
+// bucket and nothing else. substrate is one on a cluster that names it, and
+// substrate-assets, the microVM class's assets, on a cluster that runs the
+// class (Substrate.microvm): its key is the operator's, who stages the files
+// from outside the cluster with it, and nothing in the cluster reads it.
+let MicroVM = Substrate.microvm
+let Consumers = [
+	if Takes.substrate {"substrate"},
+	"quay",
+	if MicroVM.enabled {MicroVM.assets.bucket},
+]
+
+// ReadGrants are, for a bucket, the consumers whose users may list and read
+// it too, and not write it: the substrate key reads the microVM assets, since
+// atelet fetches them with it.
+let ReadGrants = {
+	if MicroVM.enabled {(MicroVM.assets.bucket): ["substrate"]}
+}
+
+// #Env is the Job's variable for a consumer's key: SUBSTRATE_ASSETS_ACCESS_KEY
+// for substrate-assets' access-key.
+#Env: {
+	consumer: string
+	key:      string
+	out:      strings.ToUpper(strings.Replace("\(consumer)_\(key)", "-", "_", -1))
+}
 
 // RootKeys are the variables RustFS reads its root user from; the chart
 // passes the root Secret to the container whole, with envFrom.
@@ -186,7 +213,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 							},
 							{name: "RC_CONFIG_DIR", value: "/tmp/rc"},
 							for C in Consumers for K in ["access-key", "secret-key"] {
-								name: strings.ToUpper("\(C)_\(strings.Replace(K, "-", "_", -1))")
+								name: (#Env & {consumer: C, key: K}).out
 								valueFrom: secretKeyRef: {name: "rustfs-\(C)", key: K}
 							},
 						]
@@ -235,7 +262,13 @@ holos: spec: artifacts: [(#HelmArtifact & {
 // bucket, writes the policy, adds the user (which resets the secret key of a
 // user that exists), attaches the policy, and removes any other user holding
 // that policy: the user of a rotated key, whose access key, its name, has
-// changed. Its consumers come from the environment the Job sets.
+// changed. Then, for each bucket in ReadGrants, it writes the read policy
+// <bucket>-read, attaches it to the group <bucket>-readers, and makes the
+// readers' users the group's members and no others. A read grant goes on a
+// group, not on the user: rc's attach replaces a user's policies with the
+// ones it names, so the consumer's own registration would drop it. A rotated
+// key's user leaves the group when register removes it. Its consumers come
+// from the environment the Job sets.
 let RegisterScript = """
 	#!/bin/sh
 	# Registers each consumer's bucket, user and policy with RustFS. Every
@@ -281,8 +314,53 @@ let RegisterScript = """
 	}
 
 	\(strings.Join([for C in Consumers {
-	let V = strings.ToUpper(C)
-	"register \(C) \"$\(V)_ACCESS_KEY\" \"$\(V)_SECRET_KEY\""
+	let AK = (#Env & {consumer: C, key: "access-key"}).out
+	let SK = (#Env & {consumer: C, key: "secret-key"}).out
+	"register \(C) \"$\(AK)\" \"$\(SK)\""
 }], "\n"))
-
+	\(GrantScript)
 	"""
+
+// GrantScript is the part of RegisterScript that grants ReadGrants, empty on
+// a cluster with none.
+let GrantScript = {
+	if len(ReadGrants) == 0 {out: ""}
+	if len(ReadGrants) > 0 {out: """
+
+		# grant_read lets the users whose access keys follow bucket $1 list and
+		# read it, and not write it, through group $1-readers and its policy
+		# $1-read, and removes every other member from the group.
+		grant_read() {
+		  bucket=$1
+		  shift
+		  cat >"/tmp/$bucket-read.json" <<EOF
+		{
+		  "Version": "2012-10-17",
+		  "Statement": [{
+		    "Effect": "Allow",
+		    "Action": ["s3:ListBucket", "s3:GetBucketLocation", "s3:GetObject"],
+		    "Resource": ["arn:aws:s3:::$bucket", "arn:aws:s3:::$bucket/*"]
+		  }]
+		}
+		EOF
+		  rc admin policy create rustfs "$bucket-read" "/tmp/$bucket-read.json"
+		  members=$(echo "$@" | tr ' ' ',')
+		  rc admin group add rustfs "$bucket-readers" --members "$members"
+		  rc admin policy attach rustfs "$bucket-read" --group "$bucket-readers"
+		  current=$(rc admin group info rustfs "$bucket-readers" --json | jq -er '.members[]')
+		  for user in $current; do
+		    case " $* " in
+		      *" $user "*) ;;
+		      *) rc admin group rm-members rustfs "$bucket-readers" "$user" ;;
+		    esac
+		  done
+		  echo "granted read on $bucket"
+		}
+
+		\(strings.Join([for B, READERS in ReadGrants {
+		strings.Join(list.Concat([["grant_read \(B)"], [for R in READERS {"\"$\((#Env & {consumer: R, key: "access-key"}).out)\""}]]), " ")
+	}], "\n"))
+
+		"""
+	}
+}.out
