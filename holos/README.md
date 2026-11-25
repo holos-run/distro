@@ -2719,6 +2719,11 @@ git diff deploy/clusters/*/components/kagent deploy/clusters/*/components/kagent
 git add kagent.cue components/kagent components/kagent-crds deploy
 ```
 
+kagent's harness images move with it, so a claim's agent image is rebuilt on the
+new `claude-harness` and pushed to its cluster's Quay before the bump is applied
+or merged (Building the Planboard images, below). Without it, the claim's new
+`Harness` revision cannot cut its golden and its Agents read not Ready.
+
 If the bump's diff changes ConfigMap `atenet-router-envoy-config` or
 `atenet-egress`, the Envoy bootstrap upstream ships, as the 2026-11-25 bump
 does to both, restart their readers once Argo CD has synced it, since no hash
@@ -2734,7 +2739,11 @@ root `argocd-apps` **and** on `substrate`, `kagent-crds`, `kagent` and each
 claim's `product-planboard-<claim>`, whose render has the claim's pools, and
 keep the root paused until the merge: the root renders the children's
 `syncPolicy`, so restoring it alone re-applies `automated` to them and
-`selfHeal` puts the old pins back within a poll. Apply the renders
+`selfHeal` puts the old pins back within a poll. A merge reaches every cluster
+at once, so every cluster that takes Substrate is either rolled by hand first or
+left paused through the merge and rolled after it, one cluster at a time. An
+unpaused one gets the whole bump in one unordered sync. The same goes for
+merging a revert. Apply the renders
 server-side as `argocd-controller` with Argo CD's tracking-id annotations,
 then restore all of them after the merge. Substrate's skew policy
 (`docs/reference/version-skew-policy.md`) fixes the order within its render,
@@ -2742,7 +2751,8 @@ which one Argo CD sync does not keep: the pod certificate controller, then
 `ds/atelet` and its rollout, then every `WorkerPool` and its workers, then
 ate-api-server and ate-idp-server, then the CRDs and ate-controller, then
 everything else, and `kagent-crds` and `kagent` after that. A move back is the
-same list reversed. A worker must not be newer than its node's atelet, and
+same list reversed, except that the schemas stay as they are, and the pools roll
+at ate-controller first and then on the image. A worker must not be newer than its node's atelet, and
 ate-api-server not newer than any worker. The 2026-11-25 bump adds a reason: the
 new ate-api-server sends an execution UID with every run and restore (upstream
 #3735), which upstream says to move atelet and the workers first for. The policy
@@ -2750,8 +2760,8 @@ has an older one refuse a field it does not know; the code at `94e0a26a` ignores
 it. A CRD gets no tracking id: Argo CD leaves every CRD without one, and one
 added by hand reads `OutOfSync` until the first sync takes it off, as
 `workerpools`, `sandboxconfigs` and `csidriverconfigs` did on the 2026-11-06
-bump. The two role Jobs are Sync hooks, so a hand apply leaves
-them out and they run at the first sync after the merge. While it is paused,
+bump. The role Jobs, and `product-planboard-<claim>`'s Job, are Sync hooks, so a
+hand apply leaves them out and they run at the first sync after the merge. While it is paused,
 each Application reads `OutOfSync`. One whose last sync operation failed reads
 `Degraded` as well, and the root with it, however long ago that failure was:
 `kagent`'s stale one did this on the 2026-11-06 bump, from the moment the
@@ -2777,8 +2787,10 @@ kubectl -n ate-workers get pod <worker> \
 ```
 
 A Substrate bump rolls every worker, and an actor whose worker goes away is
-`ACTOR_STATE_CRASHED`, which the router does not resume. A running actor gets
-`SIGTERM` and has until the worker's grace period ends to be suspended. On a
+`ACTOR_STATE_CRASHED`, which the router does not resume. Substrate does not
+suspend it. The worker gives an actor 30 minutes, and only one that handles
+`SIGTERM` without exiting gets them: Planboard's board exits at once. So suspend
+every running actor first, the board included, and check that it is suspended. On a
 bump that keeps
 old snapshots restorable, `kubectl ate revert actor <name> -a <atespace>` puts
 it back to its latest snapshot, suspended, and the next request resumes it, so
@@ -2786,9 +2798,10 @@ suspend what matters first.
 
 The 2026-11-25 bump keeps them, as far as the source says: no gVisor version,
 OCI spec, snapshot manifest or image cache layout changes, and no gVisor change
-is marked breaking. Nobody has restored one across it, so prove it on one demo
-actor, suspended before the workers roll and resumed after the second roll,
-before relying on it for the rest, and recut as below if it crashes.
+is marked breaking. Nobody has restored one across it, so prove it before relying on it: on a demo
+actor suspended before the workers roll and resumed after the second roll, on a
+new actor from an old template, which restores the old golden, and on a
+VOLUMES snapshot such as a kagent session's. Recut as below if one crashes.
 
 A bump can break that, which its upstream `Breaking change` notes say. The
 2026-11-06 bump did: upstream #3533 and #3457 change a gVisor sandbox's mounts,
@@ -2881,8 +2894,8 @@ restarted.
 A move back does not undo a migration, so the old controllers start on the new
 schemas. From the 2026-11-25 bump they can. Substrate's schema does not change
 between the two pins, and its server drops a stored field it does not know.
-kagent's controller at `3af6ae59` runs no migration and passes its own check on
-a schema at version 3, which only allows one more value in
+kagent's controller at `3af6ae59` finds nothing to migrate on a schema at
+version 3, which only allows one more value in
 `runtime_instance.operation`. It cannot read a session left in that value, so
 first check there is none, and delete any that is:
 
@@ -5396,6 +5409,12 @@ for pair in board:planboard agent:planboard-agent plugin:planboard-plugin; do
 done
 rm -rf $DOCKER_CONFIG $ctx; unset DOCKER_CONFIG
 ```
+
+For a new agent image on the same `planboard` tag, such as a kagent bump's, push
+`agent` alone, under a tag of its own such as `v0.0.1-harness-1.0.1`. Pushing it
+as `$tag` moves that tag off the image the last pin deployed, and Quay drops an
+untagged one after its time machine window, so a revert or an old session on a
+node without it cannot pull.
 
 This is the interim: the push uses the platform controller's token from the VM,
 until the workflow runner rebuilds the images in the cluster.
