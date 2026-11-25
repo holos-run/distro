@@ -6,15 +6,15 @@ import "encoding/yaml"
 // runs no PostgreSQL itself: every consumer writes its own Cluster in its
 // own namespace, on the default StorageClass, ceph-rbd.
 //
-// The operator 1.30.1 from chart 0.29.1, the latest release of the
-// cloudnative-pg chart at https://cloudnative-pg.github.io/charts, with the
-// image the chart names on ghcr.io. The operator is a Deployment that
-// tolerates no taint, so the control plane's NoSchedule taint keeps it, and
+// The operator is the one the pinned chart ships (Cluster.pins.cloudNativePG),
+// the cloudnative-pg chart at https://cloudnative-pg.github.io/charts, with the
+// image the chart names on ghcr.io: 1.30.1 from chart 0.29.1. The operator is
+// a Deployment that tolerates no taint, so the control plane's NoSchedule taint keeps it, and
 // every PostgreSQL pod it creates, on the workers. Its pods meet the
 // restricted Pod Security standard, so cnpg-system needs no label. The
 // chart's PodMonitor and Grafana dashboard are off by default: the cluster
 // has no Prometheus Operator.
-CNPGVersion: "0.29.1"
+let Pins = Cluster.pins.cloudNativePG
 
 // Webhook is the Service that serves both webhook configurations.
 let Webhook = {name: "cnpg-webhook-service", namespace: "cnpg-system"}
@@ -26,7 +26,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: Webhook.namespace
 	chart: {
 		name:    "cloudnative-pg"
-		version: CNPGVersion
+		version: Pins.chart
 		release: "cloudnative-pg"
 		repository: {
 			name: "cnpg"

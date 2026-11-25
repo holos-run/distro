@@ -4,8 +4,10 @@ package holos
 // ingress Gateway at hello.<ingressDomain>, to show the path from the laptop
 // through the gateway to a mesh workload: the gateway terminates TLS with the
 // private CA's wildcard and reaches the pod over HBONE through its node's
-// ztunnel. Traefik's whoami answers with the request it received.
+// ztunnel. Traefik's whoami (Cluster.pins.hello) answers with the request it
+// received.
 
+let Pins = Cluster.pins.hello
 let Name = "hello"
 let Port = 8080
 let Labels = {"app.kubernetes.io/name": Name}
@@ -33,7 +35,7 @@ holos: spec: artifacts: [(#ResourcesArtifact & {
 						}
 						containers: [{
 							name:  "whoami"
-							image: "docker.io/traefik/whoami:v1.11.0@sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab"
+							image: "docker.io/traefik/whoami:\(Pins.version)@\(Pins.digest)"
 							args: ["--port", "\(Port)", "--name", Name]
 							ports: [{name: "http", containerPort: Port}]
 							// The kubelet's probe reaches an ambient pod from

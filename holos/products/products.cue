@@ -11,21 +11,27 @@
 //			#project: _
 //			repo: *"https://github.com/my-org/\(#project)-config" | =~"^https://"
 //		}
-//		images: server: "sha256:..."
 //	}
 //
 // and renders nothing by itself. A binding (holos/bindings) binds it to a
 // claim, each binding of a product is a component of the platform, and the
 // product's component, components/product-<name>, renders once per binding, on
 // the clusters that binding lands on. So a product is the one thing that
-// renders the same for every project: the owner's file says only what the
+// renders the same for every project on a cluster: the owner's file says only what the
 // product leaves to them, and neither side copies what the claim already knows.
 //
 // components are the optional entries of the registry a cluster must name for
 // the product to land there (#Product.components). #Values is what a binding
-// may set, and images is what it may not: they are the rule that a binding's
-// atespace comes from its project and its images from the product, and the
-// schema, not a convention, is what enforces it (#Product.#Values).
+// may set, and it is closed: that a binding's atespace comes from its project
+// and its images from its cluster's pins is enforced by the schema, not by a
+// convention (#Product.#Values).
+//
+// A product's images are not here. Each cluster pins them by digest under the
+// product's name, as it does every version (pins/<cluster>.cue), so one commit
+// renders the images a cluster pins for every binding on that cluster, a bump
+// moves the cluster it names, and two clusters may run different ones. The
+// registry and the organization they are pulled from are the cluster's and the
+// claim's, so a digest is all a pin holds.
 //
 // It is a package of its own, beside projects/, for the reason that one is: CUE
 // loads only the root-level holos/*.cue files of package holos as ancestors of
@@ -38,12 +44,6 @@
 package products
 
 import proj "go.holos.run/distro/holos/projects"
-
-// #Digest is an image digest. A product pins every image it renders by digest,
-// so the same commit renders the same images for every binding; the registry
-// and the organization it is pulled from are the cluster's and the claim's,
-// which a product cannot see, so a digest is all that is here.
-#Digest: =~"^sha256:[0-9a-f]{64}$"
 
 // #Product is one product.
 #Product: {
@@ -79,11 +79,6 @@ import proj "go.holos.run/distro/holos/projects"
 	// within the product's file, where this definition is not in scope. A
 	// binding that sets #project itself conflicts with the root.
 	#Values!: _
-
-	// images are the digests of the images the product renders, by a name of
-	// the product's choosing. They are here rather than in #Values so that no
-	// binding can run an image the product does not name.
-	images: [string]: #Digest
 }
 
 // products is the collection, keyed by name. The key is unified into name,

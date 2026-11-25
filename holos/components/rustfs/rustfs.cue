@@ -8,8 +8,8 @@ import "strings"
 // rustfs-svc.rustfs.svc:9000, path-style, region us-east-1; no route reaches
 // it, or its console, from outside the cluster.
 //
-// RustFS 1.0.4 from chart 1.0.4, the latest release of the rustfs chart at
-// https://charts.rustfs.com, with the image pinned by tag on docker.io. The
+// RustFS is the rustfs chart at https://charts.rustfs.com, of the server's own
+// version (Cluster.pins.rustfs), with the image pinned by tag on docker.io. The
 // chart's standalone mode is a Deployment and one PersistentVolumeClaim; the
 // Deployment tolerates no taint, so the control plane's NoSchedule taint keeps
 // it on the workers. The namespace is in the mesh, like hello's: clients reach
@@ -21,7 +21,7 @@ import "strings"
 // consumer. The rustfs-register Job reads them all and registers the consumers'
 // buckets, users and policies; it mints nothing. The consumers' copies, in
 // their own namespaces, are made by the per-namespace stores, not here.
-RustFSVersion: "1.0.4"
+let Pins = Cluster.pins.rustfs
 
 // Name is the namespace and the Helm release, so the chart names its objects
 // rustfs, rustfs-svc and rustfs-data.
@@ -45,7 +45,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: Name
 	chart: {
 		name:    "rustfs"
-		version: RustFSVersion
+		version: Pins.version
 		release: Name
 		repository: {
 			name: "rustfs"
@@ -64,13 +64,13 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		image: {
 			rustfs: {
 				repository: "docker.io/rustfs/rustfs"
-				tag:        RustFSVersion
+				tag:        Pins.version
 			}
 			// The init container only creates /data; its default tag is
 			// stable, which moves.
 			initImage: {
 				repository: "docker.io/library/busybox"
-				tag:        "1.37.0"
+				tag:        Pins.busybox
 			}
 		}
 
@@ -170,7 +170,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 						name: "register"
 						// RustFS's own client, rc. Its admin commands speak
 						// RustFS's IAM API; MinIO's mc admin does not.
-						image: "docker.io/rustfs/rc:v0.1.36"
+						image: "docker.io/rustfs/rc:\(Pins.rc)"
 						command: ["/bin/sh", "/scripts/register.sh"]
 						env: [
 							for K in RootKeys {

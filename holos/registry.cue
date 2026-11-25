@@ -83,7 +83,7 @@ registry: [...#Registration]
 // It is a map in the root, not a filter on Cluster, because the platform reads
 // it too: Cluster is defined in components/component.cue, which the platform
 // instance does not load, and the platform never gets the clusterName tag
-// (tags.cue), so a filter on that would quietly read its default, treasury,
+// (tags.cue), so a filter on that would quietly read its default, marina,
 // for every cluster.
 clusterRegistry: {
 	for NAME, CLUSTER in clusters {
@@ -281,7 +281,8 @@ registry: [
 	{name: "toolhive-operator", priority: "optional"},
 	{name: "toolhive", priority: "optional"},
 	// substrate is Agent Substrate's control plane, rendered from the fork's
-	// install tree in vendor/substrate (substrate.cue): its CRDs, the pod
+	// install tree in vendor/substrate-<commit> (components/substrate.cue):
+	// its CRDs, the pod
 	// certificate controller, the API server, the IdP, the controller, the
 	// router, the egress gateway, the credential provider, atelet, its
 	// CloudNativePG cluster and role Job, its generated passwords, the copy

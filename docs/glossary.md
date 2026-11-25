@@ -201,8 +201,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 **Agent Substrate**, **Substrate**
 : The upstream project agent-substrate/substrate, Go module `go.ate.dev/substrate`, which runs
   agents as actors in gVisor sandboxes. The distro builds it from the fork holos-run/substrate, a
-  submodule at `holos/vendor/substrate` ([the forks](forks.md),
-  [Substrate](../holos/README.md#substrate)). Its names start with `ate`.
+  submodule per commit a cluster pins, at `holos/vendor/substrate-<commit>`
+  ([the forks](forks.md), [Substrate](../holos/README.md#substrate)). Its names start with `ate`.
 
 **atespace**
 : Substrate's tenant: a named group of actor templates and actors, such as `demo` or `kagent`. It
@@ -238,8 +238,8 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   `--authz-bootstrap-owners`. Treasury's are the `ate-client` ksa and kagent's controller.
 
 **`kubectl ate`**
-: Substrate's kubectl plugin, built from `holos/vendor/substrate/cmd/kubectl-ate`. It port-forwards
-  to Service `ate-system/api` through `KUBECONFIG`, and authenticates with an ate-client ksa token
+: Substrate's kubectl plugin, built from `cmd/kubectl-ate` in `holos/vendor/substrate-<commit>`. It
+  port-forwards to Service `ate-system/api` through `KUBECONFIG`, and authenticates with an ate-client ksa token
   unless `--token-file` gives it another.
 
 **ate-setup**

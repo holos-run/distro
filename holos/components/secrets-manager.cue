@@ -14,8 +14,8 @@ SecretsManager: {
 	// server checks as an ID token whose aud must be the client ID;
 	// Keycloak's access tokens carry no aud, so every call after login was
 	// refused (Q53).
-	version: "0.20.0"
-	image:   "ghcr.io/holos-run/secrets-manager:v\(version)@sha256:e33d995aa4f21d4861b5e7715e9674f8bf305278cf359ad32f9ea55d38272d5c"
+	version: Cluster.pins.secretsManager.version
+	image:   "ghcr.io/holos-run/secrets-manager:v\(version)@\(Cluster.pins.secretsManager.digest)"
 
 	// namespace holds the server. It is in the mesh, like keycloak's: the
 	// gateway reaches it over HBONE, and it calls Keycloak at its public

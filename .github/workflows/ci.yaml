@@ -145,9 +145,10 @@ jobs:
             *) echo "::error::expected a garage-* runner, got ${RUNNER_NAME}"; exit 1 ;;
           esac
 
-      # The substrate component renders from the Substrate fork's install
-      # tree in the holos/vendor/substrate submodule, and checks that it is
-      # at Substrate.commit, so the submodule is checked out. The job never
+      # The substrate component renders each cluster from the Substrate
+      # fork's install tree at the commit the cluster pins, in the submodule
+      # holos/vendor/substrate-<commit>, and checks that it is at it, so every
+      # submodule is checked out. The job never
       # pushes, so the token is not left in the clone's git config.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

@@ -14,7 +14,8 @@ import (
 _BuildContext: string | *"{}" @tag(holos_build_context, type=string)
 BuildContext:  core.#BuildContext & json.Unmarshal(_BuildContext)
 
-// Cluster is the cluster this instance renders for, from clusters.cue.
+// Cluster is the cluster this instance renders for, from clusters.cue. Its
+// versions are Cluster.pins, from pins/<cluster>.cue.
 Cluster: clusters[clusterName]
 
 // Takes says, for each optional entry, whether this cluster names it in

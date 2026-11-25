@@ -10,21 +10,22 @@ import (
 
 // substrate is Agent Substrate's control plane, rendered from upstream's own
 // install tree (interview Q23 and Q27) in the holos-run fork, which is
-// vendored as a git submodule at vendor/substrate and pinned, with its image
-// digests, by Substrate (substrate.cue). cmd/ate-setup cannot render without
+// vendored as a git submodule per commit a cluster pins, vendor/substrate-<commit>,
+// and pinned, with its image digests, by the cluster (Cluster.pins.substrate,
+// read as Substrate, components/substrate.cue). cmd/ate-setup cannot render without
 // a cluster, so it is read rather than run: ATE-SETUP.md, beside this file,
 // maps every step of its "deploy ate-system" to a stage here or to an
 // imperative step in README.md, Substrate, and is re-read on every bump.
 //
 // The artifact is a pipeline of four stages:
 //
-//  1. A Command generator builds upstream/kustomization.yaml with kubectl
+//  1. A Command generator builds upstream/<commit>/kustomization.yaml with kubectl
 //     kustomize: upstream's base and the files ate-setup applies on their
 //     own (the CRDs and the controller's RBAC, the pod certificate
 //     controller, the SandboxConfig policy and default, the egress gateway
 //     and the Kubernetes Secrets credential provider), plus the role SQL as
-//     a ConfigMap. The submodule's commit is the pin, so every render reads
-//     the same tree offline.
+//     a ConfigMap. The submodule's commit is the cluster's pin, so every
+//     render of that cluster reads the same tree offline.
 //  2. A Resources generator makes, as CUE, what ate-setup creates
 //     imperatively or what upstream does not ship: the API server's
 //     ConfigMaps, the CloudNativePG cluster and its role Job, the generated
@@ -35,7 +36,7 @@ import (
 //     ghcr.io by digest.
 //  4. holos kubectl-slice writes one file per resource.
 //
-// Two validators fail the render if the submodule is not at
+// Two validators fail the render if the cluster's submodule is not at
 // Substrate.commit, or if any ko:// reference, ${...} image placeholder, GKE
 // PodMonitoring, GKE collector address or gcs storage backend survives.
 //
@@ -233,9 +234,9 @@ let ConfigHashes = {
 			apiConfig:      APIConfig
 			otel:           OTel
 		}
-		"ate-controller": otel:                     OTel
-		"atenet-router": otel:                      OTel
-		"atenet-egress": otel:                      OTel
+		"ate-controller": otel: OTel
+		"atenet-router": otel:  OTel
+		"atenet-egress": otel:  OTel
 		"k8s-credential-provider": {
 			namespacePolicy: NamespacePolicy
 			otel:            OTel
@@ -591,8 +592,10 @@ let Patches = [
 	}).out,
 ]
 
-// Images rewrites each ko:// reference to its ghcr.io image by digest.
-let Images = [for NAME, PATH in KoImages {
+// Images rewrites each ko:// reference to its ghcr.io image by digest. An image
+// the cluster does not pin, since its commit has none of the name, is left out;
+// a reference to one survives and fails the render.
+let Images = [for NAME, PATH in KoImages if S.digests[NAME] != _|_ {
 	name:    "ko://go.ate.dev/substrate/\(PATH)"
 	newName: "\(S.registry)/\(NAME)"
 	digest:  S.digests[NAME]
@@ -631,13 +634,15 @@ let SetupLabels = {"app.kubernetes.io/name": "\(DB.cluster)-setup"}
 holos: spec: artifacts: [{
 	artifact: OutputDir
 	generators: [
-		// 1. Upstream's install tree, from the submodule. The command runs in
+		// 1. Upstream's install tree, from the submodule at the cluster's pin. Each
+		// commit's input lists its own tree's files, so a commit that adds one
+		// changes no cluster on another commit. The command runs in
 		// the platform root.
 		{
 			kind:   "Command"
 			output: "upstream.yaml"
 			command: {
-				args: ["kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone", "\(BuildContext.leafDir)/upstream"]
+				args: ["kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone", "\(BuildContext.leafDir)/upstream/\(S.commit)"]
 				isStdoutOutput: true
 			}
 		},
@@ -669,17 +674,23 @@ holos: spec: artifacts: [{
 		},
 	]
 	validators: [
-		// The submodule is checked out at the pin.
+		// The cluster's submodule is checked out at the cluster's pin, and the
+		// input of that commit names no other tree.
 		{
 			kind: "Command"
 			inputs: [OutputDir]
 			command: args: ["sh", "-c", """
-				got=$(git -C vendor/substrate rev-parse HEAD)
+				got=$(git -C "$2" rev-parse HEAD)
 				if [ "$got" != "$1" ]; then
-				  echo "vendor/substrate is at $got, but Substrate.commit is $1 (substrate.cue)" >&2
+				  echo "$2 is at $got, but $3's pins.substrate.commit is $1 (pins/$3.cue)" >&2
 				  exit 1
 				fi
-				""", "sh", S.commit]
+				trees=$(grep -v '^ *#' "$4" | grep -oE 'vendor/substrate[^/]*/' | sort -u)
+				if [ "$trees" != "$2/" ]; then
+				  echo "$4 reads $(echo $trees), but $3 renders from $2" >&2
+				  exit 1
+				fi
+				""", "sh", S.commit, S.tree, Cluster.name, "\(BuildContext.leafDir)/upstream/\(S.commit)/kustomization.yaml"]
 		},
 		// Nothing of ate-setup's render is left undone.
 		{

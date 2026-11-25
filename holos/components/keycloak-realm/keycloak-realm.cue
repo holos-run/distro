@@ -144,9 +144,9 @@ let ArgoCDURL = "https://\(IngressGateway.hosts.argocd)"
 // Instance's caBundle, its ServiceAccount and Role.
 let CABundle = "instance-cabundle"
 
-// KubectlImage is alpine/kubectl at the cluster's Kubernetes version, which
-// has a shell for the Job's script, pinned by index digest.
-let KubectlImage = "docker.io/alpine/kubectl:1.37.1@sha256:a5d0fbecab3f7b6c2ab7398f1daa73a3e0ed6ece18556d21698233e9e3759cc7"
+// KubectlImage is alpine/kubectl, which has a shell for the Job's script, pinned
+// by index digest (Cluster.pins.kubectl).
+let KubectlImage = "docker.io/alpine/kubectl:\(Cluster.pins.kubectl.version)@\(Cluster.pins.kubectl.digest)"
 
 holos: spec: artifacts: [(#ResourcesArtifact & {
 	resources: {

@@ -3,11 +3,11 @@ package holos
 // cert-manager issues the cluster's certificates; private-ca configures the
 // CA it issues from and the policies approver-policy approves requests by.
 //
-// v1.21.3, the latest stable, from the OCI chart Jetstack publishes, with the
-// images the chart names on quay.io, pinned by digest (the tag is kept for
-// the reader; only the digest is pulled). quay.io/jetstack
-// allows anonymous pulls.
-CertManagerVersion: "v1.21.3"
+// It is the OCI chart Jetstack publishes, with the images the chart names on
+// quay.io, pinned by digest (Cluster.pins.certManager; the tag is kept for
+// the reader, and only the digest is pulled). quay.io/jetstack allows anonymous
+// pulls.
+let Pins = Cluster.pins.certManager
 
 CertManagerNamespace: "cert-manager"
 
@@ -15,7 +15,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: CertManagerNamespace
 	chart: {
 		name:    "oci://quay.io/jetstack/charts/cert-manager"
-		version: CertManagerVersion
+		version: Pins.version
 		release: "cert-manager"
 	}
 	values: {
@@ -25,16 +25,16 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		crds: enabled: true
 
 		image: {
-			tag:    CertManagerVersion
-			digest: "sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc"
+			tag:    Pins.version
+			digest: Pins.digests.controller
 		}
 		cainjector: image: {
-			tag:    CertManagerVersion
-			digest: "sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"
+			tag:    Pins.version
+			digest: Pins.digests.cainjector
 		}
 		webhook: image: {
-			tag:    CertManagerVersion
-			digest: "sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458"
+			tag:    Pins.version
+			digest: Pins.digests.webhook
 		}
 		// cert-manager's own approver approves every CertificateRequest for
 		// any Issuer or ClusterIssuer, so anyone who may create a Certificate

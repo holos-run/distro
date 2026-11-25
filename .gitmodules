@@ -1,3 +1,3 @@
-[submodule "holos/vendor/substrate"]
-	path = holos/vendor/substrate
+[submodule "substrate-e54c359a11c9ed30e0fff6bfbaa2ee2665d809b8"]
+	path = holos/vendor/substrate-e54c359a11c9ed30e0fff6bfbaa2ee2665d809b8
 	url = https://github.com/holos-run/substrate.git

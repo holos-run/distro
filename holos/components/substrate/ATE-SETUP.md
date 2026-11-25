@@ -7,10 +7,11 @@ and its rendering packages are internal. This table maps every step of
 imperative step in [README.md, Substrate](../../README.md#substrate), or says
 why it does not apply.
 
-Paths are relative to the submodule, `holos/vendor/substrate`, at the pin in
-`Substrate.commit` (`holos/substrate.cue`), and `steps/` is
-`cmd/ate-setup/internal/steps/`. The pin is
-`e54c359a11c9ed30e0fff6bfbaa2ee2665d809b8`.
+Paths are relative to the submodule, `holos/vendor/substrate-<commit>`, at a
+cluster's pin, `pins.substrate.commit` (`holos/pins/<cluster>.cue`), and `steps/` is
+`cmd/ate-setup/internal/steps/`. The pin this table was read against is
+`e54c359a11c9ed30e0fff6bfbaa2ee2665d809b8`, every cluster's. While clusters are on
+different pins it is the newest, and a row that an older tree differs on says so.
 
 **Re-read this table against the new ate-setup on every bump.** Walk
 `DeployAteSystem` in `steps/deploy.go` from the top, and the functions it
@@ -21,7 +22,7 @@ change to the component. Then update the line numbers and the pin above.
 
 The stages, in `components/substrate/substrate.cue`:
 
-- **Input**: `upstream/kustomization.yaml`, built by the Command generator.
+- **Input**: `upstream/<commit>/kustomization.yaml`, built by the Command generator.
 - **CUE**: the Resources generator.
 - **Patch**: the Kustomize transformer's `patches`.
 - **Images**: the Kustomize transformer's `images`.

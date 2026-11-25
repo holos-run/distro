@@ -3,6 +3,7 @@ package holos
 import (
 	"net"
 
+	pin "go.holos.run/distro/holos/pins"
 	proj "go.holos.run/distro/holos/projects"
 )
 
@@ -67,6 +68,12 @@ import (
 	// name. The ingress Gateway's wildcard certificate is *.<ingressDomain>
 	// (components/ingress.cue).
 	ingressDomain: string | *"\(name).\(site.privateDomain)"
+
+	// pins are the versions and digests of everything the cluster runs, from its
+	// own file, pins/<cluster>.cue (package pins). They are required, closed and
+	// without defaults, so no bump moves a cluster but the one whose file it
+	// edits, and components read their cluster's as Cluster.pins.
+	pins: pin.#Pins
 
 	// kubernetesVersion is the version Talos runs: kubernetesVersion in the
 	// cluster's talosvm.json, or else the default in
@@ -166,7 +173,16 @@ import (
 }
 
 sites: [NAME=string]: #Site & {name: NAME}
-clusters: [NAME=string]: #Cluster & {name: NAME}
+clusters: [NAME=string]: #Cluster & {name: NAME, pins: pin.pins[NAME]}
+
+// pinFiles is whether each cluster has a file of pins and each file is a
+// cluster's, and every one has to: otherwise pinFiles.<name> conflicts here. A
+// pin the file leaves out is refused in package pins.
+pinFiles: [string]: true
+pinFiles: {
+	for NAME, _ in clusters {(NAME): pin.pins[NAME] != _|_}
+	for NAME, _ in pin.pins {(NAME): clusters[NAME] != _|_}
+}
 
 sites: garage: {
 	privateDomain: "bank.internal"

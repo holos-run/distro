@@ -56,9 +56,10 @@ let NS = HA.namespace
 let Name = HA.name
 let Labels = {"app.kubernetes.io/name": Name}
 
-// The vendored release (vendor/<version>/crd): the Backend CRD from aavis-ops
-// at tag holos-authenticator-v0.21.0, config/crd/holos-authenticator/bases,
-// unmodified, which is the same file at tag v0.21.0:
+// The vendored release (vendor/<version>/crd), for each version a cluster pins
+// (Cluster.pins.holosAuthenticator): the Backend CRD from aavis-ops at tag
+// holos-authenticator-v<version>, config/crd/holos-authenticator/bases,
+// unmodified, which is the same file at tag v<version>. 0.21.0's:
 //
 //	crd/authenticator.holos.run_backends.yaml   sha256:ddb4c2f46808e9090cc5c94f685deca7b27f12b651a025ada399dc54cf10a407
 //

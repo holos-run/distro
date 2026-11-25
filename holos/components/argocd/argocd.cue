@@ -11,21 +11,20 @@ import (
 // "Bootstrap Argo CD"). argocd-apps holds what it syncs: the AppProject and
 // an Application per component.
 //
-// Chart 10.11.7, the latest of argo-helm's argo-cd chart on Argo CD 3.5, ships
-// v3.5.7, the latest 3.5 patch. 3.6 is out, with breaking changes, and is
-// held until after Agent Substrate Day. The images are pinned by digest (the
-// tag is kept for the reader). quay.io/argoproj and ecr-public.aws.com allow
-// anonymous pulls.
-ArgoCDChartVersion: "10.11.7"
-ArgoCDVersion:      "v3.5.7"
+// The chart is argo-helm's argo-cd, pinned with the Argo CD it ships
+// (Cluster.pins.argocd). 3.6 is out, with breaking changes, and is held until
+// after Agent Substrate Day. The images are pinned by digest (the tag is kept
+// for the reader). quay.io/argoproj and ecr-public.aws.com allow anonymous
+// pulls.
+let Pins = Cluster.pins.argocd
 
-let ArgoCDImage = "\(ArgoCDVersion)@sha256:16df57da6f223808d204cd94c67c929b931fa01670b91b0b3a2298c4647de0db"
+let ArgoCDImage = "\(Pins.version)@\(Pins.digest)"
 
 holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: ArgoCD.namespace
 	chart: {
 		name:    "argo-cd"
-		version: ArgoCDChartVersion
+		version: Pins.chart
 		release: "argocd"
 		repository: {
 			name: "argo"
@@ -52,7 +51,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		applicationSet: image: tag:  ArgoCDImage
 		notifications: image: tag:   ArgoCDImage
 		redisSecretInit: image: tag: ArgoCDImage
-		redis: image: tag:           "8.6.4-alpine@sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763"
+		redis: image: tag:           "\(Pins.redis.version)@\(Pins.redis.digest)"
 
 		// Login is through Keycloak, the realm's argocd client, and the
 		// local admin, whose initial password the server generates into
@@ -363,10 +362,10 @@ holos: spec: artifacts: [(#HelmArtifact & {
 
 			// The repo server does not fetch git submodules. deploy/ is
 			// rendered before it is committed, and Argo CD syncs only plain
-			// manifests from it; holos/vendor/substrate, the Substrate fork,
-			// is a submodule only so a render reads the fork's install tree
-			// at its pin. Fetching it would cost every refresh a clone of a
-			// second repository that nothing synced reads.
+			// manifests from it; holos/vendor/substrate-<commit>, the Substrate
+			// fork, is a submodule only so a render reads the fork's install
+			// tree at a cluster's pin. Fetching it would cost every refresh a
+			// clone of a second repository that nothing synced reads.
 			params: "reposerver.enable.git.submodule": "false"
 
 			// The keys that sign main's commits (ArgoCD.signingKeys), in Argo

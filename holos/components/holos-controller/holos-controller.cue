@@ -13,11 +13,13 @@ import (
 // authorize a reference from one namespace to an Instance or Group in
 // another.
 //
-// The source of truth is aavis-ops at tag holos-controller-v0.22.0, not the
-// empty holos-run/holos-controller repository. Its CRD base,
+// The source of truth is aavis-ops at tag holos-controller-v<version>
+// (Cluster.pins.holosController), not the empty holos-run/holos-controller
+// repository. Its CRD base,
 // config/crd/holos-controller/bases, and its deploy base,
 // config/deploy/holos-controller without its kustomization.yaml files, are
-// vendored unmodified in vendor/0.22.0/:
+// vendored unmodified in vendor/<version>/ for each version a cluster pins.
+// 0.22.0's:
 //
 //	crd/keycloak.holos.run_clients.yaml               sha256:b8f8967bfb272cc8c1df72e0a93fbdbb1205f929d764cd7e1aeb577c7215a75f
 //	crd/keycloak.holos.run_groupmemberships.yaml      sha256:be72d7c65e9932b3fae7f43e9ee404107979ddcd20aee7196c54541d933190ae

@@ -23,8 +23,8 @@ PlatformAuthenticator: {
 	// v<version> is the item's; aavis-ops also publishes
 	// holos-authenticator-v<version>, a different digest built from the same
 	// code.
-	version: "0.21.0"
-	image:   "ghcr.io/holos-run/holos-authenticator:v\(version)@sha256:c5a1838d65e5fadaa48a370056cdc963ba8abe6a5bc19936bc7ab2294590560f"
+	version: Cluster.pins.holosAuthenticator.version
+	image:   "ghcr.io/holos-run/holos-authenticator:v\(version)@\(Cluster.pins.holosAuthenticator.digest)"
 
 	// namespace holds the manager, its Backend and its ServiceAccounts, and
 	// the Gateway and the Deployment istiod creates for it. It is in the
