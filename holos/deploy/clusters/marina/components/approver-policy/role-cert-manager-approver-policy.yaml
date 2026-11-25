@@ -1,0 +1,39 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/instance: cert-manager-approver-policy
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: cert-manager-approver-policy
+    app.kubernetes.io/version: v0.29.0
+    helm.sh/chart: cert-manager-approver-policy-v0.29.0
+  name: cert-manager-approver-policy
+  namespace: cert-manager
+rules:
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+- apiGroups:
+  - coordination.k8s.io
+  resourceNames:
+  - policy.cert-manager.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - update
+- apiGroups:
+  - ""
+  resourceNames:
+  - cert-manager-approver-policy-tls
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update

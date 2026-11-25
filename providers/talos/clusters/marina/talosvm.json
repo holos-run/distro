@@ -1,0 +1,11 @@
+{
+  "cluster": "marina",
+  "talosVersion": "v1.14.7",
+  "kubernetesVersion": "1.37.2",
+  "firstAddress": "10.20.0.70",
+  "endpoint": "api.marina.bank.internal",
+  "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 8192, "diskGiB": 32 },
+  "pools": [
+    { "name": "general", "count": 3, "cores": 4, "memoryMiB": 16384, "diskGiB": 64, "nodes": ["r620a", "r620b", "r620c"] }
+  ]
+}

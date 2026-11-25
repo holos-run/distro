@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atespace-setup
+  namespace: ate-system
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: atespace-setup
+    ports:
+    - port: 443
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: ate-api-server
+  policyTypes:
+  - Ingress

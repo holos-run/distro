@@ -334,8 +334,9 @@ provider's node network and first node address.
   `Endpoint`.
 - `nodes` is the Proxmox nodes to spread VMs across, round robin, starting
   with the control plane. Empty means every online node, sorted by name;
-  naming them keeps placement stable when a host is down. `controlPlane` and
-  each pool take their own `nodes` to pin a group.
+  naming them keeps placement stable when a host is down, and `create` refuses
+  the whole run while a named node is offline. `controlPlane` and each pool
+  take their own `nodes` to pin a group.
 - `firstAddress` is the cluster's first node address. VMs take consecutive
   addresses in the order `cp-1`, then each pool's workers. `controlPlane` and
   each pool take an `addresses` list instead, one per VM.

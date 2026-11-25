@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: ceph-csi-rbd
+    pod-security.kubernetes.io/enforce: privileged
+  name: ceph-csi-rbd

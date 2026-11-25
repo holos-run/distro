@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    name: quay-rustfs-reader
+    namespace: rustfs
+rules:
+    - apiGroups:
+        - ""
+      resourceNames:
+        - rustfs-quay
+      resources:
+        - secrets
+      verbs:
+        - get

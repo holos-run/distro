@@ -1,0 +1,11 @@
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata:
+    name: deny-all
+spec:
+    allowed:
+        dnsNames:
+            required: true
+            values: []
+    selector:
+        issuerRef: {}

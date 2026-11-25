@@ -1,0 +1,85 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+  name: rustfs-register
+  namespace: rustfs
+spec:
+  activeDeadlineSeconds: 600
+  backoffLimit: 6
+  template:
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - command:
+        - /bin/sh
+        - /scripts/register.sh
+        env:
+        - name: RUSTFS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: RUSTFS_ACCESS_KEY
+              name: rustfs-root
+        - name: RUSTFS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: RUSTFS_SECRET_KEY
+              name: rustfs-root
+        - name: RC_HOST_rustfs
+          value: http://$(RUSTFS_ACCESS_KEY):$(RUSTFS_SECRET_KEY)@rustfs-svc.rustfs.svc:9000
+        - name: RC_CONFIG_DIR
+          value: /tmp/rc
+        - name: SUBSTRATE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: rustfs-substrate
+        - name: SUBSTRATE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: rustfs-substrate
+        - name: QUAY_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: rustfs-quay
+        - name: QUAY_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: rustfs-quay
+        image: docker.io/rustfs/rc:v0.1.36
+        name: register
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /scripts
+          name: scripts
+        - mountPath: /tmp
+          name: tmp
+      restartPolicy: OnFailure
+      securityContext:
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - configMap:
+          name: rustfs-register
+        name: scripts
+      - emptyDir: {}
+        name: tmp

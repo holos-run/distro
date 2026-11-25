@@ -1,0 +1,708 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: backends.authenticator.holos.run
+spec:
+  group: authenticator.holos.run
+  names:
+    categories:
+    - holos
+    - authenticator
+    kind: Backend
+    listKind: BackendList
+    plural: backends
+    singular: backend
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.host
+      name: Host
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Backend is the Schema for the backends API. It configures one Kubernetes API
+          server backend the Holos Authenticator fronts (ADR-23).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              BackendSpec defines the desired state of a Backend: one Kubernetes API server
+              backend the authorizer fronts, with its OIDC client, claims→groups mapping,
+              and privileged credential.
+
+              Phase note (HOL-1386): this phase ships the API types only. The authorizer
+              logic that consumes the spec — matching the request Host, validating OIDC
+              tokens, evaluating the CEL mapping, and emitting impersonation headers — lands
+              in later phases (HOL-1387, HOL-1388). Setting a Backend has no runtime effect
+              until then. The fields are additive and backward-compatible.
+            properties:
+              credentialsSecretRef:
+                description: |-
+                  CredentialsSecretRef names the Secret holding the backend's privileged
+                  Kubernetes credential — the impersonator identity the authorizer
+                  authenticates to the upstream API server with. A Secret named
+                  holos-authenticator-backend-creds in the authorizer's own namespace is the
+                  suggested convention; a nil ref (the field omitted) resolves a Secret of that
+                  default name. It is mutually exclusive with serviceAccountRef (enforced by a
+                  CEL validation rule on this spec). This is the resource's only authentication
+                  dependency when set; its material is created at runtime and never committed
+                  (secret-handling guardrail).
+
+                  It is a pointer (rather than a value) so the API server can distinguish an
+                  omitted credentialsSecretRef from an explicitly-set one — the CEL
+                  mutual-exclusion rule's has() check relies on that distinction. A nil pointer
+                  means "use the default Secret"; the field is intentionally not defaulted so a
+                  Backend setting serviceAccountRef instead leaves credentialsSecretRef nil.
+                properties:
+                  key:
+                    description: |-
+                      Key within the Secret to read the credential from. When omitted the
+                      authorizer reads the conventional key(s) the credential is stored under.
+                    type: string
+                  name:
+                    default: holos-authenticator-backend-creds
+                    description: |-
+                      Name of the Secret holding the backend's privileged credential. When
+                      omitted it defaults to holos-authenticator-backend-creds, resolved in the
+                      authorizer's own namespace. MinLength=1 rejects an explicit empty string,
+                      which would otherwise bypass the default and leave the resolver with a blank
+                      Secret name.
+                    minLength: 1
+                    type: string
+                type: object
+              groupMapping:
+                default: {}
+                description: |-
+                  GroupMapping configures the optional CEL expression that maps validated
+                  token claims to the Kubernetes groups the authorizer impersonates, and the
+                  optional anyOf/noneOf filters applied to the mapped groups before they are
+                  forwarded. When omitted (the default), the authorizer maps the OIDC groups
+                  claim directly — the claim named by spec.oidc.groupsClaim — and forwards
+                  every mapped group.
+                properties:
+                  anyOf:
+                    description: |-
+                      AnyOf restricts which mapped groups are forwarded to the upstream API
+                      server. When it is non-empty, a group produced by the mapping is forwarded
+                      only if it equals one of these entries exactly; every other mapped group is
+                      dropped from the request and recorded in the authorizer's log. When it is
+                      omitted or empty there is no allowlist and every mapped group is forwarded,
+                      which is the default.
+
+                      The filter runs on the final mapped group list, whatever produced it: the
+                      default mapping (with spec.oidc.groupsPrefix already applied, when one is
+                      set) or a spec.groupMapping.celExpression. It therefore composes with both
+                      and excludes neither. Write each entry in the exact form the group takes
+                      after mapping — with the prefix, if a prefix is configured. Matching is
+                      exact string equality; there is no prefix, wildcard, or subtree form.
+
+                      Use it when the impersonator credential's RBAC names the groups it may
+                      impersonate exactly. The API server requires every forwarded group to be
+                      permitted, so without a filter a user who is a member of one group the
+                      credential may not impersonate is refused entirely, even though their other
+                      groups are permitted. With AnyOf set to the same list the RBAC names, the
+                      extra groups are dropped and the request proceeds with the permitted ones.
+                      Dropping a group can only reduce what a request may do, because Kubernetes
+                      RBAC grants permissions and never denies them.
+
+                      A dropped group is not an error: the request continues with the remaining
+                      groups, and the authorizer logs the dropped names together with the host and
+                      user so an operator can see why an access they expected is missing. An entry
+                      present in both AnyOf and NoneOf is excluded; NoneOf takes precedence.
+
+                      This is unrelated to spec.impersonation.groups, which filters nothing: that
+                      field is the allowlist of actor groups permitted to use delegated
+                      impersonation (the kubectl --as passthrough). When delegated impersonation
+                      is in use, AnyOf and NoneOf are applied to the actor's mapped groups before
+                      that allowlist is consulted, so they define the actor's effective groups.
+
+                      Each entry must be between 1 and 1024 characters; the list holds at most 256
+                      entries and rejects duplicates. The reconciler additionally rejects an entry
+                      that contains the spec.groupsHeaderSeparator character or has leading or
+                      trailing whitespace: a mapped group of that shape is one the authorizer
+                      refuses to forward, denying the request, and a filter entry naming it would
+                      turn that refusal into a silent drop.
+                    items:
+                      maxLength: 1024
+                      minLength: 1
+                      type: string
+                    maxItems: 256
+                    type: array
+                    x-kubernetes-list-type: set
+                  celExpression:
+                    description: |-
+                      CELExpression is a Common Expression Language expression evaluated against
+                      the validated token claims (exposed as the `claims` variable) that returns
+                      the list of Kubernetes groups to impersonate. When omitted (empty) the
+                      authorizer maps the OIDC groups claim directly — the claim named by
+                      spec.oidc.groupsClaim, which is the single source of truth for which claim
+                      carries the groups. The field is intentionally left unset by default rather
+                      than defaulted to a static `claims.groups` string, so that configuring a
+                      non-default groupsClaim is honored without also having to override this
+                      expression. Set it only to transform the groups (e.g. prefix or filter).
+                      MinLength=1 rejects an explicit empty string, which is an ambiguous no-op
+                      (semantically equivalent to omitting the field for the default mapping) that
+                      would also make the spec.oidc.groupsPrefix mutual-exclusion has() check fire
+                      spuriously; omit the field to select the default mapping.
+                    minLength: 1
+                    type: string
+                  noneOf:
+                    description: |-
+                      NoneOf names mapped groups that are never forwarded to the upstream API
+                      server. A group produced by the mapping that equals one of these entries
+                      exactly is dropped from the request and recorded in the authorizer's log.
+                      When it is omitted or empty nothing is excluded, which is the default.
+
+                      Like AnyOf, it runs on the final mapped group list after the default mapping
+                      (with spec.oidc.groupsPrefix applied, when set) or after a
+                      spec.groupMapping.celExpression, composes with both, and matches by exact
+                      string equality only. Write each entry in the exact form the group takes
+                      after mapping. It may be combined with AnyOf: a group is forwarded only if
+                      it passes AnyOf (when AnyOf is set) and is not named here. An entry present
+                      in both lists is excluded; NoneOf takes precedence.
+
+                      Use it to withhold a specific group from every request through this Backend
+                      while still forwarding the rest, for example a group whose membership is
+                      managed outside the platform's review. Dropping a group can only reduce what
+                      a request may do, because Kubernetes RBAC grants permissions and never denies
+                      them. A dropped group is not an error: the request continues with the
+                      remaining groups, and the authorizer logs the dropped names with the host and
+                      user.
+
+                      This is unrelated to spec.impersonation.groups, the allowlist of actor
+                      groups permitted to use delegated impersonation, which filters nothing. When
+                      delegated impersonation is in use, NoneOf is applied to the actor's mapped
+                      groups before that allowlist is consulted.
+
+                      Each entry must be between 1 and 1024 characters; the list holds at most 256
+                      entries and rejects duplicates. The reconciler additionally rejects an entry
+                      that contains the spec.groupsHeaderSeparator character or has leading or
+                      trailing whitespace: a mapped group of that shape is one the authorizer
+                      refuses to forward, denying the request, and a filter entry naming it would
+                      turn that refusal into a silent drop.
+                    items:
+                      maxLength: 1024
+                      minLength: 1
+                      type: string
+                    maxItems: 256
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
+              groupsHeaderSeparator:
+                default: '|'
+                description: |-
+                  GroupsHeaderSeparator is the single character the authorizer joins the
+                  impersonated group names with when it returns them to the proxy as one
+                  groups header value, and the character the paired Envoy Lua split filter
+                  must split that value back on. It defaults to a vertical pipe ("|"), a
+                  character that does not appear in the LDAP- and Active-Directory-style
+                  distinguished names — "cn=bob,o=example" — commonly used as group names; a
+                  comma separator would make such names unrepresentable, because the split
+                  filter would fan one name into several groups. The authorizer denies,
+                  fail-closed, any request whose groups contain the active separator
+                  character, so a group name can never be split or smuggled; pick a
+                  separator that appears in no group name. The value must be exactly one
+                  printable, non-space ASCII character. The Lua split filter on the proxy
+                  serving this Backend's host must be configured with the same character;
+                  the two are a matched pair.
+                pattern: ^[!-~]$
+                type: string
+              host:
+                description: |-
+                  Host is the request :authority/Host header value this Backend matches. The
+                  authorizer routes an inbound request to this Backend when the request's
+                  Host equals this value. Required.
+                minLength: 1
+                type: string
+              impersonation:
+                description: |-
+                  Impersonation gates and shapes delegated impersonation ("kubectl --as
+                  passthrough") for this Backend: the Groups allowlist of actor groups that may
+                  impersonate a different target identity, and the impersonation extra headers
+                  resolved from the actor token in delegated mode. See ImpersonationConfig in
+                  common_types.go for the self-vs-delegated impersonation modes and the
+                  deny-all inbound extra-header semantics.
+
+                  It is a pointer (rather than a value) and intentionally not defaulted so a nil
+                  value cleanly means "delegated impersonation disabled" — the current
+                  fail-closed self-impersonation behavior — distinct from an explicitly-set
+                  (possibly empty) config, mirroring how CredentialsSecretRef/ServiceAccountRef
+                  are pointers to distinguish omitted from set. A Backend that omits
+                  spec.impersonation is byte-for-byte unchanged.
+
+                  Status (HOL-1433): spec.impersonation is ACTIVE — the reconciler validates it
+                  (HOL-1432) and the authorizer Check path consumes it (HOL-1433). Setting a
+                  non-nil spec.impersonation changes request-path behavior: it authorizes
+                  delegated Impersonate-* passthrough for an actor on the Groups allowlist and
+                  emits spec.impersonation.extra in delegated mode only. It is no longer inert;
+                  treat it as the security-sensitive opt-in it is. Omitting it leaves the
+                  Backend byte-for-byte unchanged (self-impersonation only).
+                properties:
+                  extra:
+                    description: |-
+                      Extra maps token claims to Kubernetes Impersonate-Extra-<key>
+                      impersonation headers describing the **actor** — the authenticated identity
+                      that performs a delegated impersonation. It is emitted only in delegated mode,
+                      after the actor's mapped groups intersect Groups. Self mode ignores
+                      spec.impersonation.extra and emits only spec.oidc.extra.
+
+                      The per-entry claim-read semantics are identical to spec.oidc.extra: a
+                      missing or null claim skips the entry, a present string is emitted verbatim,
+                      and a present non-string denies the delegated request fail-closed. That
+                      misconfiguration does not affect self-mode requests because
+                      spec.impersonation.extra is resolved only on the delegated branch.
+
+                      Inbound Impersonate-Extra-* headers are always rejected fail-closed in both
+                      self and delegated mode, regardless of key. The authorizer never forwards or
+                      trusts client-supplied extras; it stamps extras only from validated token
+                      claims. Because spec.oidc.extra and spec.impersonation.extra are emitted in
+                      different modes, their keys may overlap without ambiguity. Each key's
+                      canonicality, like spec.oidc.extra, is still validated by the reconciler
+                      (Accepted=False on violation) rather than by an admission-time CEL rule.
+
+                      The list is a map keyed by Key (listType=map / listMapKey=key), so the API
+                      server rejects duplicate keys at admission — exactly like spec.oidc.extra.
+
+                      Before HOL-1448 this field used the older actor-extra JSON name. The v1alpha1
+                      API has no conversion webhook: after the CRD schema changes, stored values
+                      using the old name are pruned by the structural schema until operators
+                      re-apply their Backends with spec.impersonation.extra.
+                      HOL-1448 is one phase of the HOL-1447 series and is not intended to ship on
+                      its own; promote it only with the rest of the series so the transitional
+                      pruning window is never exposed as a standalone platform release.
+                    items:
+                      description: |-
+                        ExtraMapping maps a single token claim to a Kubernetes Impersonate-Extra-<key>
+                        impersonation header value: the authorizer reads the claim named by ValueClaim
+                        from the validated token and emits it as the Impersonate-Extra-<Key> header.
+                      properties:
+                        key:
+                          description: |-
+                            Key is the extra key — the suffix of the emitted Impersonate-Extra-<key>
+                            impersonation header (e.g. "email" yields Impersonate-Extra-email). It must be
+                            a canonical extra key: a lowercase HTTP header field-name token (RFC 7230) with
+                            no '%'. The reconciler rejects a Key with other characters (uppercase or '%'
+                            included) so the emitted header round-trips to the same extra key after the API
+                            server lowercases and percent-unescapes the suffix. Keys are unique within a
+                            Backend (enforced by the listMapKey on Extra). Required.
+                          minLength: 1
+                          type: string
+                        valueClaim:
+                          description: |-
+                            ValueClaim is the token claim the extra value is read from. A token missing
+                            this claim (or carrying it as JSON null) skips the entry (no header emitted); a
+                            present string is emitted verbatim, including an empty string; a
+                            present-but-non-string claim denies the request fail-closed. Required.
+                          minLength: 1
+                          type: string
+                      required:
+                      - key
+                      - valueClaim
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
+                  groups:
+                    description: |-
+                      Groups is the allowlist of Kubernetes groups that gates delegated
+                      impersonation: delegated impersonation ("kubectl --as passthrough") is
+                      permitted for a request only when the actor's **mapped** Kubernetes groups —
+                      the groups the authorizer computes for the validated actor token via the
+                      default groups-claim mapping or spec.groupMapping.celExpression, *not* the raw
+                      token claim — intersect this list. An actor whose mapped groups do not match
+                      any entry here is denied the ability to impersonate a different target
+                      identity (fail-closed), falling back to self impersonation semantics.
+
+                      It is opt-in: an omitted or empty Groups permits no delegated impersonation
+                      at all (no group is allowlisted), so a spec.impersonation present but with an
+                      empty Groups still leaves delegated impersonation effectively disabled. The
+                      list is a set (listType=set), so the API server rejects duplicate entries at
+                      admission, and each entry MinLength=1 rejects an empty group name (an empty
+                      string would never match a real mapped group and only muddies the allowlist).
+                    items:
+                      minLength: 1
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
+              oidc:
+                description: |-
+                  OIDC is the single OIDC client this Backend validates end-user tokens with
+                  (one OIDC client per backend). Required.
+                properties:
+                  caBundle:
+                    description: |-
+                      CABundle carries PEM-encoded x509 CA certificates the authorizer trusts in
+                      addition to its system store when reaching the OIDC issuer (discovery and
+                      JWKS endpoints). Its semantics and serialization are the shared "CABundle
+                      convention" documented once in common_types.go: an empty value uses the
+                      pod's system trust store unchanged. It is the trust anchor for an issuer
+                      signed by a private CA (e.g. an in-cluster Keycloak signed by the
+                      platform's local CA).
+                    format: byte
+                    type: string
+                  clientID:
+                    description: |-
+                      ClientID is the OAuth2 client ID that is also the expected token audience
+                      (`aud` claim): a token is accepted only when its audience includes this
+                      value. Required.
+                    minLength: 1
+                    type: string
+                  extra:
+                    description: |-
+                      Extra maps token claims to Kubernetes Impersonate-Extra-<key> impersonation
+                      headers, carrying additional claims (e.g. email, a tenant/org id) so downstream
+                      authorizers and audit tooling can key off them. Each entry names the extra key
+                      (the suffix of the emitted Impersonate-Extra-<key> header) and the claim to read
+                      its value from. It is emitted only in self mode. Delegated mode emits
+                      spec.impersonation.extra instead, and inbound Impersonate-Extra-* headers are
+                      denied fail-closed before mode selection. It is opt-in: an omitted or empty
+                      Extra emits no extra headers.
+                      An entry whose ValueClaim is absent (or JSON null) on a given token is skipped
+                      for that request (the extra is optional context, like a missing groups claim);
+                      an entry whose claim is present as a string is emitted verbatim (including an
+                      empty string); an entry whose claim is present but not a string denies the
+                      request fail-closed (a misconfiguration pointing at a list/object/number
+                      claim). Each entry's value is a single string in this phase — multi-valued
+                      extras are a deferred follow-up.
+
+                      The list is a map keyed by Key (listType=map / listMapKey=key), so the API
+                      server rejects duplicate keys at admission. Key must additionally be a
+                      canonical extra key — a lowercase HTTP header field-name token with no '%' (the
+                      reconciler validates it and rejects the spec, Accepted=False, otherwise) —
+                      because it is emitted verbatim as the Impersonate-Extra-<key> header suffix and
+                      the API server derives the extra-map key from that suffix by lowercasing and
+                      percent-unescaping it. Requiring the key be already-canonical keeps the
+                      case-sensitive listMapKey uniqueness aligned with the API server's lowercased
+                      keys and avoids a '%' decoding into a different key.
+                    items:
+                      description: |-
+                        ExtraMapping maps a single token claim to a Kubernetes Impersonate-Extra-<key>
+                        impersonation header value: the authorizer reads the claim named by ValueClaim
+                        from the validated token and emits it as the Impersonate-Extra-<Key> header.
+                      properties:
+                        key:
+                          description: |-
+                            Key is the extra key — the suffix of the emitted Impersonate-Extra-<key>
+                            impersonation header (e.g. "email" yields Impersonate-Extra-email). It must be
+                            a canonical extra key: a lowercase HTTP header field-name token (RFC 7230) with
+                            no '%'. The reconciler rejects a Key with other characters (uppercase or '%'
+                            included) so the emitted header round-trips to the same extra key after the API
+                            server lowercases and percent-unescapes the suffix. Keys are unique within a
+                            Backend (enforced by the listMapKey on Extra). Required.
+                          minLength: 1
+                          type: string
+                        valueClaim:
+                          description: |-
+                            ValueClaim is the token claim the extra value is read from. A token missing
+                            this claim (or carrying it as JSON null) skips the entry (no header emitted); a
+                            present string is emitted verbatim, including an empty string; a
+                            present-but-non-string claim denies the request fail-closed. Required.
+                          minLength: 1
+                          type: string
+                      required:
+                      - key
+                      - valueClaim
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
+                  groupsClaim:
+                    default: groups
+                    description: |-
+                      GroupsClaim is the token claim the authorizer reads the user's groups from.
+                      It is the source of truth for which claim carries the groups (the default
+                      group mapping reads it directly when spec.groupMapping.celExpression is
+                      empty). Defaults to "groups". MinLength=1 rejects an explicit empty string,
+                      which would otherwise bypass the default and persist an invalid claim name.
+                    minLength: 1
+                    type: string
+                  groupsPrefix:
+                    description: |-
+                      GroupsPrefix is prepended to every group read from the groups claim (the
+                      claim named by GroupsClaim) before it is impersonated as a Kubernetes group.
+                      The recommended value is "oidc:" — like the apiserver --oidc-groups-prefix=oidc:
+                      flag, prefixing isolates the external identity provider's group namespace so
+                      it cannot impersonate Kubernetes built-in system: groups (e.g. a token
+                      asserting "system:masters" becomes "oidc:system:masters"). It is honored only
+                      with the default group mapping (when spec.groupMapping.celExpression is empty,
+                      where the authorizer reads the groups claim directly) and is mutually
+                      exclusive with spec.groupMapping.celExpression — a CEL expression returns the
+                      final group set itself, so it must encode any prefix it wants. The
+                      mutual-exclusion is enforced by a CEL validation rule on BackendSpec. There is
+                      no default: an omitted GroupsPrefix prepends nothing, preserving the existing
+                      behavior. MinLength=1 rejects an explicit empty string, which would otherwise
+                      be an ambiguous no-op alongside the mutual-exclusion rule; omit the field to
+                      prepend nothing.
+                    minLength: 1
+                    type: string
+                  issuerURL:
+                    description: |-
+                      IssuerURL is the OIDC issuer (the `iss` claim and OIDC discovery base URL,
+                      e.g. https://keycloak.holos.internal/realms/holos). The authorizer fetches
+                      the issuer's discovery document and JWKS to validate token signatures.
+                      When JWKS is set, IssuerURL is instead the expected `iss` claim value only
+                      and no discovery document/JWKS is fetched: token signatures are validated
+                      against the static JWKS. Required.
+                    minLength: 1
+                    type: string
+                  jwks:
+                    description: |-
+                      JWKS carries a static copy of the issuer's JSON Web Key Set (the literal
+                      {"keys":[...]} document) used to validate token signatures **offline**. When
+                      set, the authorizer does NOT perform OIDC discovery or fetch the issuer's
+                      JWKS over HTTP: it verifies the token signature against these keys and still
+                      enforces iss (== IssuerURL), aud (== ClientID), and exp/nbf. This is the
+                      mechanism for a token issuer that is unreachable from this cluster — e.g. a
+                      remote cluster's Kubernetes API server signing service-account ID tokens.
+                      When empty, the authorizer performs OIDC discovery as before (the default,
+                      backward-compatible behavior). Serialized as a single base64 string per the
+                      shared CABundle convention in common_types.go. oidc.caBundle is unused when
+                      JWKS is set (there is no HTTP fetch to establish trust for).
+                    format: byte
+                    type: string
+                  uidClaim:
+                    description: |-
+                      UIDClaim is the token claim the authorizer reads a stable, non-reassignable
+                      user identifier from and emits as the Kubernetes Impersonate-Uid header. It is
+                      opt-in: there is no default, so an omitted UIDClaim emits no Impersonate-Uid
+                      header at all (the backward-compatible behavior). The recommended value is
+                      "sub" — a claim guaranteed stable across username changes — so audit logs and
+                      any UID-based policy can distinguish a renamed or recycled username from the
+                      original principal, while UsernameClaim carries a human-friendly identity
+                      (e.g. preferred_username or email). When set, the claim MUST be present and a
+                      non-empty string on every token or the request is denied fail-closed: a stable
+                      UID the operator asked for must not be silently dropped for some principals.
+                      MinLength=1 rejects an explicit empty string, which would otherwise be an
+                      ambiguous no-op; omit the field to emit no UID.
+                    minLength: 1
+                    type: string
+                  usernameClaim:
+                    default: sub
+                    description: |-
+                      UsernameClaim is the token claim the authorizer reads the user identity
+                      from, used as the Kubernetes impersonated username. Defaults to "sub".
+                      MinLength=1 rejects an explicit empty string, which would otherwise bypass
+                      the default and persist an invalid (blank) claim name.
+                    minLength: 1
+                    type: string
+                  usernamePrefix:
+                    description: |-
+                      UsernamePrefix is prepended to the username read from the username claim (the
+                      claim named by UsernameClaim) before it is impersonated as the Kubernetes
+                      user. The recommended value is "oidc:" — like the apiserver
+                      --oidc-username-prefix=oidc: flag, prefixing isolates the external identity
+                      provider's username namespace so a token cannot impersonate Kubernetes
+                      built-in system: users (e.g. a token whose username claim is "system:admin"
+                      becomes "oidc:system:admin"). UsernamePrefix and GroupsPrefix are intended to
+                      be configured **as a pair**, both conventionally "oidc:", matching the
+                      upstream apiserver guidance that --oidc-username-prefix and
+                      --oidc-groups-prefix are set together; the implementation nonetheless keeps
+                      them independent — each is its own optional field with no coupling, so a
+                      Backend may set one without the other. Unlike GroupsPrefix (which flows
+                      through the groups CEL mapping and is therefore mutually exclusive with
+                      spec.groupMapping.celExpression), the username is a direct claim read with no
+                      CEL mapping, so UsernamePrefix is always applied and has no such exclusion.
+                      There is no default: an omitted UsernamePrefix prepends nothing, preserving
+                      the existing behavior. MinLength=1 rejects an explicit empty string, which
+                      would otherwise be an ambiguous no-op; omit the field to prepend nothing.
+                    minLength: 1
+                    type: string
+                required:
+                - clientID
+                - issuerURL
+                type: object
+              server:
+                description: |-
+                  Server describes the upstream Kubernetes API server this Backend fronts,
+                  including its URL (possibly external) and an optional trusted CA bundle.
+                  Required.
+                properties:
+                  caBundle:
+                    description: |-
+                      CABundle carries PEM-encoded x509 CA certificates the authorizer trusts in
+                      addition to its system store when establishing TLS to the upstream API
+                      server. Its semantics and serialization are the shared "CABundle
+                      convention" documented once in common_types.go: PEM certs serialized as a
+                      single base64 string, an empty value uses the pod's system trust store
+                      unchanged. It is the trust anchor for an API server signed by a private CA
+                      (e.g. the platform's local CA) rather than a public root.
+                    format: byte
+                    type: string
+                  url:
+                    description: |-
+                      URL is the upstream Kubernetes API server endpoint the authorizer forwards
+                      authenticated requests to (e.g. https://api.example.com:6443). It may be
+                      external to the cluster. Required.
+                    minLength: 1
+                    type: string
+                required:
+                - url
+                type: object
+              serviceAccountRef:
+                description: |-
+                  ServiceAccountRef names a ServiceAccount in the authorizer's own namespace
+                  the authorizer mints a short-lived token for (via the TokenRequest API) to
+                  obtain the backend's privileged impersonator credential, as an alternative to
+                  a long-lived credentialsSecretRef. It is mutually exclusive with
+                  credentialsSecretRef (enforced by a CEL validation rule on this spec). When
+                  omitted, the authorizer uses credentialsSecretRef. See ServiceAccountReference
+                  in common_types.go.
+
+                  Phase note (HOL-1399): this phase ships the field, defaults, and validation
+                  only; the controller still resolves the credential exclusively from
+                  credentialsSecretRef. The TokenRequest minting/caching/rotation that consumes
+                  serviceAccountRef lands in HOL-1400.
+                properties:
+                  audience:
+                    description: |-
+                      Audience requested for the minted token (the TokenRequest spec.audiences).
+                      When empty the authorizer requests the API server's default audience (the
+                      audience of the cluster the authorizer runs in), which is the common case for
+                      impersonating against the local API server. Set it to target a token bound to
+                      a specific audience.
+                    type: string
+                  expirationSeconds:
+                    default: 3600
+                    description: |-
+                      ExpirationSeconds is the requested lifetime of the minted token (the
+                      TokenRequest spec.expirationSeconds). The authorizer caches and rotates the
+                      token within this lifetime. When omitted it defaults to 3600 (one hour). The
+                      Minimum of 600 (ten minutes) rejects an impractically short lifetime that
+                      would force near-continuous re-minting; the API server may still clamp the
+                      effective expiry to its own configured bounds.
+                    format: int64
+                    minimum: 600
+                    type: integer
+                  name:
+                    default: holos-authenticator-impersonator
+                    description: |-
+                      Name of the ServiceAccount in the authorizer's own namespace the authorizer
+                      mints a token for. When omitted it defaults to
+                      holos-authenticator-impersonator (the shipped impersonator SA). MinLength=1
+                      rejects an explicit empty string, which would otherwise bypass the default
+                      and leave the resolver with a blank ServiceAccount name.
+                    minLength: 1
+                    type: string
+                type: object
+            required:
+            - host
+            - oidc
+            - server
+            type: object
+            x-kubernetes-validations:
+            - message: credentialsSecretRef and serviceAccountRef are mutually exclusive;
+                set at most one
+              rule: '!(has(self.credentialsSecretRef) && has(self.serviceAccountRef))'
+            - message: oidc.groupsPrefix and groupMapping.celExpression are mutually
+                exclusive; groupsPrefix is honored only with the default mapping
+              rule: '!(has(self.oidc.groupsPrefix) && has(self.groupMapping.celExpression))'
+          status:
+            description: |-
+              BackendStatus defines the observed state of a Backend. It follows the
+              Gateway-API status convention: a slice of standard metav1.Conditions plus the
+              observedGeneration the authorizer last reconciled.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the backend's
+                  state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent generation observed for this Backend
+                  by the authorizer.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

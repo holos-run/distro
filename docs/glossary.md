@@ -21,10 +21,17 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
   10.20.0.60 and workers `cartography-general-1` to `-3` at .61 to .63, with its ingress gateway at
   10.20.0.34.
 
+**marina**
+: The garage's third Talos cluster, independent of the other two: control plane `marina-cp-1` at
+  10.20.0.70 and workers `marina-general-1` to `-3` at .71 to .73, with its ingress gateway at
+  10.20.0.38. Its API endpoint is a name, `api.marina.bank.internal`.
+
 **bank.internal**
 : The garage's private DNS zone. Each cluster has a subdomain of it, so every service is
   `<svc>.<cluster>.bank.internal`, such as `keycloak.treasury.bank.internal`, and answers on its
-  cluster's ingress gateway, 10.20.0.30 for treasury. Email addresses stay `<user>@bank.internal`.
+  cluster's ingress gateway, 10.20.0.30 for treasury. A named API endpoint, such as marina's, is
+  under its cluster's subdomain too and answers on the control plane. Email addresses stay
+  `<user>@bank.internal`.
 
 **talosvm**
 : The program that makes, resizes and restarts the cluster's Proxmox VMs,

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    ate.dev/api-access: "true"
+    kubernetes.io/metadata.name: kagent
+    pod-security.kubernetes.io/enforce: baseline
+  name: kagent
