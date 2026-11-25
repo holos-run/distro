@@ -57,8 +57,8 @@ func TestValidateReportsEverything(t *testing.T) {
 	}
 }
 
-// cluster.sh reads endpoint and kubernetesVersion itself, and its patterns are
-// these.
+// cluster.sh reads endpoint, kubernetesVersion and the pools' lists itself, and
+// its patterns are these.
 func TestClusterScriptPatterns(t *testing.T) {
 	script, err := os.ReadFile("cluster.sh")
 	if err != nil {
@@ -67,7 +67,14 @@ func TestClusterScriptPatterns(t *testing.T) {
 	for _, want := range []string{
 		"\nENDPOINT_PATTERN='" + endpointName.String() + "'\n",
 		"\nKUBERNETES_VERSION_PATTERN='" + kubernetesVersion.String() + "'\n",
-		fmt.Sprintf(" length <= %d ", maxName),
+		"\nPOOL_TAINT_PATTERN='" + poolTaint.String() + "'\n",
+		"\nPOOL_LABEL_PATTERN='" + poolLabel.String() + "'\n",
+		"\nRESERVED_LABEL_PATTERN='" + reservedLabel.String() + "'\n",
+		"\nKUBELET_LABEL_PATTERN='" + kubeletLabel.String() + "'\n",
+		"\nADMIN_LABEL_PATTERN='" + adminLabel.String() + "'\n",
+		"\nPOOL_LABEL=" + nodePoolLabel + "\n",
+		fmt.Sprintf(" length <= %d and test($pattern) then .\n    else \"\" | halt_error(1)", maxName),
+		fmt.Sprintf(" length <= %d and test($pattern) then . else \"\\($at): \\($want)\"", maxName),
 	} {
 		if !strings.Contains(string(script), want) {
 			t.Errorf("cluster.sh does not hold %q", want)
@@ -248,13 +255,16 @@ ethernets:
 func TestDecode(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.json")
-	os.WriteFile(good, []byte(`{"cluster":"lab","firstAddress":"10.20.0.60","bridge":"lab","pools":[{"name":"microvm","count":2,"cores":8,"memoryMiB":16384,"diskGiB":100,"nodes":["r620c"]}]}`), 0o600)
+	os.WriteFile(good, []byte(`{"cluster":"lab","firstAddress":"10.20.0.60","bridge":"lab","pools":[{"name":"microvm","count":2,"cores":8,"memoryMiB":16384,"diskGiB":100,"nodes":["r620c"],"taints":["a=b:NoSchedule"],"labels":["c=d"],"adminLabels":["node-restriction.kubernetes.io/e=f"]}]}`), 0o600)
 	c := treasury()
 	if err := Decode(good, &c); err != nil {
 		t.Fatal(err)
 	}
 	if c.Cluster != "lab" || c.Network != "lab" || len(c.Pools) != 1 || c.Pools[0].Name != "microvm" || !slices.Equal(c.Pools[0].Zones, []string{"r620c"}) || c.ControlPlane.MemoryMiB != 8192 {
 		t.Errorf("Decode did not merge over defaults: %+v", c)
+	}
+	if p := c.Pools[0]; !slices.Equal(p.Taints, []string{"a=b:NoSchedule"}) || !slices.Equal(p.Labels, []string{"c=d"}) || !slices.Equal(p.AdminLabels, []string{"node-restriction.kubernetes.io/e=f"}) {
+		t.Errorf("Decode did not read the pool's lists: %+v", p)
 	}
 	if c.Endpoint != nil || c.KubernetesVersion != nil {
 		t.Errorf("Decode set a field the file leaves out: %+v", c)
@@ -267,9 +277,12 @@ func TestDecode(t *testing.T) {
 	if c.Endpoint == nil || *c.Endpoint != "api.lab.internal" || c.KubernetesVersion == nil || *c.KubernetesVersion != "1.37.2" {
 		t.Errorf("Decode did not read the endpoint and Kubernetes version: %+v", c)
 	}
-	bad := filepath.Join(dir, "bad.json")
-	os.WriteFile(bad, []byte(`{"clsuter":"lab"}`), 0o600)
-	if err := Decode(bad, &c); err == nil {
-		t.Error("Decode accepted an unknown field")
+	// Only a pool has the lists.
+	for _, data := range []string{`{"clsuter":"lab"}`, `{"pools":[{"taint":["a=b:NoSchedule"]}]}`, `{"controlPlane":{"taints":["a=b:NoSchedule"]}}`} {
+		bad := filepath.Join(dir, "bad.json")
+		os.WriteFile(bad, []byte(data), 0o600)
+		if err := Decode(bad, &c); err == nil {
+			t.Errorf("Decode accepted an unknown field: %s", data)
+		}
 	}
 }

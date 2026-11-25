@@ -36,10 +36,10 @@ type ControlPlane struct {
 	Addresses []string `json:"addresses,omitempty"`
 }
 
-// Pool is a group of identical workers. Each worker carries a pool label, so
-// a Talos patch turns it into a node label, and a dedicated pool, such as one
-// for the microVM sandbox class, is one more entry here rather than a change
-// to the program.
+// Pool is a group of identical workers. Each worker carries a pool label,
+// which a Talos patch turns into a node label. A dedicated pool, such as one
+// for the microVM sandbox class, is one more entry here, kept to its purpose
+// by Taints and AdminLabels.
 type Pool struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
@@ -49,6 +49,16 @@ type Pool struct {
 	Zones []string `json:"nodes,omitempty"`
 	// Addresses works as it does for the control plane.
 	Addresses []string `json:"addresses,omitempty"`
+	// Taints, Labels and AdminLabels are for the pool's nodes, in the form
+	// kubectl takes: key=value:Effect and key=value. Nothing here uses them:
+	// cluster.sh reads all three from the file, so Validate and the script
+	// accept the same strings. The kubelet registers with the taints. Talos
+	// sets the labels as the node, so a node can change its own. cluster.sh
+	// sets the admin labels with the admin kubeconfig, and NodeRestriction
+	// keeps a node from changing them.
+	Taints      []string `json:"taints,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
+	AdminLabels []string `json:"adminLabels,omitempty"`
 }
 
 // Config is the cluster's shape: its name, versions, endpoint, node network and
@@ -152,8 +162,30 @@ var endpointName = regexp.MustCompile(`\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+
 // it. cluster.sh holds the same pattern.
 var kubernetesVersion = regexp.MustCompile(`\A[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\z`)
 
-// maxName is the length of the longest DNS name, and cluster.sh's limit on both
-// strings.
+// poolTaint is a taint as kubectl takes it, whose value may be empty or left
+// out. cluster.sh holds the same pattern.
+var poolTaint = regexp.MustCompile(`\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?(=([A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?)?)?:(NoSchedule|PreferNoSchedule|NoExecute)\z`)
+
+// poolLabel is a label as kubectl takes it, whose value may be empty or left
+// out. cluster.sh holds the same pattern.
+var poolLabel = regexp.MustCompile(`\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?(=([A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?)?)?\z`)
+
+// What a pool's labels may not be is nodePoolLabel, which cluster.sh sets, and
+// any of Kubernetes's own, reservedLabel, but those kubeletLabel matches. Most
+// of them NodeRestriction refuses from a node, and with each every other label
+// Talos sets in the same request. The rest, region and zone among them, are set
+// by cluster.sh or the kubelet. No node may set an adminLabel. cluster.sh holds
+// all four.
+const nodePoolLabel = "holos.run/nodepool"
+
+var (
+	reservedLabel = regexp.MustCompile(`\A([a-z0-9.-]+\.)?(kubernetes|k8s)\.io/`)
+	kubeletLabel  = regexp.MustCompile(`\A([a-z0-9.-]+\.)?(node|kubelet)\.kubernetes\.io/`)
+	adminLabel    = regexp.MustCompile(`\A([a-z0-9.-]+\.)?node-restriction\.kubernetes\.io/`)
+)
+
+// maxName is the length of the longest DNS name, and cluster.sh's limit on
+// every string it checks.
 const maxName = 253
 
 // ValidClusterName reports whether name can name a cluster. It decides what
@@ -215,6 +247,7 @@ func (c Config) Validate(checkAddress func(netip.Addr) error) error {
 			add("%s.count %d: want zero or more", where, p.Count)
 		}
 		errs = append(errs, p.Size.validate(where)...)
+		errs = append(errs, p.validateNodes(where)...)
 	}
 	if len(errs) == 0 {
 		// Addresses depend on the counts, so they are only checked once
@@ -224,6 +257,52 @@ func (c Config) Validate(checkAddress func(netip.Addr) error) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validateNodes checks the pool's taints and labels. cluster.sh checks the same
+// when it reads them. A node may have one taint of a key and effect, and one
+// label of a key.
+func (p Pool) validateNodes(where string) []error {
+	var errs []error
+	list := func(field string, entries []string, pattern *regexp.Regexp, want string, refuse func(key string) string) {
+		seen := map[string]bool{}
+		for i, e := range entries {
+			why := want
+			if len(e) <= maxName && pattern.MatchString(e) {
+				key, effect := e, ""
+				if c := strings.LastIndexByte(e, ':'); c >= 0 {
+					key, effect = e[:c], e[c:]
+				}
+				key, _, _ = strings.Cut(key, "=")
+				if why = refuse(key); why == "" && seen[key+effect] {
+					why = "given twice"
+				}
+				seen[key+effect] = true
+			}
+			if why != "" {
+				errs = append(errs, fmt.Errorf("%s.%s[%d] %q: %s", where, field, i, e, why))
+			}
+		}
+	}
+	list("taints", p.Taints, poolTaint, "want a taint such as example.com/key=value:NoSchedule", func(string) string { return "" })
+	list("labels", p.Labels, poolLabel, "want a label such as example.com/key=value", func(key string) string {
+		switch {
+		case key == nodePoolLabel:
+			return "cluster.sh sets this label"
+		case adminLabel.MatchString(key):
+			return "a node may not set this label on itself; put it in adminLabels"
+		case reservedLabel.MatchString(key) && !kubeletLabel.MatchString(key):
+			return "Kubernetes keeps this label for itself"
+		}
+		return ""
+	})
+	list("adminLabels", p.AdminLabels, poolLabel, "want a label such as node-restriction.kubernetes.io/key=value", func(key string) string {
+		if !adminLabel.MatchString(key) {
+			return "want a node-restriction.kubernetes.io/ label, since a node can set any other on itself"
+		}
+		return ""
+	})
+	return errs
 }
 
 func (s Size) validate(where string) []error {
