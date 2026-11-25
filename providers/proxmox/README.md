@@ -200,6 +200,23 @@ any change; a dry run checks only that it exists, and writes nothing.
 - Other tenants' snippets are read for the address check only if they are
   regular files (not symlinks, FIFOs or devices) of at most 1 MiB.
 
+#### The backups directory
+
+The same export has `backups/`, where the operator's machine, the talosvm host,
+writes the [etcd snapshots](../talos/README.md#etcd-snapshots) beneath
+`backups/etcd/<cluster>/`. It is apart from `snippets/`, which `talosvm` reads,
+and is made once, as root, on `coffee.lan`. The mode is 2770 rather than
+`snippets/`'s 2775, since no Proxmox node reads it:
+
+```sh
+install -d -o root -g 1001 -m 2770 /data/pve/garage/backups
+```
+
+On 2026-11-25 it was made through the mount instead, as root on 10.20.0.4, which
+`no_root_squash` allows, with the same owner, group and mode. Either way it is
+made by hand: the snapshot script never makes it, so without the mount there is
+nothing to write to.
+
 ### Addresses
 
 `talosvm` refuses a node address outside 10.20.0.0/24, the network,

@@ -5551,6 +5551,9 @@ above from a fixed checkout.
 
 ### Rebuilding a cluster
 
+Control plane lost, workers and Ceph intact, and the cluster has snapshots: [restore
+etcd](../providers/talos/README.md#restoring-etcd-from-a-snapshot). Otherwise, rebuild.
+
 A rebuild destroys a cluster's VMs and brings up a new cluster with the same
 name. Git brings nearly everything back. What it cannot bring back is the
 cluster's state, the things the cluster holds that a rebuild cannot make again
@@ -5618,6 +5621,9 @@ claude VM unless a step says otherwise:
    It stays on the claude VM beside the only secret key that opens it, so
    losing the VM loses both: a copy of the file and an export of the key
    somewhere else are yours to make.
+9. **Start the snapshots again.** On a cluster whose timer Tearing a cluster
+   down disabled, enable it with the install block under [Installing the
+   timer](../providers/talos/README.md#installing-the-timer).
 
 Every resource is required, and a missing one fails the verb and writes
 nothing. `-skip <namespace>/<name>`, repeatable, on both verbs, is the only way
@@ -5669,6 +5675,15 @@ refuses: move the file aside yourself first.
   keep the one on the cluster. A rerun leaves identical Secrets alone.
 
 ### Tearing a cluster down
+
+On a cluster that has [etcd
+snapshots](../providers/talos/README.md#etcd-snapshots), stop its timer first,
+and move its snapshots aside, since none of them fits a rebuilt cluster:
+
+```sh
+systemctl --user disable --now etcd-snapshot@${cluster:?set cluster first}.timer
+mv /mnt/pve/garage/backups/etcd/${cluster:?} /mnt/pve/garage/backups/etcd/$cluster.old-$(date +%FT%H%M)
+```
 
 Destroying the VMs leaves two things behind. `cluster.sh gen` reuses a
 `secrets.yaml` it finds, so the state directory must move aside for the new
@@ -5877,6 +5892,16 @@ kubectl -n $cluster-test expose deployment echo --type=LoadBalancer --port=80 --
 kubectl -n $cluster-test get svc echo   # EXTERNAL-IP from 10.20.0.31-.33, never the gateway's .30
 curl http://<external-ip>/hostname   # from the garage network
 kubectl delete ns $cluster-test
+```
+
+On a cluster that has [etcd
+snapshots](../providers/talos/README.md#etcd-snapshots), which is marina alone,
+the newest one's name and age, from the repository's root on the claude VM. It
+fails past 48 hours, or when there is none, it is not whole or the export is
+not mounted:
+
+```sh
+providers/talos/etcd-snapshot.sh check $cluster
 ```
 
 CoreDNS's metrics show which upstream answered: a `bank.internal` query is

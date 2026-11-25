@@ -429,7 +429,9 @@ script sets `umask 077`, so directories are 0700 and files 0600:
 | `kubeconfig` | Cluster admin kubeconfig. Its server is the endpoint: the config's `endpoint`, or else the control plane's address. |
 
 Back the directory up: without `secrets.yaml` and `talosconfig` the cluster
-can no longer be administered.
+can no longer be administered, and no snapshot of its etcd can be restored.
+[etcd snapshots](#etcd-snapshots) writes an encrypted copy every day, for a
+cluster that has them.
 
 ### Bringing a cluster up
 
@@ -508,6 +510,314 @@ kubectl get nodes -o wide --show-labels
 
 All three can be rerun. To change the patches on a running cluster, edit
 them, then `gen` and `apply`.
+
+### etcd snapshots
+
+Marina has one control plane node, so its etcd is snapshotted every day from
+the operator's machine: the claude VM, host `claude`, 10.20.0.4, which ran
+`cluster.sh` for marina and holds `~/.config/holos/talos/marina/`. Treasury
+and cartography have no snapshots. A systemd user timer there,
+`etcd-snapshot@marina.timer`, runs [`etcd-snapshot.sh`](etcd-snapshot.sh),
+which writes two files with one UTC timestamp to the `garage` export, mounted
+at `/mnt/pve/garage` ([The backups
+directory](../proxmox/README.md#the-backups-directory)):
+
+| File in `/mnt/pve/garage/backups/etcd/marina/` | What it is |
+| --- | --- |
+| `marina-<timestamp>.snapshot` | `talosctl etcd snapshot`, not encrypted. |
+| `marina-<timestamp>.secrets.tar.gpg` | `~/.config/holos/talos/marina/`, encrypted to the key the unit names. |
+
+The timestamp is in the form `20261125T101700Z`, so the last in a listing is
+the newest. A run writes both under hidden names and puts them in place only
+once both are whole, the archive first, so a snapshot that is there has its
+archive. It refuses a name that exists. Only after a run that worked does it
+delete the old ones: it keeps the newest 30 snapshots, a month of daily runs,
+and their archives, and touches no other file.
+
+The units are in [`systemd/`](systemd/). The timer runs at 03:17 local time,
+give or take, and at the next start of a machine that was off
+(`Persistent=true`). The service fails, and leaves the unit failed, when the
+export is not mounted: the mount is `nofail`, and a snapshot must not land on
+the local disk in its place. The mount belongs to the system manager, so the
+unit tests for it with `mountpoint` rather than `RequiresMountsFor=`, which
+does nothing in a user unit, and the script tests again. A failed run is tried
+again every 10 minutes, four times in all, for a boot that reaches the timer
+before the mount. The export is mounted `hard`, so a run that blocks on it is
+ended after 15 minutes.
+
+Encrypting needs only the public key, so a run needs no unlocked key.
+
+#### Installing the timer
+
+The service runs an installed copy of the script, so it depends on no checkout.
+Install again after a change to the script or the units. From the repository's
+root on the operator's machine, with `cluster` set:
+
+```sh
+install -D -m 0755 providers/talos/etcd-snapshot.sh ~/.local/libexec/holos/etcd-snapshot.sh
+install -D -m 0644 -t ~/.config/systemd/user providers/talos/systemd/etcd-snapshot@.service providers/talos/systemd/etcd-snapshot@.timer
+install -D -m 0644 -t ~/.config/systemd/user/etcd-snapshot@$cluster.service.d providers/talos/systemd/etcd-snapshot@$cluster.service.d/cluster.conf
+loginctl show-user "$USER" -p Linger   # yes, or: sudo loginctl enable-linger "$USER"
+systemctl --user daemon-reload
+systemctl --user enable --now etcd-snapshot@$cluster.timer
+
+systemctl --user start etcd-snapshot@$cluster.service   # one run now; returns when it is done
+journalctl --user -u etcd-snapshot@$cluster -n 10 -o cat
+systemctl --user list-timers
+providers/talos/etcd-snapshot.sh check $cluster
+```
+
+The last command is the one that tells whether snapshots still work, and is in
+[Check](../../holos/README.md#check): it prints the newest snapshot's name and
+age, and fails when that is more than 48 hours old, not whole or without its
+archive, when there is none, or when the export is not mounted. The age is the
+name's, the time the run began, since a file's mtime changes when it is copied.
+
+Decrypt one archive by hand when the timer is installed, to show that the key
+opens it, listing the names alone (done on 2026-11-25 for marina):
+
+```sh
+gpg -d "$(ls /mnt/pve/garage/backups/etcd/$cluster/*.secrets.tar.gpg | tail -n 1)" | tar -t
+```
+
+The cluster's own settings are in its drop-in,
+[`etcd-snapshot@marina.service.d/cluster.conf`](systemd/etcd-snapshot@marina.service.d/cluster.conf):
+the control plane's address, and the `talosctl` of the cluster's Talos
+version, by its full path, since a user unit's `PATH` has no `~/.local/bin`.
+**An upgrade of the cluster's Talos must change the version there too**, and
+install it again; `go test` fails while the two disagree. Another cluster is a
+drop-in of its own and the block above.
+
+Stop the timer before a restore, or before tearing the cluster down, so that
+what it takes next is not taken for the newest good snapshot.
+
+#### What this leaves open
+
+- The snapshots are not encrypted. Talos encrypts Secret values in etcd with a
+  key that is in the encrypted archive, but every other object is in clear, and
+  any host on the LAN can mount the export and, as root, read, write and delete
+  what is on it.
+- The GPG secret key is on the same VM as the secrets it protects, and that VM
+  runs on the garage. Losing the VM loses the secrets and the key that opens
+  their copy.
+- A stopped timer is seen only by someone who looks. The admin client
+  certificate in the talosconfig expires after a year, for marina on
+  2027-11-25, and that will stop it.
+- The timer uses the admin talosconfig. A narrower Talos role may be enough.
+- A run that is killed outright leaves a hidden `.partial` file of some 50 MB,
+  which nothing removes or takes for a snapshot.
+
+### Restoring etcd from a snapshot
+
+> **Unrehearsed.** Nobody has run this procedure. It was written on 2026-11-25
+> against Talos v1.14.7, from `talosctl`'s own help, Talos's [disaster
+> recovery
+> guide](https://docs.siderolabs.com/talos/v1.14/build-and-extend-talos/cluster-operations-and-maintenance/disaster-recovery)
+> and the code here. Read it to the end before you start.
+
+Use it when the control plane is lost and the workers and Ceph are intact.
+Otherwise [rebuild](../../holos/README.md#rebuilding-a-cluster). It brings the
+cluster's objects back as they were when the snapshot was taken, with the same
+cluster identity, so the workers rejoin as they are. What was made since is
+gone from the API: a volume made since is left in Ceph with no PersistentVolume,
+and one deleted since comes back with none.
+
+What not to do:
+
+- **Do not run `cluster.sh up` or `cluster.sh bootstrap`.** Both run a plain
+  `talosctl bootstrap`, which makes an empty etcd, and `--recover-from` is then
+  refused until the node is wiped.
+- **Do not run any `cluster.sh` command before the secrets directory is back.**
+  With no `secrets.yaml`, `cluster.sh gen` makes new secrets without asking: a
+  new cluster identity, which no snapshot fits.
+- **Do not run `talosvm destroy`.** It takes the whole cluster, and the private
+  root with it. A dead control plane VM is removed by hand in Proxmox.
+- **Do not remove the VM, or wipe its disk, while it might still start.** Its
+  disk has an etcd newer than any snapshot. Power-cycle it in Proxmox first.
+
+Which block: if the VM runs and Talos answers (the `talosctl version` in the
+second block), it is the second. If the VM is gone, its disk is lost, or Talos
+never answers, it is the first.
+
+Both are for marina, from the repository's root on the operator's machine, and
+need its GPG key unlocked (an `attach-gpg` pane) if the secrets directory is
+gone. Run them a few lines at a time, reading what each prints. The version in
+`talosctl` is the cluster's `talosVersion`, in
+[`talosvm.json`](clusters/marina/talosvm.json), and [Bringing a cluster
+up](#bringing-a-cluster-up) installs it.
+
+#### The control plane VM is gone
+
+`talosvm create` makes the VMs the config asks for that do not exist, so here
+the control plane alone, at the same size and address and on the first online
+Proxmox node by name. It changes none of the VMs that exist, beyond starting a
+stopped one and writing a snippet that is missing. Two things stand in its way:
+
+- The dead VM, while Proxmox still lists it. It counts as existing, so `create`
+  only tries to start it. Remove it by hand first. Its snippet can stay.
+- An offline host. `create` refuses the whole run while `r620a`, `r620b` or
+  `r620c` is offline, since marina's workers are pinned to them, though it
+  makes no worker here. It also fails while any other host with a guest on it
+  is, since it reads every guest's config to check addresses.
+
+A control plane lost with its host therefore waits for the host. The case where
+the host never comes back is not written here.
+
+```sh
+setopt interactivecomments 2>/dev/null || true
+cluster=marina cp=10.20.0.70
+talosctl=~/.local/bin/talosctl-v1.14.7
+"$talosctl" version --client --short
+state=~/.config/holos/talos/$cluster
+export TALOSCONFIG=$state/talosconfig KUBECONFIG=$state/kubeconfig
+systemctl --user disable --now etcd-snapshot@$cluster.timer
+systemctl --user stop etcd-snapshot@$cluster.service
+
+# The newest snapshot, the last in the listing. Check that its size is like the
+# rest and that it is older than the failure, or else set snap by hand.
+ls -l /mnt/pve/garage/backups/etcd/$cluster/
+snap=$(ls /mnt/pve/garage/backups/etcd/$cluster/$cluster-*.snapshot | tail -n 1)
+ls -l "${snap:?}"
+
+# Only if the secrets directory is gone. If it is there and a file below is
+# missing, or it may hold new secrets, move it aside and run this again.
+[ -e "$state" ] || (umask 077 && mkdir -p ~/.config/holos/talos &&
+  gpg -d "${snap%.snapshot}.secrets.tar.gpg" | tar -x -C ~/.config/holos/talos)
+ls -l $state/secrets.yaml $state/talosconfig $state/nodes/$cluster-cp-1.yaml
+
+# Remove the dead VM by hand, in Proxmox: marina-cp-1, and no other VM.
+set -a; . ~/.config/holos/proxmox.env; set +a
+
+# The list must show the workers alone, and the dry run make marina-cp-1 alone.
+go run ./providers/talos/cmd/talosvm list -cluster $cluster
+go run ./providers/talos/cmd/talosvm create -cluster $cluster -dry-run
+go run ./providers/talos/cmd/talosvm create -cluster $cluster
+
+# Maintenance mode, then the saved config, which installs Talos and reboots.
+until "$talosctl" get machinestatus -n $cp --insecure >/dev/null 2>&1; do sleep 5; done
+"$talosctl" apply-config -n $cp --insecure --file $state/nodes/$cluster-cp-1.yaml
+
+# etcd waits in Preparing for a bootstrap, a few minutes later. If it says
+# Running instead, stop here, since something has bootstrapped it. If the
+# bootstrap says it is not available yet, wait and run that line again.
+until "$talosctl" -n $cp service etcd 2>/dev/null | grep -E '^STATE +(Preparing|Running)'; do sleep 5; done
+[ -s "${snap:?}" ] && "$talosctl" -n $cp bootstrap --recover-from="$snap"
+
+# Running and OK, marina-cp-1 the only member, and in a few minutes every node
+# Ready.
+"$talosctl" -n $cp service etcd
+"$talosctl" -n $cp etcd members
+until kubectl get --raw /readyz; do sleep 5; done
+kubectl get nodes
+```
+
+If `create` put the VM on another Proxmox node than before, its zone label is
+the old one. Once the node is back, `cluster.sh gen` writes the new one to its
+config, and this applies it to that node alone:
+
+```sh
+"$talosctl" -n $cp apply-config --file $state/nodes/$cluster-cp-1.yaml
+```
+
+Not `cluster.sh apply`, which sends every node its saved config. The workers'
+saved configs have no [trust of the
+root](../../holos/README.md#trusting-the-root-on-the-workers), which is patched
+in live, so it would go.
+
+#### The VM is alive and etcd is broken
+
+Here Talos answers and etcd does not work. Wiping the node's `EPHEMERAL`
+partition takes the broken etcd away, and the node then waits for a bootstrap
+as a new one does. Its machine config is on `STATE`, which stays, so the node
+comes back configured and no config is applied.
+
+`EPHEMERAL` is all of `/var`: besides etcd's data, the containers and their
+images, the kubelet's state and certificates, the CNI's, and the node's logs,
+which is the evidence of what broke. All of it but etcd is made again when the
+node starts. Nothing but the control plane's own pods and the DaemonSets runs
+there, so no workload's data is on it.
+
+```sh
+setopt interactivecomments 2>/dev/null || true
+cluster=marina cp=10.20.0.70
+talosctl=~/.local/bin/talosctl-v1.14.7
+"$talosctl" version --client --short
+state=~/.config/holos/talos/$cluster
+export TALOSCONFIG=$state/talosconfig KUBECONFIG=$state/kubeconfig
+systemctl --user disable --now etcd-snapshot@$cluster.timer
+systemctl --user stop etcd-snapshot@$cluster.service
+
+# The newest snapshot, the last in the listing. Check that its size is like the
+# rest and that it is older than the failure, or else set snap by hand.
+ls -l /mnt/pve/garage/backups/etcd/$cluster/
+snap=$(ls /mnt/pve/garage/backups/etcd/$cluster/$cluster-*.snapshot | tail -n 1)
+ls -l "${snap:?}"
+
+# Only if the secrets directory is gone. If it is there and a file below is
+# missing, or it may hold new secrets, move it aside and run this again.
+[ -e "$state" ] || (umask 077 && mkdir -p ~/.config/holos/talos &&
+  gpg -d "${snap%.snapshot}.secrets.tar.gpg" | tar -x -C ~/.config/holos/talos)
+ls -l $state/secrets.yaml $state/talosconfig
+
+# See that it is really broken. A reboot is the cheapest repair.
+"$talosctl" -n $cp version --short
+"$talosctl" -n $cp service etcd
+"$talosctl" -n $cp etcd members
+"$talosctl" -n $cp logs etcd | tail -n 50
+
+# Keep what the node has. It stays out of the restore unless you choose it
+# below.
+keep=$HOME/$cluster-etcd-$(date -u +%Y%m%dT%H%M%SZ); (umask 077 && mkdir "$keep")
+"$talosctl" -n $cp etcd snapshot "$keep/etcd.snapshot"
+"$talosctl" -n $cp cp /var/lib/etcd/member/snap/db "$keep"
+"$talosctl" -n $cp logs etcd >"$keep/etcd.log"
+ls -lR "$keep"
+
+# Wipe etcd, with all of EPHEMERAL, and reboot, only with a snapshot in hand.
+[ -s "${snap:?}" ] && "$talosctl" -n $cp reset --graceful=false --reboot --system-labels-to-wipe=EPHEMERAL
+
+# etcd waits in Preparing for a bootstrap. If it says Running, stop here. If
+# the bootstrap says it is not available yet, wait and run that line again.
+until "$talosctl" -n $cp service etcd 2>/dev/null | grep -E '^STATE +(Preparing|Running)'; do sleep 5; done
+[ -s "${snap:?}" ] && "$talosctl" -n $cp bootstrap --recover-from="$snap"
+
+# Running and OK, marina-cp-1 the only member, and in a few minutes every node
+# Ready.
+"$talosctl" -n $cp service etcd
+"$talosctl" -n $cp etcd members
+until kubectl get --raw /readyz; do sleep 5; done
+kubectl get nodes
+```
+
+`--graceful=false` skips leaving etcd, which a broken one cannot do.
+`--recover-skip-hash-check` is not for a snapshot that `talosctl etcd snapshot`
+made, here or by the timer, since it ends with its hash. The copied `db` has
+none: to restore that instead, because the snapshot is too old, set
+`snap=$keep/db` and add the flag, and expect that the file may not be
+consistent.
+
+`$keep/etcd.snapshot`, when etcd still answered, is newer than the timer's.
+Restore it, with `snap=$keep/etcd.snapshot`, only when what it holds is good: a
+size and number of keys like the timer's, and no mistake in the data itself. An
+etcd that a plain `bootstrap` made empty answers too, and its snapshot restores
+the emptiness.
+
+#### After either
+
+The controllers on the workers remember versions of objects newer than the
+restored ones. Once every node is Ready, restart the workers, one at a time, which also restarts their
+kubelets ([Restarting nodes](#restarting-nodes)), then run
+[Check](../../holos/README.md#check) and start the timer again:
+
+```sh
+set -a; . ~/.config/holos/proxmox.env; set +a
+go run ./providers/talos/cmd/talosvm restart -cluster $cluster -talosctl "$talosctl"
+systemctl --user enable --now etcd-snapshot@$cluster.timer
+systemctl --user start etcd-snapshot@$cluster.service
+providers/talos/etcd-snapshot.sh check $cluster
+```
+
+Delete `$keep` once the cluster is well.
 
 ### Admission webhooks
 
