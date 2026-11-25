@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atelet
+  namespace: ate-system
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ate-api-server
+    ports:
+    - port: grpc
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: atelet
+  policyTypes:
+  - Ingress

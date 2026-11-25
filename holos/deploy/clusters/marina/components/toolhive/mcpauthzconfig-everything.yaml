@@ -1,0 +1,13 @@
+apiVersion: toolhive.stacklok.dev/v1beta1
+kind: MCPAuthzConfig
+metadata:
+    name: everything
+    namespace: toolhive
+spec:
+    config:
+        entities_json: '[]'
+        group_claim_name: groups
+        policies:
+            - permit(principal in THVGroup::"/platform/owners", action in [Action::"call_tool", Action::"get_prompt", Action::"read_resource"], resource);
+            - forbid(principal, action == Action::"call_tool", resource == Tool::"get-env");
+    type: cedarv1

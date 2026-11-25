@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ate-system-rustfs-reader
+  namespace: rustfs
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - rustfs-substrate
+  resources:
+  - secrets
+  verbs:
+  - get

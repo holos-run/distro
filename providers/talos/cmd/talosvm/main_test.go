@@ -222,7 +222,7 @@ func TestCommittedClusters(t *testing.T) {
 			owners[s.Address] = e.Name()
 		}
 	}
-	for _, name := range []string{"cartography", "treasury"} {
+	for _, name := range []string{"cartography", "marina", "treasury"} {
 		if !seen[name] {
 			t.Errorf("no committed config for %s", name)
 		}

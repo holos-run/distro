@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/version: 0.0.0-holos.20261107.3af6ae5
+    helm.sh/chart: kagent-0.0.0-holos.20261107.3af6ae5
+  name: kagent-ui
+  namespace: kagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: ui
+      app.kubernetes.io/instance: kagent
+      app.kubernetes.io/name: kagent
+  template:
+    metadata:
+      annotations:
+        checksum/configmap: e8206375ea9c572fd7ecff0496a8921866501efb31796db6f2b44fb771190bf0
+        checksum/ui-config: cd38506c564af57ecb992cd6c684ca0fc11e58809ca82642c6fb1e16ae018622
+      labels:
+        app.kubernetes.io/component: ui
+        app.kubernetes.io/instance: kagent
+        app.kubernetes.io/name: kagent
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: kagent-ui
+        image: ghcr.io/holos-run/kagent/ui:0.0.0-holos.20261107.3af6ae5@sha256:2eb18ef5bf788c5af382506a30f5354681872cc69ddd5b200d82f6ab5b0f43c6
+        imagePullPolicy: IfNotPresent
+        name: ui
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 30
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 1
+          periodSeconds: 1
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /etc/nginx/nginx.conf
+          name: ui-config
+          readOnly: true
+          subPath: nginx.conf
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: kagent-ui
+      volumes:
+      - emptyDir:
+          sizeLimit: 50Mi
+        name: tmp
+      - configMap:
+          name: kagent-ui-config
+        name: ui-config

@@ -24,7 +24,7 @@ inside the cluster; this provider implements neither. Each cluster's pool and
 user are made by hand ([Ceph pool and user](#ceph-pool-and-user)).
 
 A new cluster's steps here, its addresses, its Ceph pool and user and its
-router line, are in order in [Adding a
+router lines, are in order in [Adding a
 cluster](../../holos/README.md#adding-a-cluster).
 
 ## What the VMs are
@@ -229,10 +229,10 @@ is one more reason to keep to the table below.
 | 10.20.0.1 | Anycast gateway on every node |
 | 10.20.0.2 – .19 | Other garage VMs; .4, .5 and .10 were in use on 2026-10-23 |
 | 10.20.0.20 – .29 | **Reserved** (`manual`): Jeff's hand-made VMs for manual testing |
-| 10.20.0.30 – .49 | **Reserved** (`ingress`): ingress Gateway LoadBalancer addresses. Five blocks of four, block n at .30+4(n−1): .30 to .33 is `treasury`'s, .34 to .37 `cartography`'s, and .38 to .41, .42 to .45 and .46 to .49 are free. |
+| 10.20.0.30 – .49 | **Reserved** (`ingress`): ingress Gateway LoadBalancer addresses. Five blocks of four, block n at .30+4(n−1): .30 to .33 is `treasury`'s, .34 to .37 `cartography`'s, .38 to .41 `marina`'s, and .42 to .45 and .46 to .49 are free. |
 | 10.20.0.50 – .59 | Cluster slot 1 (`treasury`, `firstAddress` default .50, `FirstNodeAddress`) |
 | 10.20.0.60 – .69 | Cluster slot 2 (`cartography`) |
-| 10.20.0.70 – .79 | Cluster slot 3 |
+| 10.20.0.70 – .79 | Cluster slot 3 (`marina`) |
 | 10.20.0.80 – .89 | Cluster slot 4 |
 | 10.20.0.90 – .99 | Unassigned; .99 was in use on 2026-10-23 |
 | 10.20.0.100 – .109 | Cluster slot 5 |
@@ -490,12 +490,13 @@ subdomain of it named after the cluster: every service is
 Jeff manages the LAN resolver, 192.168.2.1, the OpenWRT router's dnsmasq, by
 hand. The platform needs no DNS automation. The rule is one `address` line
 per cluster, `/<cluster>.bank.internal/<its Gateway address>`, from the
-reserved range above, which answers the subdomain and every name under it,
-and one `local=/bank.internal/` for the zone, so a name in no cluster's
-subdomain, such as a bare `<service>.bank.internal` from before the rename,
-gets NXDOMAIN at the router instead of going to the upstream resolver.
+reserved range above, which answers the subdomain and every name under it, a
+second for a cluster that names its endpoint, `/<endpoint>/<its control plane
+address>`, and one `local=/bank.internal/` for the zone, so a name in no
+cluster's subdomain, such as a bare `<service>.bank.internal` from before the
+rename, gets NXDOMAIN at the router instead of going to the upstream resolver.
 dnsmasq answers from the most specific domain that matches, so the cluster
-lines win over the zone's.
+lines win over the zone's, and an endpoint's line over its cluster's.
 
 On the router (`ssh root@192.168.2.1`), treasury's line replaces the bare
 zone's `/bank.internal/10.20.0.30`, which pointed every name at treasury
@@ -531,6 +532,26 @@ uci add_list dhcp.@dnsmasq[0].address='/cartography.bank.internal/10.20.0.34'
 uci commit dhcp
 /etc/init.d/dnsmasq restart
 ```
+
+A cluster whose `talosvm.json` sets `endpoint` adds two, both at once. For
+marina:
+
+```sh
+uci add_list dhcp.@dnsmasq[0].address='/marina.bank.internal/10.20.0.38'
+uci add_list dhcp.@dnsmasq[0].address='/api.marina.bank.internal/10.20.0.70'
+uci commit dhcp
+/etc/init.d/dnsmasq restart
+```
+
+Then, from the laptop, before the cluster is generated:
+
+```sh
+dig +short @192.168.2.1 api.marina.bank.internal       # 10.20.0.70, the control plane
+dig +short @192.168.2.1 keycloak.marina.bank.internal  # 10.20.0.38, the Gateway
+```
+
+10.20.0.38 for the `api` name means the second line is missing: the cluster's
+line answered for it.
 
 From the laptop, the cluster's names answer and a bare name does not:
 

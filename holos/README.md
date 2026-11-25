@@ -120,16 +120,18 @@ does not spell them out; treasury's are `holos.run/cluster-name: treasury` and
 `metadata: labels: "example.com/tier": "lab"`.
 
 The garage's ingress range is 10.20.0.30 to .49, five blocks of four
-addresses. `treasury` has the first, 10.20.0.30 to .33, and `cartography` the
-second, .34 to .37. A new cluster takes the next free block, and states its
-control plane's address and its Ceph pool and user, which have no defaults:
+addresses. `treasury` has the first, 10.20.0.30 to .33, `cartography` the
+second, .34 to .37, and `marina` the third, .38 to .41. A new cluster takes the
+next free block, and states its control plane's address and its Ceph pool and
+user, which have no defaults:
 
 ```cue
 clusters: example: {
 	site: sites.garage
-	loadBalancer: {start: "10.20.0.38", stop: "10.20.0.41"}
-	serviceAccountIssuer: "https://10.20.0.70:6443"
-	apiServer: address: "10.20.0.70"
+	loadBalancer: {start: "10.20.0.42", stop: "10.20.0.45"}
+	// With no endpoint in talosvm.json: "https://10.20.0.80:6443".
+	serviceAccountIssuer: "https://api.example.bank.internal:6443"
+	apiServer: address: "10.20.0.80"
 	ceph: {pool: "example-rbd", user: "example"}
 }
 ```
@@ -145,9 +147,11 @@ sets `kubernetesVersion` records that here as `kubernetesVersion` too.
 
 Its names are `<service>.example.bank.internal`, under its own
 `*.example.bank.internal` wildcard, and the router gets a line of its own
-pointing that subdomain at its Gateway, `/example.bank.internal/10.20.0.38`
-(`providers/proxmox/README.md`, "DNS"). The whole procedure is under Adding a
-cluster, below.
+pointing that subdomain at its Gateway, `/example.bank.internal/10.20.0.42`
+(`providers/proxmox/README.md`, "DNS"). A cluster that names its endpoint, as
+this one does, needs a second, more specific line for the name, at its control
+plane's address, `/api.example.bank.internal/10.20.0.80`. The whole procedure is
+under Adding a cluster, below.
 
 The ingress Gateway's address, `loadBalancer.gateway`, the block's first
 unless set, is reserved, so the private zone's wildcard record stays right
@@ -278,13 +282,18 @@ entries have no hand step.
 1. **Take the addresses.** The next free cluster slot and ingress block, from
    [Address
    allocation](../providers/proxmox/README.md#address-allocation). The control
-   plane takes the slot's first address.
+   plane takes the slot's first address. Choose the endpoint's name now, if the
+   cluster is to have one, such as `api.<cluster>.bank.internal`: it is fixed
+   when step 8 generates the cluster, and it needs a record of its own in step 6.
 2. **Add the cluster.** Its entry in `clusters.cue`, as in the example under
    Clusters, above, with the optional components it takes in `components`. Its
    config at `providers/talos/clusters/<cluster>/talosvm.json`
    ([Config](../providers/talos/README.md#config)), with `cluster`,
    `talosVersion` and `firstAddress`: `talosvm create` and `cluster.sh` refuse a
-   cluster with no committed file. It needs at least three workers, since
+   cluster with no committed file. A named endpoint is `endpoint` there and the
+   host of `serviceAccountIssuer` in `clusters.cue`, and `kubernetesVersion`,
+   when set, is in both. Nothing compares the two files, so compare them by
+   hand. It needs at least three workers, since
    ceph-csi's three provisioner replicas take one worker each. *Only with
    `substrate`*, one pool is named `general`, which `WorkerPool` `gvisor`
    selects.
@@ -301,15 +310,20 @@ entries have no hand step.
 6. **Add the router line.** `/<cluster>.bank.internal/<gateway address>`
    ([DNS](../providers/proxmox/README.md#dns)). Pods reach Keycloak and Quay at
    `$domain` through it from their first sync, by CoreDNS's forward to the
-   router, and so do the laptop and `quay-bootstrap`.
+   router, and so do the laptop and `quay-bootstrap`. *Only with* a named
+   endpoint, add its line too, `/<endpoint>/<control plane address>`, in the
+   same change, and make both lookups shown there before step 8: the cluster's
+   line alone answers the name with the Gateway's address.
 7. **Install the cluster's `talosctl`.** `cluster.sh` takes `talosctl-<version>`
    for the cluster's `talosVersion`, or a plain `talosctl` of that version, and
    refuses any other, printing the install steps, which are also under
    [Bringing a cluster up](../providers/talos/README.md#bringing-a-cluster-up).
-   Clusters can pin different versions: `cartography` is on v1.14.5 and
-   `treasury` on v1.14.4, so a machine that runs both keeps `talosctl-v1.14.5`
-   beside `talosctl`. On such a cluster every `talosctl` run by hand below means
-   that binary, and `talosvm restart` is passed `-talosctl talosctl-v1.14.5`.
+   Clusters can pin different versions: `marina` is on v1.14.7, `cartography` on
+   v1.14.5 and `treasury` on v1.14.4, so a machine that runs all three keeps
+   `talosctl-v1.14.7` and `talosctl-v1.14.5` beside `talosctl`. On a cluster
+   whose binary has the version in its name, every `talosctl` run by hand below
+   means that binary, and `talosvm restart` is passed it, such as
+   `-talosctl talosctl-v1.14.7`.
 8. **Make the VMs and the cluster.** `talosvm create`, the wait for maintenance
    mode and `cluster.sh up`, under [Bringing a cluster
    up](../providers/talos/README.md#bringing-a-cluster-up).
@@ -1180,10 +1194,11 @@ hosts, survives losing one, and follows its pod to any worker.
 `clusters.cue` has the Ceph cluster as the site's (`ceph.fsid`,
 `ceph.monitors`) and the pool and Ceph user as the cluster's (`ceph.pool`,
 `ceph.user`). `cartography` uses pool `cartography-rbd` as
-`client.cartography`, and `treasury` uses `k8s-rbd` as `client.k8s`, a recorded
-exception to those names. A user's caps are `profile rbd`, limited to its own
-pool on the OSDs and the manager. The driver creates no pool and no user, so
-both are made by hand, once per cluster ([Ceph pool and
+`client.cartography`, `marina` uses `marina-rbd` as `client.marina`, and
+`treasury` uses `k8s-rbd` as `client.k8s`, a recorded exception to those names.
+A user's caps are `profile rbd`, limited to its own pool on the OSDs and the
+manager. The driver creates no pool and no user, so both are made by hand, once
+per cluster ([Ceph pool and
 user](../providers/proxmox/README.md#ceph-pool-and-user)).
 
 The `ceph-rbd` class is the cluster default: ext4, image features

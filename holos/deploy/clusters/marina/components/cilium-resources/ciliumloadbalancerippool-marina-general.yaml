@@ -1,0 +1,14 @@
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+    name: marina-general
+spec:
+    blocks:
+        - start: 10.20.0.39
+          stop: 10.20.0.41
+    serviceSelector:
+        matchExpressions:
+            - key: io.kubernetes.service.namespace
+              operator: NotIn
+              values:
+                - istio-ingress

@@ -18,8 +18,10 @@ import (
 	// privateDomain is the site's private DNS zone. Every platform hostname
 	// is under it, in its cluster's ingressDomain (#Cluster), and the LAN
 	// resolver points each *.<ingressDomain> at that cluster's ingress
-	// Gateway. Email addresses are identities, not hostnames, and are
-	// <user>@<privateDomain> on every cluster of the site.
+	// Gateway, except the name of a named API endpoint
+	// (serviceAccountIssuer), which it points at the control plane. Email
+	// addresses are identities, not hostnames, and are <user>@<privateDomain>
+	// on every cluster of the site.
 	privateDomain: string
 	// resolvers serve privateDomain. CoreDNS forwards the zone to them.
 	resolvers: [...net.IPv4 & string] & [_, ...]
@@ -233,5 +235,39 @@ clusters: cartography: {
 	ceph: {
 		pool: "cartography-rbd"
 		user: "cartography"
+	}
+}
+
+// marina is the third garage cluster, in slot 3: marina-cp-1 at 10.20.0.70 and
+// marina-general-1 to -3 at .71 to .73 on the k8s vnet, one worker on each R620.
+// It takes the third block of the ingress range and every optional component,
+// and shares only the site with the other two. It is the first whose endpoint is
+// a name.
+clusters: marina: {
+	site: sites.garage
+	components: [
+		"substrate",
+		"substrate-shim",
+		"kagent-crds",
+		"kagent",
+		"toolhive-crds",
+		"toolhive-operator",
+		"toolhive",
+	]
+	// kubernetesVersion in its talosvm.json.
+	kubernetesVersion: "1.37.2"
+	loadBalancer: {
+		start: "10.20.0.38"
+		stop:  "10.20.0.41"
+	}
+	// The control plane endpoint, endpoint in its talosvm.json: a name, which the
+	// router answers with marina-cp-1's address. apiServer.address stays the
+	// address, since ToolHive's NetworkPolicy takes an ipBlock.
+	serviceAccountIssuer: "https://api.marina.bank.internal:6443"
+	apiServer: address: "10.20.0.70"
+	// Volumes are images in marina-rbd, as client.marina.
+	ceph: {
+		pool: "marina-rbd"
+		user: "marina"
 	}
 }
