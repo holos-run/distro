@@ -264,9 +264,10 @@ changes nothing.
 
 Each cluster's config is committed at
 `providers/talos/clusters/<cluster>/talosvm.json`. It records the Talos
-version, addresses and sizes the cluster was made with, and nothing in it is
-secret. `-cluster` finds the file from the repository root, the nearest
-directory at or above the working directory whose `go.mod` declares
+version, addresses and sizes the cluster was made with, with the endpoint name
+and Kubernetes version of one that states its own, and nothing in it is secret.
+`-cluster` finds the file from the repository root, the nearest directory at or
+above the working directory whose `go.mod` declares
 `go.holos.run/distro`, so the commands run from anywhere in the repository.
 `-config` names another file instead.
 
@@ -312,6 +313,25 @@ provider's node network and first node address.
   committed file's `cluster` is the name of its directory.
 - `talosVersion` picks the Image Factory ISO. `cluster.sh` reads it too, so
   one cluster can lead another on a patch.
+- `endpoint`, not set by default, is a DNS name for the cluster's Kubernetes
+  endpoint: a lowercase name of at least two labels, the last starting with a
+  letter, with no scheme, port or trailing dot, such as `api.example.internal`.
+  `cluster.sh gen` generates the cluster with `https://<endpoint>:6443` in place of
+  `https://<control plane address>:6443`, so the kubeconfig, the nodes' machine
+  configs and the service account issuer carry the name. Set it before the first
+  `gen`: the endpoint and the issuer are fixed when the configs are generated.
+  The name must resolve to the control plane's address for `kubectl`, for the
+  nodes and in pods; what that costs is in [ADR
+  0001](../../docs/adr/0001-talos-cluster-profile.md). `talosctl` stays on the
+  address.
+- `kubernetesVersion` is the Kubernetes release `gen` generates the cluster with,
+  such as `1.37.2`, without a leading `v`. Its default is `KUBERNETES_VERSION` in
+  `cluster.sh`.
+- `cluster.sh` reads `endpoint` and `kubernetesVersion` from the file itself, as
+  it does `talosVersion`, and like `create` and `resize` refuses a value that is
+  not of the form above, an empty string included. `null` is the same as leaving
+  the field out. The script also refuses either key in another case, such as
+  `Endpoint`.
 - `nodes` is the Proxmox nodes to spread VMs across, round robin, starting
   with the control plane. Empty means every online node, sorted by name;
   naming them keeps placement stable when a host is down. `controlPlane` and
@@ -375,15 +395,17 @@ rest:
 
 - the cluster's own patch, `clusters/<cluster>/controlplane.yaml`, on the
   control plane, if the file exists;
-- the cluster name and the endpoint `https://<control plane address>:6443`,
-  with no VIP;
+- the cluster name and the endpoint, `https://<control plane address>:6443`, or
+  `https://<endpoint>:6443` when the cluster's config sets `endpoint`, with no
+  VIP;
 - the installer image `factory.talos.dev/nocloud-installer/<schematic>:<talosVersion>`,
   where the schematic is read from the control plane node itself
   (`talosctl get extensions`), or taken from `INSTALLER` when set. It must
   be the schematic `talosvm create` printed, so the installed system keeps
   the extensions and the `nocloud` platform;
 - the Talos config of the minor release of the cluster's `talosVersion`, such
-  as `v1.14`, and Kubernetes `1.37.1`, pinned in the script.
+  as `v1.14`, and Kubernetes `1.37.1`, the default in the script, or the
+  config's `kubernetesVersion`.
 
 The machine config has no network section. The installed system is still the
 `nocloud` platform, so it keeps reading the /32 address, the on-link default
@@ -402,8 +424,8 @@ script sets `umask 077`, so directories are 0700 and files 0600:
 | `nodes.json` | The `talosvm list -json` inventory `gen` used. |
 | `nodes/<vm>.yaml` | Each node's full machine config, which embeds secrets. |
 | `nodes/<vm>.patch.yaml` | Each node's label patch. |
-| `talosconfig` | Talos API client config, endpoint and node set to the control plane. |
-| `kubeconfig` | Cluster admin kubeconfig. |
+| `talosconfig` | Talos API client config, endpoint and node set to the control plane's address, also when the config sets `endpoint`. |
+| `kubeconfig` | Cluster admin kubeconfig. Its server is the endpoint: the config's `endpoint`, or else the control plane's address. |
 
 Back the directory up: without `secrets.yaml` and `talosconfig` the cluster
 can no longer be administered.

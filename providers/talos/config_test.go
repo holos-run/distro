@@ -40,6 +40,8 @@ func TestValidateReportsEverything(t *testing.T) {
 	c := treasury()
 	c.Cluster = "Treasury"
 	c.TalosVersion = "1.14.4"
+	c.Endpoint = new(string)
+	c.KubernetesVersion = new(string)
 	c.ControlPlane.Count = 2
 	c.ControlPlane.MemoryMiB = 1024
 	c.Network = "k8s,mtu=1500"
@@ -48,9 +50,90 @@ func TestValidateReportsEverything(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate accepted a bad config")
 	}
-	for _, want := range []string{"cluster", "talosVersion", "controlPlane.count", "controlPlane.memoryMiB", "bridge", "reserved", "used twice"} {
+	for _, want := range []string{"cluster", "talosVersion", "endpoint", "kubernetesVersion", "controlPlane.count", "controlPlane.memoryMiB", "bridge", "reserved", "used twice"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %s:\n%v", want, err)
+		}
+	}
+}
+
+// cluster.sh reads endpoint and kubernetesVersion itself, and its patterns are
+// these.
+func TestClusterScriptPatterns(t *testing.T) {
+	script, err := os.ReadFile("cluster.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"\nENDPOINT_PATTERN='" + endpointName.String() + "'\n",
+		"\nKUBERNETES_VERSION_PATTERN='" + kubernetesVersion.String() + "'\n",
+		fmt.Sprintf(" length <= %d ", maxName),
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Errorf("cluster.sh does not hold %q", want)
+		}
+	}
+}
+
+func TestEndpoint(t *testing.T) {
+	long := strings.Repeat(strings.Repeat("a", 49)+".", 5)
+	for name, ok := range map[string]bool{
+		"api.marina.bank.internal":              true,
+		"k8s-1.lan":                             true,
+		long + "abc":                            true,
+		long + "abcd":                           false,
+		strings.Repeat("a", 64) + ".lan":        false,
+		"":                                      false,
+		"https://api.marina.bank.internal":      false,
+		"https://api.marina.bank.internal:6443": false,
+		"api.marina.bank.internal:6443":         false,
+		"api.marina.bank.internal/":             false,
+		"api.marina.bank.internal.":             false,
+		"api.marina.bank.internal\n":            false,
+		"api.marina.bank.internal\nx":           false,
+		" api.marina.bank.internal":             false,
+		"API.marina.bank.internal":              false,
+		"api..internal":                         false,
+		"-api.internal":                         false,
+		"api-.internal":                         false,
+		"api_1.internal":                        false,
+		"*.internal":                            false,
+		"$(id).internal":                        false,
+		"user@api.internal":                     false,
+		"api":                                   false,
+		"10.20.0.70":                            false,
+		"10.0x46":                               false,
+		"fd00::70":                              false,
+		"[fd00::70]":                            false,
+	} {
+		c := treasury()
+		c.Endpoint = &name
+		if err := c.Validate(check); (err == nil) != ok || !ok && !strings.Contains(err.Error(), "want a lowercase DNS name alone") {
+			t.Errorf("endpoint %q: %v, want accepted %t", name, err, ok)
+		}
+	}
+}
+
+func TestKubernetesVersion(t *testing.T) {
+	for v, ok := range map[string]bool{
+		"1.37.2":       true,
+		"1.38.0-rc.1":  true,
+		"":             false,
+		"v1.37.2":      false,
+		"1.37":         false,
+		"1.37.2.1":     false,
+		"1.37.2\n":     false,
+		"1.37.2 ":      false,
+		"1.37.2-":      false,
+		"1.37.2+k3s1":  false,
+		"1.37.2;id":    false,
+		"latest":       false,
+		"1.37.2-$(id)": false,
+	} {
+		c := treasury()
+		c.KubernetesVersion = &v
+		if err := c.Validate(check); (err == nil) != ok || !ok && !strings.Contains(err.Error(), "without a leading v") {
+			t.Errorf("kubernetesVersion %q: %v, want accepted %t", v, err, ok)
 		}
 	}
 }
@@ -172,6 +255,17 @@ func TestDecode(t *testing.T) {
 	}
 	if c.Cluster != "lab" || c.Network != "lab" || len(c.Pools) != 1 || c.Pools[0].Name != "microvm" || !slices.Equal(c.Pools[0].Zones, []string{"r620c"}) || c.ControlPlane.MemoryMiB != 8192 {
 		t.Errorf("Decode did not merge over defaults: %+v", c)
+	}
+	if c.Endpoint != nil || c.KubernetesVersion != nil {
+		t.Errorf("Decode set a field the file leaves out: %+v", c)
+	}
+	named := filepath.Join(dir, "named.json")
+	os.WriteFile(named, []byte(`{"endpoint":"api.lab.internal","kubernetesVersion":"1.37.2"}`), 0o600)
+	if err := Decode(named, &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Endpoint == nil || *c.Endpoint != "api.lab.internal" || c.KubernetesVersion == nil || *c.KubernetesVersion != "1.37.2" {
+		t.Errorf("Decode did not read the endpoint and Kubernetes version: %+v", c)
 	}
 	bad := filepath.Join(dir, "bad.json")
 	os.WriteFile(bad, []byte(`{"clsuter":"lab"}`), 0o600)

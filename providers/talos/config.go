@@ -51,7 +51,7 @@ type Pool struct {
 	Addresses []string `json:"addresses,omitempty"`
 }
 
-// Config is the cluster's shape: its name, Talos version, node network and
+// Config is the cluster's shape: its name, versions, endpoint, node network and
 // addresses, and the control plane and pools. It is read from a JSON file,
 // since YAML would need a dependency, which also holds the compute
 // provider's own settings; every field but the cluster name has a default,
@@ -64,6 +64,17 @@ type Config struct {
 	Cluster string `json:"cluster"`
 	// TalosVersion picks the Image Factory ISO, with the leading v.
 	TalosVersion string `json:"talosVersion"`
+	// Endpoint, when set, is the DNS name of the cluster's Kubernetes
+	// endpoint, and so of its service account issuer, in place of the control
+	// plane's address. Nothing here uses it or KubernetesVersion: cluster.sh
+	// reads both from the file, so Validate and the script accept the same
+	// strings. They are pointers so that an empty string is refused, not
+	// taken for a field left out: a cluster keeps the endpoint it is
+	// generated with.
+	Endpoint *string `json:"endpoint,omitempty"`
+	// KubernetesVersion, when set, is the Kubernetes release the cluster is
+	// generated with, without a leading v, in place of cluster.sh's default.
+	KubernetesVersion *string `json:"kubernetesVersion,omitempty"`
 	// Network names the network the nodes attach to. On Proxmox it is the
 	// bridge of the SDN vnet the node subnet lives on, which is why the key
 	// is bridge. Its default is the compute provider's.
@@ -132,6 +143,19 @@ var label = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 // version is a Talos release tag such as v1.14.4.
 var version = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
 
+// endpointName is a lowercase DNS name of at least two labels, with no trailing
+// dot. Its last label starts with a letter, so an IPv4 address is not one.
+// cluster.sh holds the same pattern.
+var endpointName = regexp.MustCompile(`\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?\z`)
+
+// kubernetesVersion is a Kubernetes release such as 1.37.1, as talosctl takes
+// it. cluster.sh holds the same pattern.
+var kubernetesVersion = regexp.MustCompile(`\A[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\z`)
+
+// maxName is the length of the longest DNS name, and cluster.sh's limit on both
+// strings.
+const maxName = 253
+
 // ValidClusterName reports whether name can name a cluster. It decides what
 // Validate accepts, and it keeps a name from reaching a path as anything but
 // one path element, since a valid name holds no dot or slash.
@@ -156,6 +180,12 @@ func (c Config) Validate(checkAddress func(netip.Addr) error) error {
 	}
 	if !version.MatchString(c.TalosVersion) {
 		add("talosVersion %q: want a release tag such as %s", c.TalosVersion, DefaultTalosVersion)
+	}
+	if e := c.Endpoint; e != nil && (len(*e) > maxName || !endpointName.MatchString(*e)) {
+		add("endpoint %q: want a lowercase DNS name alone, such as api.example.internal, with no scheme, port or trailing dot", *e)
+	}
+	if v := c.KubernetesVersion; v != nil && (len(*v) > maxName || !kubernetesVersion.MatchString(*v)) {
+		add("kubernetesVersion %q: want a release such as 1.37.1, without a leading v", *v)
 	}
 	if c.Network == "" || strings.ContainsAny(c.Network, ",=; ") {
 		add("bridge %q: want a plain name", c.Network)

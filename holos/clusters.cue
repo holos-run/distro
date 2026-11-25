@@ -66,7 +66,8 @@ import (
 	// (components/ingress.cue).
 	ingressDomain: string | *"\(name).\(site.privateDomain)"
 
-	// kubernetesVersion is the version Talos runs, pinned in
+	// kubernetesVersion is the version Talos runs: kubernetesVersion in the
+	// cluster's talosvm.json, or else the default in
 	// providers/talos/cluster.sh. Charts see it as
 	// Capabilities.KubeVersion.
 	kubernetesVersion: string | *"1.37.1"
@@ -76,8 +77,9 @@ import (
 	// gives it. Talos sets it to the control plane endpoint, not the in-cluster
 	// https://kubernetes.default.svc, so a component that verifies those
 	// tokens itself, as Substrate's API server does, is told it here. Recorded,
-	// not chosen: it is the endpoint providers/talos/cluster.sh
-	// generates the cluster with.
+	// not chosen: it is the endpoint providers/talos/cluster.sh generates the
+	// cluster with, https://<name>:6443 with the DNS name endpoint in the
+	// cluster's talosvm.json gives, or else the control plane's address.
 	serviceAccountIssuer: =~"^https://"
 
 	// apiServer is the address and port the API server listens on, the
@@ -86,7 +88,8 @@ import (
 	// host-network static pod, so no pod selector reaches it, and Cilium
 	// matches its node's address against an ipBlock under
 	// policyCIDRMatchMode nodes (components/cilium). Recorded, not chosen,
-	// as serviceAccountIssuer is.
+	// as serviceAccountIssuer is, but always the control plane's address,
+	// also where the issuer is a name.
 	apiServer: {
 		address: string
 		port:    int | *6443

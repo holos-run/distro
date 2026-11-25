@@ -4,7 +4,7 @@ Status: accepted, 2026-10-23; amended 2026-10-26 (webhooks reach the
 ingress Gateway's address, not an HAProxy load balancer); amended
 2026-10-31 (the control plane joins the pod network); amended 2026-11-01
 (the pod network label goes); amended 2026-11-01 (the Gateway webhook path
-is retired)
+is retired); amended 2026-11-25 (a cluster may name its endpoint)
 
 ## Context
 
@@ -316,3 +316,42 @@ reports no exceptions (ADR 0003's amendment of the same date). A control
 plane configured before this change keeps its host entries until its
 machine config is regenerated or the document is deleted
 (`providers/talos/README.md`, "Admission webhooks"); nothing uses them.
+
+## Amendment, 2026-11-25: a cluster may name its endpoint
+
+The control plane's address stays the default endpoint, and treasury and
+cartography keep it. A cluster may instead name its endpoint, by `endpoint` in
+its `talosvm.json` (Marina_Cluster Q9 and Q18): `cluster.sh gen` then generates
+it with `https://<endpoint>:6443`, and the service account issuer is that URL.
+This amends two passages:
+
+- Under "One profile: a single control plane", that the endpoint is the control
+  plane's address with "no DNS name, so it works before any resolver knows about
+  the cluster". That is the default, and a cluster that sets `endpoint` gives it
+  up.
+- Under "Machine configuration is talosctl with committed patches", the
+  per-cluster inputs, as the 2026-10-31 amendment lists them. The optional
+  `endpoint` and `kubernetesVersion` of the cluster's `talosvm.json` join them.
+  The second replaces the script's default Kubernetes version for that cluster
+  (Marina_Cluster Q19).
+
+What a name is for: the endpoint and the issuer are fixed when `talosctl gen
+config` runs, so a cluster born on an address must be regenerated to gain a
+second control plane node, and one born on a name need not be.
+
+What it does not yet deliver: the name is necessary for more control plane nodes
+and not sufficient. `cluster.sh` still refuses anything but one control plane,
+the platform's `apiServer.address` is a single string, ToolHive's NetworkPolicy
+is a single /32, and a dnsmasq record has no health check. Those are left for
+when a second node is wanted.
+
+What it costs is independence from DNS. The site's resolver, in the garage the
+router's hand-edited dnsmasq, now steers `kubectl`, the nodes' path to the API,
+and Substrate's check of service account tokens, which fetches discovery from
+the issuer URL. A wrong record is an outage and not a capture, since the
+kubeconfig and the nodes' configs pin the cluster's CA. Two things soften it.
+`talosctl` stays on the address: the talosconfig's endpoint and node, and every
+`talosctl` call the script and `talosvm restart` make, use it. Their `kubectl`
+calls go through the kubeconfig, and so the name. And the API server's
+certificate, whose names Talos computes on the node, carries the address, so the
+API can be reached with the name unresolvable.
