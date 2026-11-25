@@ -1,0 +1,31 @@
+# A user unit, installed to ~/.config/systemd/user with a drop-in per cluster:
+# etcd snapshots, in providers/talos/README.md.
+[Unit]
+Description=Snapshot of %i's etcd and an encrypted copy of its Talos secrets
+# A run at boot can come before the mount, which is nofail, so a failed run is
+# tried again, and the unit stays failed after the fourth. A start by hand
+# counts too.
+StartLimitIntervalSec=4h
+StartLimitBurst=4
+
+[Service]
+Type=oneshot
+Restart=on-failure
+RestartSec=10min
+# The export is mounted hard, so a server that is away blocks rather than
+# fails.
+TimeoutStartSec=15min
+TimeoutStopSec=1min
+
+# The cluster's drop-in sets the rest.
+Environment=ETCD_SNAPSHOT_MOUNT=/mnt/pve/garage
+Environment=ETCD_SNAPSHOT_DIR=/mnt/pve/garage/backups/etcd
+Environment=ETCD_SNAPSHOT_RECIPIENT=6BECF9776F93E9F87BE9A2B87716CCA9F8F7BE25
+Environment=ETCD_SNAPSHOT_KEEP=30
+
+# The mount is a unit of the system manager. The user manager sees it only
+# while it is mounted: without it RequiresMountsFor= does not fail, and
+# Requires= refuses the start but leaves the unit neither failed nor retried.
+# This fails the unit, and the script checks again.
+ExecStartPre=/usr/bin/mountpoint -q /mnt/pve/garage
+ExecStart=%h/.local/libexec/holos/etcd-snapshot.sh run %i

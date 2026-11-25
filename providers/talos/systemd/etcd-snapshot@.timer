@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily snapshot of %i's etcd
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=10min
+# A machine that was off at the time takes the snapshot when it starts.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
