@@ -4,7 +4,8 @@ Status: accepted, 2026-10-23; amended 2026-10-26 (webhooks reach the
 ingress Gateway's address, not an HAProxy load balancer); amended
 2026-10-31 (the control plane joins the pod network); amended 2026-11-01
 (the pod network label goes); amended 2026-11-01 (the Gateway webhook path
-is retired); amended 2026-11-25 (a cluster may name its endpoint)
+is retired); amended 2026-11-25 (a cluster may name its endpoint); amended
+2026-11-25 (a pool may have taints and labels)
 
 ## Context
 
@@ -176,7 +177,9 @@ allowed to modify labels"), and a compromised worker could rewrite
 isolation boundary. A pool that separates workloads by isolation level, such
 as a microVM sandbox pool, needs a taint to keep other workloads off and a
 `node-restriction.kubernetes.io/` label applied with admin credentials, not
-from the machine config, before anything relies on it for isolation.
+from the machine config, before anything relies on it for isolation. A pool
+now says both in its `talosvm.json` and `cluster.sh` sets them (the second
+amendment of 2026-11-25).
 
 The installer image is the Image Factory `nocloud-installer` for the same
 schematic the VM booted, so the installed system keeps the extensions and
@@ -355,3 +358,34 @@ kubeconfig and the nodes' configs pin the cluster's CA. Two things soften it.
 calls go through the kubeconfig, and so the name. And the API server's
 certificate, whose names Talos computes on the node, carries the address, so the
 API can be reached with the name unresolvable.
+
+## Amendment, 2026-11-25: a pool may have taints and labels
+
+The tooling now does what the note on a microVM pool asks for, under "What the
+patches set". A pool in `talosvm.json` takes three optional lists
+(Self_Hosted_Machines/pool-taints-and-labels-in-the-talos-tooling):
+
+- `taints`, which `cluster.sh gen` writes as the kubelet's `registerWithTaints`,
+  in the `config` of the node's `KubeletConfig` document. A worker may register
+  with taints and may not change them afterwards, so a taint takes effect only
+  when a node first registers. `KubeNodeConfig` also has `taints`, which Talos
+  1.14 registers with too. It then keeps them up with the node's own
+  credentials, and NodeRestriction refuses the whole update, labels included,
+  once they differ from the Node's.
+- `labels`, written beside `holos.run/nodepool` and as self-asserted as it is.
+- `adminLabels`, which `cluster.sh labels`, the last step of `up`, sets with the
+  admin kubeconfig once the nodes have joined. Only `node-restriction.kubernetes.io/`
+  labels are accepted, since a node can set any other on itself.
+
+This amends two passages, and a pool with none of the lists is as it was:
+
+- Under "Per node, written by the script", the node pool label is no longer the
+  only one that comes from the pool.
+- Under "Machine configuration is talosctl with committed patches", the
+  per-cluster inputs, which these lists join.
+
+It does not make the pool a boundary. Anyone who may make a pod may tolerate the
+taint, and the admin label only says which nodes an admin put in the pool: what
+selects it does not land on a node that put itself there. A node that registers
+again comes back without the label until `cluster.sh labels` runs, so what
+selects it stays `Pending`, which fails closed.

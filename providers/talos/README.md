@@ -342,12 +342,101 @@ provider's node network and first node address.
   each pool take an `addresses` list instead, one per VM.
 - The control plane count must be odd, for etcd; sizes must meet the Talos
   minimums of 2 cores, 2048 MiB and 10 GiB.
+- A pool takes `taints`, `labels` and `adminLabels` for its nodes, all optional
+  ([A pool for one kind of workload](#a-pool-for-one-kind-of-workload)).
+  `cluster.sh` reads them from the file itself and checks them as `create` and
+  `resize` do. It refuses a pool with a key it does not know, and a cluster with
+  a worker whose pool the file does not have, which would register untainted.
 
-A microVM pool later is a second pool entry:
+### A pool for one kind of workload
+
+A microVM pool is a second pool entry:
 
 ```json
-{ "name": "microvm", "count": 2, "cores": 8, "memoryMiB": 16384, "diskGiB": 100, "nodes": ["r620c"] }
+{
+  "name": "microvm", "count": 2, "cores": 8, "memoryMiB": 16384, "diskGiB": 100, "nodes": ["r620a", "r620c"],
+  "taints": ["ate.dev/sandboxClass=microvm:NoSchedule"],
+  "labels": ["node.kubernetes.io/exclude-from-external-load-balancers="],
+  "adminLabels": ["node-restriction.kubernetes.io/sandbox-class=microvm"]
+}
 ```
+
+| List | Form | Set by | Accepts |
+| --- | --- | --- | --- |
+| `taints` | `key=value:Effect` | the kubelet, as the node registers | one taint of a key and effect |
+| `labels` | `key=value` | Talos, with the node's own credentials | any label but `holos.run/nodepool` and Kubernetes's own; of those only `node.kubernetes.io/` and `kubelet.kubernetes.io/` |
+| `adminLabels` | `key=value` | `cluster.sh labels`, with the admin kubeconfig | `node-restriction.kubernetes.io/` labels alone |
+
+The value may be empty, and then its `=` may be left out. `gen` writes the first
+two into each node's config; `labels` sets the third once the nodes have joined.
+
+- **A taint takes effect only when a node first registers.** It is the kubelet's
+  `registerWithTaints`, which the kubelet reads as it makes its Node. A taint
+  added to or taken from a pool whose nodes have joined changes nothing on them,
+  and nothing reports it: set it with `kubectl taint` too, or delete the Node
+  and restart its kubelet. `talosctl validate` does not look inside the kubelet's
+  configuration either, so only this repository's checks see a wrong taint.
+- **A node that registers again loses its admin labels**, as one that was reset,
+  or whose Node was deleted, does. It fails closed: workers that select the label
+  find no node and stay `Pending`. `cluster.sh labels` sets them again.
+- **A label taken out of `adminLabels` stays on its nodes.** `labels` removes
+  none; take it off with `kubectl label`.
+- **None of this is access control** beyond what [ADR
+  0001](../../docs/adr/0001-talos-cluster-profile.md) says. The taint keeps off
+  pods that do not tolerate it, and anyone who can make a pod can write the
+  toleration. The admin label keeps a node from placing itself in the pool, so
+  what selects it lands on a node an admin chose. It does not keep anything else
+  off that node. The labels in `labels` are the node's own word.
+
+### Adding a pool to a running cluster
+
+`gen` and `apply` apply config to every node again, not to the new ones alone.
+A node whose config `gen` has not changed takes it without a change, but any
+other difference goes with it: a patch edited since the last `apply`, and what
+was patched in live and is not in the saved configs. The workers' [trust of the
+root](../../holos/README.md#trusting-the-root-on-the-workers) is such a patch.
+`apply` takes it off every worker, and the new ones never had it, so the last
+steps below patch it in and restart the new ones. They come after `labels`: the
+patch goes to the nodes Kubernetes has, and `labels` waits for the new ones.
+
+Add the pool to the cluster's `talosvm.json`, after the pools that are there:
+VMs take their addresses in order, and `create` refuses a pool that would move
+another's. Then, from the repository root, with `cluster` set, the Proxmox
+credentials loaded, `new` the new VMs' addresses and `names` their names, each
+on one line with a space between, and `talosctl` the one of the cluster's
+version:
+
+```sh
+go run ./providers/talos/cmd/talosvm create -cluster "$cluster" -dry-run   # the new VMs alone
+go run ./providers/talos/cmd/talosvm create -cluster "$cluster"
+for a in $(echo "$new"); do
+  until talosctl get machinestatus -n "$a" --insecure >/dev/null 2>&1; do sleep 5; done
+done
+
+providers/talos/cluster.sh gen "$cluster"
+
+# What apply would change on each node that is already configured.
+export TALOSCONFIG=~/.config/holos/talos/$cluster/talosconfig
+jq -r '.[] | "\(.name) \(.address)"' ~/.config/holos/talos/$cluster/nodes.json | while read -r n a; do
+  case " $new " in *" $a "*) continue ;; esac
+  # Stop if one would reboot, or shows more than the trust of the root going.
+  talosctl apply-config -n "$a" -e "$a" --dry-run --file ~/.config/holos/talos/$cluster/nodes/$n.yaml </dev/null
+done
+
+providers/talos/cluster.sh apply "$cluster"
+providers/talos/cluster.sh labels "$cluster"
+kubectl --kubeconfig ~/.config/holos/talos/$cluster/kubeconfig get nodes \
+  -o custom-columns='NAME:.metadata.name,TAINTS:.spec.taints[*].key'
+
+# Now run the loop in "Trusting the root on the workers", linked above, and then:
+export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+go run ./providers/talos/cmd/talosvm restart -cluster "$cluster" -nodes "$(echo "$names" | tr ' ' ,)"
+```
+
+`labels` waits up to ten minutes for the nodes to join, and fails, naming it,
+when one has not or is without a label. It can be run again. `apply` does not
+wait between nodes, and a change that needs a reboot reboots them all, which is
+what the dry run is for.
 
 ## Machine configuration
 
@@ -373,7 +462,7 @@ webhooks, below).
 | [`patches/all.yaml`](patches/all.yaml) | every node | KubePrism on `127.0.0.1:7445`; sysctls for sandbox density and user namespaces |
 | [`patches/controlplane.yaml`](patches/controlplane.yaml) | control plane | Flannel deleted, kube-proxy disabled, Talos's CoreDNS disabled; API server `runtime-config=certificates.k8s.io/v1beta1=true` and `enable-aggregator-routing=true` |
 | `clusters/<cluster>/controlplane.yaml` (optional, committed; none today) | the cluster's control plane | whatever that one cluster needs |
-| `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and `holos.run/nodepool` on workers |
+| `nodes/<vm>.patch.yaml` (generated) | one node | `topology.kubernetes.io/region` and `zone`, and on workers `holos.run/nodepool` and the pool's `labels` and `taints` |
 
 The sysctls:
 
@@ -424,7 +513,7 @@ script sets `umask 077`, so directories are 0700 and files 0600:
 | `secrets.yaml` | `talosctl gen secrets`: the cluster CAs, tokens and keys. Generated once and reused, so regenerating configs keeps the cluster's identity. |
 | `nodes.json` | The `talosvm list -json` inventory `gen` used. |
 | `nodes/<vm>.yaml` | Each node's full machine config, which embeds secrets. |
-| `nodes/<vm>.patch.yaml` | Each node's label patch. |
+| `nodes/<vm>.patch.yaml` | Each node's patch, its labels and taints. |
 | `talosconfig` | Talos API client config, endpoint and node set to the control plane's address, also when the config sets `endpoint`. |
 | `kubeconfig` | Cluster admin kubeconfig. Its server is the endpoint: the config's `endpoint`, or else the control plane's address. |
 
@@ -492,7 +581,7 @@ talosctl health
 kubectl get nodes -o wide --show-labels
 ```
 
-`up` is `gen`, `apply` and `bootstrap`, which also run alone:
+`up` is `gen`, `apply`, `bootstrap` and `labels`, which also run alone:
 
 - `gen` reads the inventory, generates `secrets.yaml` if it is missing, and
   writes every node's config. It refuses a cluster without exactly one
@@ -507,8 +596,15 @@ kubectl get nodes -o wide --show-labels
 - `bootstrap` waits for the control plane, bootstraps etcd (an etcd that is
   already bootstrapped is fine), and writes the kubeconfig once the API
   server answers.
+- `labels` sets each pool's `adminLabels` on the nodes `gen` found, with the
+  cluster's own kubeconfig whatever `KUBECONFIG` says. It waits up to ten
+  minutes for them to join, labels those that have, and fails when one has not
+  or is without its label. It labels nothing when a node is at another address
+  than `gen` found, as another cluster's node of that name would be, or when
+  `gen` found fewer nodes than a pool asks for. It needs no Proxmox credentials,
+  and with no `adminLabels` it does nothing.
 
-All three can be rerun. To change the patches on a running cluster, edit
+All four can be rerun. To change the patches on a running cluster, edit
 them, then `gen` and `apply`.
 
 ### etcd snapshots

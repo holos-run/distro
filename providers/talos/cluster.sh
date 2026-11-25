@@ -5,7 +5,8 @@
 #   cluster.sh gen       <cluster>   secrets (once), then every node's config
 #   cluster.sh apply     <cluster>   apply each node's config
 #   cluster.sh bootstrap <cluster>   bootstrap etcd, write kubeconfig
-#   cluster.sh up        <cluster>   gen, apply, bootstrap
+#   cluster.sh labels    <cluster>   set each pool's adminLabels on its nodes
+#   cluster.sh up        <cluster>   gen, apply, bootstrap, labels
 #
 # The cluster's Talos version is talosVersion in its committed
 # clusters/<cluster>/talosvm.json, for the client check, the machine configs
@@ -16,6 +17,8 @@
 # The same file may set endpoint, a DNS name the cluster's Kubernetes endpoint
 # uses in place of the control plane's address, and kubernetesVersion, in
 # place of KUBERNETES_VERSION below. talosctl uses the address either way.
+# A pool there may set taints and labels, which gen writes into its nodes'
+# configs, and adminLabels, which labels sets with the admin kubeconfig.
 #
 # The patches in patches/ are the same for every cluster. A cluster that
 # needs a patch of its own puts it in clusters/<cluster>/controlplane.yaml;
@@ -32,10 +35,16 @@ set -euo pipefail
 KUBERNETES_VERSION=1.37.1
 POOL_LABEL=holos.run/nodepool
 
-# What endpoint and kubernetesVersion may be: the patterns in config.go, whose
-# test finds them here.
+# What endpoint, kubernetesVersion and a pool's taints and labels may be: the
+# patterns in config.go, whose test finds them here.
 ENDPOINT_PATTERN='\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?\z'
 KUBERNETES_VERSION_PATTERN='\A[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\z'
+POOL_NAME_PATTERN='\A[a-z0-9]([a-z0-9-]*[a-z0-9])?\z'
+POOL_TAINT_PATTERN='\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?(=([A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?)?)?:(NoSchedule|PreferNoSchedule|NoExecute)\z'
+POOL_LABEL_PATTERN='\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?(=([A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?)?)?\z'
+RESERVED_LABEL_PATTERN='\A([a-z0-9.-]+\.)?(kubernetes|k8s)\.io/'
+KUBELET_LABEL_PATTERN='\A([a-z0-9.-]+\.)?(node|kubelet)\.kubernetes\.io/'
+ADMIN_LABEL_PATTERN='\A([a-z0-9.-]+\.)?node-restriction\.kubernetes\.io/'
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
@@ -44,7 +53,7 @@ patches=$here/patches
 die() { echo "cluster.sh: $*" >&2; exit 1; }
 log() { echo "cluster.sh: $*" >&2; }
 
-[[ $# -eq 2 ]] || die "usage: cluster.sh gen|apply|bootstrap|up <cluster>"
+[[ $# -eq 2 ]] || die "usage: cluster.sh gen|apply|bootstrap|labels|up <cluster>"
 cmd=$1 cluster=$2
 [[ $cluster =~ ^[a-z][a-z0-9-]{0,30}$ ]] || die "invalid cluster name: $cluster"
 
@@ -58,10 +67,12 @@ TALOS_VERSION=$(jq -r '.talosVersion // empty' "$config") || die "cannot read ta
 [[ -n $TALOS_VERSION ]] || die "$config sets no talosVersion"
 
 # Go matches keys in any case and jq does not, so talosvm would take Endpoint
-# for endpoint while gen built the cluster on its address.
-miscased=$(jq -r 'keys[] | select(ascii_downcase == ("endpoint", "kubernetesversion"))
-  | select(. != "endpoint" and . != "kubernetesVersion")' "$config") || die "cannot read the keys of $config"
-[[ -z $miscased ]] || die "$config: key $miscased: want endpoint or kubernetesVersion, in that case"
+# for endpoint while gen built the cluster on its address, and Pools for pools
+# while gen left their taints out. Go folds two letters that are not ASCII too.
+miscased=$(jq -r 'keys[]
+  | select(ascii_downcase | gsub("\u017f"; "s") | gsub("\u212a"; "k") | IN("endpoint", "kubernetesversion", "pools"))
+  | select(IN("endpoint", "kubernetesVersion", "pools") | not)' "$config") || die "cannot read the keys of $config"
+[[ -z $miscased ]] || die "$config: key $miscased: want endpoint, kubernetesVersion or pools, in that case"
 
 # optional prints the config's field $1, or nothing when the file leaves it
 # out or sets it to null, and fails when it is not a string matching $2. The
@@ -78,6 +89,44 @@ ENDPOINT=$(optional endpoint "$ENDPOINT_PATTERN") ||
 version=$(optional kubernetesVersion "$KUBERNETES_VERSION_PATTERN") ||
   die "$config: kubernetesVersion $(jq -c .kubernetesVersion "$config"): want a release such as $KUBERNETES_VERSION, without a leading v"
 KUBERNETES_VERSION=${version:-$KUBERNETES_VERSION}
+
+# POOLS is each pool's count, taints, labels and adminLabels, by pool name, or
+# the script ends with what is wrong with one. A pool's keys are named in full
+# for the reason above: a Taints that only talosvm took would leave the pool
+# untainted.
+POOLS=$(jq -c --arg namere "$POOL_NAME_PATTERN" --arg taintre "$POOL_TAINT_PATTERN" --arg labelre "$POOL_LABEL_PATTERN" --arg nodepool "$POOL_LABEL" \
+  --arg reserved "$RESERVED_LABEL_PATTERN" --arg kubelet "$KUBELET_LABEL_PATTERN" --arg admin "$ADMIN_LABEL_PATTERN" '
+  def refuse: halt_error(1);
+  def list($where; $field; $pattern; $want; why): "\($where).\($field)" as $at
+    | .[$field]
+    | if . == null then [] elif type == "array" then . else "\($at): want a list" | refuse end
+    | to_entries | map("\($at)[\(.key)] \(.value | tojson)" as $at | .value
+      | if type == "string" and length <= 253 and test($pattern) then . else "\($at): \($want)" | refuse end
+      | (if $field == "taints" then .[:rindex(":")] else . end | split("=")) as $kv
+      | {key: $kv[0], value: ($kv[1] // "")} + (if $field == "taints" then {effect: .[rindex(":") + 1:]} else {} end)
+      | (.key | why) as $why | if $why == null then . else "\($at): \($why)" | refuse end)
+    | if (unique_by([.key, .effect]) | length) == length then . else "\($at): one is given twice" | refuse end;
+  .pools
+  | if . == null then [] elif type == "array" then . else "pools: want a list" | refuse end
+  | to_entries | map("pools[\(.key)]" as $at | .value
+    | if type == "object" and (.name | type) == "string" then . else "\($at): want a pool with a name" | refuse end
+    | if (.name | length <= 20 and test($namere)) and .name != "cp" then . else "\($at).name \(.name | tojson): want a lowercase DNS label of at most 20 characters that is not cp" | refuse end
+    | if .count == null or ((.count | type) == "number" and .count >= 0 and .count == (.count | floor)) then . else "\($at).count \(.count | tojson): want zero or more" | refuse end
+    | (keys - ["name", "count", "cores", "memoryMiB", "diskGiB", "nodes", "addresses", "taints", "labels", "adminLabels"]) as $unknown
+    | if $unknown == [] then . else "\($at): unknown key \($unknown[0])" | refuse end
+    | {key: .name, value: {
+        count: (.count // 0),
+        taints: list($at; "taints"; $taintre; "want a taint such as example.com/key=value:NoSchedule"; null),
+        labels: list($at; "labels"; $labelre; "want a label such as example.com/key=value";
+          if . == $nodepool then "cluster.sh sets this label"
+          elif test($admin) then "a node may not set this label on itself; put it in adminLabels"
+          elif test($reserved) and (test($kubelet) | not) then "Kubernetes keeps this label for itself"
+          else null end),
+        adminLabels: list($at; "adminLabels"; $labelre; "want a label such as node-restriction.kubernetes.io/key=value";
+          if test($admin) then null
+          else "want a node-restriction.kubernetes.io/ label, since a node can set any other on itself" end)}})
+  | if (unique_by(.key) | length) == length then from_entries else "pools: a name is used twice" | refuse end' \
+  "$config" 2>&1) || die "$config: $POOLS"
 
 if [[ -z ${TALOSCTL:-} ]]; then
   TALOSCTL=talosctl
@@ -119,6 +168,17 @@ list() {
     die "want exactly one control plane VM in cluster $cluster"
   [[ $(jq '[.[] | select(.role == "worker")] | length' "$1") -ge 1 ]] ||
     die "want at least one worker VM in cluster $cluster"
+}
+
+# pooled refuses the inventory $1 when it has a worker in no pool of the config,
+# as it does when the config is another checkout's: the node would register
+# without its pool's taints, and it cannot be given them afterwards. A config
+# without pools has talosvm's default pool, which sets nothing.
+pooled() {
+  local stray
+  stray=$(jq -r --argjson pools "$POOLS" '[.[] | select($pools != {} and .role == "worker" and ($pools[.pool // ""] == null))
+    | "\(.name) (\(.pool // "none"))"] | join(", ")' "$1")
+  [[ -z $stray ]] || die "workers whose pool $config does not have: $stray"
 }
 
 # inventory refuses to go on without the inventory gen wrote.
@@ -166,6 +226,7 @@ gen() {
   fi
 
   list "$state/nodes.json.tmp"
+  pooled "$state/nodes.json.tmp"
   mv "$state/nodes.json.tmp" "$state/nodes.json"
 
   if [[ ! -s $state/secrets.yaml ]]; then
@@ -201,14 +262,30 @@ gen() {
     name=$(jq -r .name <<<"$node")
     role=$(jq -r .role <<<"$node")
     # Standard topology labels: region is the Proxmox cluster, zone the
-    # Proxmox node the VM runs on. Workers also carry their pool.
-    jq -r --arg pool "$POOL_LABEL" '
+    # Proxmox node the VM runs on. Workers also carry their pool and what it
+    # sets. A taint goes in the kubelet configuration, as registerWithTaints:
+    # a KubeNodeConfig taint would also have Talos keep it up with the node's
+    # own credentials, which may not change the node's taints.
+    jq -r --arg pool "$POOL_LABEL" --argjson pools "$POOLS" '
+      ((.pool | values | $pools[.]) // {labels: [], taints: []}) as $set |
       "apiVersion: v1alpha1",
       "kind: KubeNodeConfig",
       "labels:",
       "  topology.kubernetes.io/region: \(.region | @json)",
       "  topology.kubernetes.io/zone: \(.zone | @json)",
-      (if .pool then "  \($pool): \(.pool | @json)" else empty end)' <<<"$node" >"$state/nodes/$name.patch.yaml"
+      (if .pool then "  \($pool): \(.pool | @json)" else empty end),
+      ($set.labels[] | "  \(.key | @json): \(.value | @json)"),
+      (if $set.taints == [] then empty else
+        "---",
+        "apiVersion: v1alpha1",
+        "kind: KubeletConfig",
+        "config:",
+        "  registerWithTaints:",
+        ($set.taints[] |
+          "    - key: \(.key | @json)",
+          "      value: \(.value | @json)",
+          "      effect: \(.effect | @json)")
+      end)' <<<"$node" >"$state/nodes/$name.patch.yaml"
     "$TALOSCTL" machineconfig patch "$base/$role.yaml" \
       --patch "@$state/nodes/$name.patch.yaml" \
       --output "$state/nodes/$name.yaml"
@@ -281,10 +358,81 @@ bootstrap() {
   log "export TALOSCONFIG=$TALOSCONFIG KUBECONFIG=$state/kubeconfig"
 }
 
+# kube is kubectl as this cluster's admin, whatever KUBECONFIG says.
+kube() {
+  kubectl --kubeconfig "$state/kubeconfig" --request-timeout=30s "$@" </dev/null
+}
+
+# joined prints the nodes of the node list on stdin that have an address yet,
+# as one object from each name to its labels and addresses.
+joined() {
+  jq -c '[.items[] | {key: .metadata.name, value: {
+      labels: (.metadata.labels // {}),
+      addresses: [.status.addresses[]? | select(.type == "InternalIP") | .address]}}
+    | select(.value.addresses != [])] | from_entries'
+}
+
+# labels sets the adminLabels of each pool on the pool's nodes, as the cluster's
+# admin, since no node may set them on itself. A node that registers again
+# comes back without them, and this sets them again. It removes none. A node
+# that has not joined after ten minutes does not keep the others from theirs,
+# and fails the run at the end.
+labels() {
+  inventory
+  pooled "$state/nodes.json"
+  local short want
+  short=$(jq -r --argjson pools "$POOLS" '. as $nodes | [$pools | to_entries[] | select(.value.adminLabels != [])
+    | .key as $pool | select(([$nodes[] | select(.pool == $pool)] | length) < .value.count) | $pool] | join(", ")' "$state/nodes.json")
+  [[ -z $short ]] || die "the inventory lacks nodes of pool $short; run: cluster.sh gen $cluster"
+  want=$(jq -c --argjson pools "$POOLS" '[.[] | ((.pool | values | $pools[.].adminLabels) // []) as $labels | select($labels != [])
+    | {name, address, labels: ($labels | from_entries)}]' "$state/nodes.json")
+  if [[ $want == '[]' ]]; then log "no pool sets adminLabels"; return; fi
+  [[ -s $state/kubeconfig ]] || die "no kubeconfig; run: cluster.sh bootstrap $cluster"
+
+  local i have left end=$((SECONDS + 600))
+  for i in $(seq 120); do
+    have=$(kube get nodes -o json 2>/dev/null | joined) || have={}
+    left=$(jq -r --argjson have "$have" '[.[].name | select($have[.] == null)] | join(", ")' <<<"$want")
+    [[ -n $left && $SECONDS -lt $end ]] || break
+    [[ $i -gt 1 ]] || log "waiting for nodes to join: $left"
+    [[ $i -eq 120 ]] || sleep 5
+  done
+
+  # A node of this name at another address is not the VM gen found, so the
+  # kubeconfig may be another cluster's: nothing is labelled.
+  local other name pairs
+  other=$(jq -r --argjson have "$have" '[.[] | . as $n | $have[.name] // empty | select(.addresses | index($n.address) | not)
+    | "\($n.name) is at \(.addresses | join(" ")), not \($n.address)"] | join(", ")' <<<"$want")
+  [[ -z $other ]] || die "$other; run: cluster.sh gen $cluster, if this is the right cluster"
+
+  local lacks='.[] | . as $n | $have[.name] // empty | .labels as $has
+    | [$n.labels | to_entries[] | select($has[.key] != .value) | "\(.key)=\(.value)"] | select(. != [])
+    | "\($n.name) \(join(" "))"'
+  while read -r name pairs; do
+    log "$name: setting $pairs"
+    # $pairs is split into one argument a label; none holds a space or a glob.
+    # shellcheck disable=SC2086
+    kube label node "$name" --overwrite $pairs >/dev/null || log "$name: kubectl label failed"
+  done < <(jq -r --argjson have "$have" "$lacks" <<<"$want")
+
+  # What counts is what the API server has now.
+  have=$(kube get nodes -o json | joined) || die "cannot read the nodes back"
+  left=$(
+    jq -r --argjson have "$have" '.[].name | select($have[.] == null) | "\(.) has not joined"' <<<"$want"
+    jq -r --argjson have "$have" "$lacks" <<<"$want" | sed 's/ / lacks /'
+  )
+  if [[ -n $left ]]; then
+    while read -r name; do log "$name"; done <<<"$left"
+    die "nodes are without their admin labels; run: cluster.sh labels $cluster"
+  fi
+  log "admin labels: $(jq -r '[.[] | "\(.name) has \(.labels | to_entries | map("\(.key)=\(.value)") | join(" "))"] | join(", ")' <<<"$want")"
+}
+
 case $cmd in
   gen) gen ;;
   apply) apply ;;
   bootstrap) bootstrap ;;
-  up) gen; apply; bootstrap ;;
+  labels) labels ;;
+  up) gen; apply; bootstrap; labels ;;
   *) die "unknown command: $cmd" ;;
 esac
