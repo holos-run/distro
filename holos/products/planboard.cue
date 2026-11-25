@@ -54,7 +54,7 @@ products: planboard: {
 	// README.md, Building the Planboard images.
 	images: {
 		board:  "sha256:b5a72ab690dd0a7e7eed6804765825a846ec04cc54680bdb54322892818dd069"
-		agent:  "sha256:908e537f6f2e3b60ce2504de37ae1ccc9864eba1a82421a7676237d38b317d29"
+		agent:  "sha256:b9d207e18537098c064364a1012c5a10a7dd3d7a219a152058ee0a20ad73a2c5"
 		plugin: "sha256:f04a6b7f1680999d7eab2a97c4df14b988ead486fcc520db64e779c82a58e4bf"
 	}
 }

@@ -47,7 +47,7 @@ USER 65532:65532
 
 # agent adds to the harness and changes nothing else. The harness already has
 # git and USER 65532.
-FROM ghcr.io/kagent-dev/kagent/claude-harness:1.0.0-rc3@sha256:216613bf155d3d437765675144fee19c9045cb21cd2e481189f2dcae36c24b3b AS agent
+FROM ghcr.io/kagent-dev/kagent/claude-harness:1.0.1@sha256:111d28bc8552469b028d91ecd2352c9d44811aba07be12b1e6868db7948f904e AS agent
 COPY --from=shared / /
 
 # plugin-files normalizes the modes, which come from the umask of whoever made
