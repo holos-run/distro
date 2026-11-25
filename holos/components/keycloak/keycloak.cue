@@ -54,9 +54,9 @@ let Owner = "keycloak"
 let Admin = "admin"
 
 // PostgreSQLImage is the image CloudNativePG 1.30.1 runs by default,
-// PostgreSQL 18.6, stated so an operator upgrade does not move the database
-// to a new major version by itself.
-let PostgreSQLImage = "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"
+// PostgreSQL 18.6, pinned by tag (Cluster.pins.keycloak.postgresql) so an
+// operator upgrade does not move the database to a new major version by itself.
+let PostgreSQLImage = "ghcr.io/cloudnative-pg/postgresql:\(Cluster.pins.keycloak.postgresql)"
 
 holos: spec: artifacts: [(#ResourcesArtifact & {
 	resources: {

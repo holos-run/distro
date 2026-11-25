@@ -6,15 +6,15 @@ package holos
 // #GeneratedSecret (components/generated-secret.cue), and the stores that
 // read from outside the cluster come with the Secrets Manager.
 //
-// The operator v2.14.0 from chart 2.14.0, the latest release of the
-// external-secrets chart at https://charts.external-secrets.io, with the
-// image the chart names on ghcr.io. The controller and the webhook are one
-// replica each, Deployments that tolerate no taint, so the control plane's
+// The operator is the one the pinned chart ships (Cluster.pins.externalSecrets),
+// the external-secrets chart at https://charts.external-secrets.io, of the
+// operator's own version, with the image the chart names on ghcr.io. The controller
+// and the webhook are one replica each, Deployments that tolerate no taint, so the control plane's
 // NoSchedule taint keeps them on the workers. Their pods meet the restricted
 // Pod Security standard, so external-secrets needs no label. The
 // ServiceMonitor, the Grafana dashboard and the Bitwarden SDK server are off
 // by default: the cluster has no Prometheus Operator and no Bitwarden.
-ESOVersion: "2.14.0"
+let Pins = Cluster.pins.externalSecrets
 
 // Webhook is the Service that serves both webhook configurations.
 let Webhook = {name: "external-secrets-webhook", namespace: "external-secrets"}
@@ -28,7 +28,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: Webhook.namespace
 	chart: {
 		name:    "external-secrets"
-		version: ESOVersion
+		version: Pins.version
 		release: "external-secrets"
 		repository: {
 			name: "external-secrets"

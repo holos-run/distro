@@ -46,15 +46,4 @@ products: planboard: {
 		// /present/<project>/*.
 		access: viewers: projects: [...=~#projectPattern]
 	}
-
-	// images are the three images components/product-planboard/Dockerfile
-	// builds from Planboard v0.0.1: board, which runs the actor's containers,
-	// agent, which is kagent's Claude harness with planboard copied in, and
-	// plugin, the planboard plugin as an image volume. Build and push them with
-	// README.md, Building the Planboard images.
-	images: {
-		board:  "sha256:b5a72ab690dd0a7e7eed6804765825a846ec04cc54680bdb54322892818dd069"
-		agent:  "sha256:b9d207e18537098c064364a1012c5a10a7dd3d7a219a152058ee0a20ad73a2c5"
-		plugin: "sha256:f04a6b7f1680999d7eab2a97c4df14b988ead486fcc520db64e779c82a58e4bf"
-	}
 }

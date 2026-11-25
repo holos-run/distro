@@ -21,8 +21,12 @@ Both forks are public, since a fork of a public repository cannot be private.
 
 The Substrate pin is upstream `main` as of 2026-11-24 with nothing added, 84
 commits past the last pin, `94e0a26a`. It is also the submodule commit the
-platform vendors Substrate from (`holos/vendor/substrate`, `Substrate.commit`
-in `holos/substrate.cue`).
+platform vendors Substrate from (`holos/vendor/substrate-<commit>`).
+
+Each cluster pins its own commits, in `pins.substrate` and `pins.kagent` of
+`holos/pins/<cluster>.cue`, and there is a submodule per Substrate commit a
+cluster pins. All three clusters are on the pins above. When they differ, the table
+gets a row for each commit in use, and says which clusters are on it.
 
 It is not upstream's head. The next commit, `17fbd12f` (upstream #4053), moves
 Substrate to Kubernetes v0.38.0-beta.0, whose apimachinery and client-go use
@@ -222,8 +226,11 @@ Commits are signed and carry a DCO sign-off (`git commit -s`).
    gh repo edit holos-run/<fork> --default-branch holos-<date>
    ```
 
-8. Update the pins in this document and the Substrate submodule, and publish
-   the images at the new pins ([Images](#images)).
+8. Update the pins in this document, and publish the images at the new pins
+   ([Images](#images)). Then bump each cluster that is to move, one pull request
+   each: its pin file, and a Substrate submodule at the commit
+   ([holos/README.md](../holos/README.md), Substrate, Bumping the pin). A cluster
+   left alone stays on its pins.
 
 The old dated branches stay as they are, so a pin to an older commit can
 still be fetched and rebuilt.
@@ -316,10 +323,11 @@ content again. Any other failure is not retried.
 
 The run's output is the source of the digests: the Publish job's summary
 lists each `<name>:<tag>@<digest>`, and the program writes the same subjects
-as JSON with `-out`. A person copies them by hand into the pin files,
-`holos/substrate.cue` (`Substrate`) and `holos/kagent.cue` (`Kagent`), and
-commits them; the run never commits. The components read the pins from
-there ([holos/README.md](../holos/README.md), Substrate, Bumping the pin).
+as JSON with `-out`. A person copies them by hand into the pin file of each
+cluster that is to move, `holos/pins/<cluster>.cue` (`substrate` and `kagent`), and
+commits them; the run never commits, and a merge moves only that cluster. The
+components read the pins from there ([holos/README.md](../holos/README.md),
+Substrate, Bumping the pin).
 Everything in the platform names these images and charts by digest, pulled
 anonymously, with no pull secret and no private CA.
 

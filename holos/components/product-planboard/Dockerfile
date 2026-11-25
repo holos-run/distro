@@ -11,8 +11,8 @@
 # the VM shares with the garage's clusters, so a build could stop for an hour. The
 # bases are on quay.io and ghcr.io. ko is not used because it replaces its base's
 # entrypoint, which the harness needs. Every base is pinned by digest; the harness
-# digest is the one kagent.cue pins as harnessImages.claude, and has to move with
-# it, since an older harness cannot start under the controller.
+# digest is the one the cluster the image is built for pins as
+# kagent.upstream.harnesses.claude (pins/<cluster>.cue), and has to move with it, since an older harness cannot start under the controller.
 
 # build compiles planboard. Static, so the same binary runs on alpine and on the
 # harness image, and -trimpath and -buildvcs=false keep the path and the state of

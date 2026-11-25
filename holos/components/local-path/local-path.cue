@@ -12,11 +12,12 @@ import (
 // The class is not the default: the release manifest gives it no default
 // annotation, and nothing here adds one.
 //
-// vendor/v0.0.37/local-path-storage.yaml is the release's manifest,
-// unmodified; the patches below make it fit Talos:
+// vendor/<version>/local-path-storage.yaml is the release's manifest,
+// unmodified, for each version a cluster pins (Cluster.pins.localPath); the
+// patches below make it fit Talos. v0.0.37's:
 // https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml
 // sha256:9781b39c24f3f651bd6d6e41b561e04e4904bbdb6d4f8c7a6009df3a702dcd65
-LocalPathVersion: "v0.0.37"
+let Pins = Cluster.pins.localPath
 
 // The manifest's namespace. The provisioner's helper pods mount the node's
 // volume directory as a hostPath, which Talos's baseline Pod Security
@@ -46,7 +47,7 @@ let offControlPlane = {
 }
 
 holos: spec: artifacts: [(#FileArtifact & {
-	file: "vendor/\(LocalPathVersion)/local-path-storage.yaml"
+	file: "vendor/\(Pins.version)/local-path-storage.yaml"
 	patches: [
 		{
 			target: {kind: "Namespace", name: LocalPathNamespace}

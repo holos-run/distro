@@ -9,8 +9,8 @@ Quay: {
 	// version is Quay's release, and image the projectquay image, the tag
 	// kept for the reader and the index digest the tag pointed to. The tag
 	// has no leading v. 3.18 is for version-bump-before-the-day to weigh.
-	version: "3.17.6"
-	image:   "quay.io/projectquay/quay:\(version)@sha256:e1f7407f90b169247c9a0714ed2cfdd61b24292ed708a12385fd89a762f004a2"
+	version: Cluster.pins.quay.version
+	image:   "quay.io/projectquay/quay:\(version)@\(Cluster.pins.quay.digest)"
 
 	// namespace holds Quay, its Redis and its database, in the mesh.
 	namespace: "quay"

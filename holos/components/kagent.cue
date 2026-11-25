@@ -4,9 +4,84 @@ import "list"
 
 // Kagent's names that need the ingress Gateway and Keycloak, which only
 // component instances load: its public URL and its Keycloak client, and the
-// claims it runs agents for on this cluster. The pins and the names Substrate
-// reads are in kagent.cue at the platform root.
+// claims it runs agents for on this cluster. The names Substrate reads are in
+// kagent.cue at the platform root.
+//
+// Also the release this cluster runs, from its pins (pins/<cluster>.cue), the
+// holos-run fork (docs/forks.md): the fork's commit, the charts and images
+// ghcr.io/holos-run published from it, by digest, and the agents' harness and
+// sandbox guest images, which the fork does not build.
+//
+// To bump a cluster, set its pins.kagent: commit and version to the new publish
+// run's, every digest from its references, and upstream to the upstream release
+// nearest the new fork's base. Copy the fork's setup.sql to
+// components/kagent/vendor/<version>/ and re-read the chart's values.yaml against
+// the kagent component's. Moving upstream.harnesses.claude moves the agent
+// image's base too: set the digest in components/product-planboard/Dockerfile and
+// rebuild that image (README.md, Building the Planboard images). A bump that
+// changes kagent's initial migration in place needs the kagent schema dropped and
+// re-created on the cluster (README.md, Substrate, Bumping the pin).
 Kagent: {
+	let Pins = Cluster.pins.kagent
+
+	// commit is the fork's: an upstream release with the fork's one change on
+	// top, the build against the holos-run Substrate fork at Substrate.commit,
+	// where upstream builds against kagent-dev/substrate (docs/forks.md).
+	commit: Pins.commit
+	// version is the tag publish-images.yaml published the images and the
+	// charts under. It is also the controller's version.Version, which the
+	// controller compares with harnessImages.release.
+	version: Pins.version
+
+	// charts are the fork's two OCI charts. The digests are for the reader:
+	// holos pulls by version and caches the chart in the component's
+	// vendor/, which is committed.
+	charts: {
+		crds: {
+			name:   "oci://\(Kagent.registry)/helm/kagent-crds"
+			digest: Pins.charts.crds
+		}
+		kagent: {
+			name:   "oci://\(Kagent.registry)/helm/kagent"
+			digest: Pins.charts.kagent
+		}
+	}
+
+	// digests are the index digests of the fork's two images, public and
+	// pulled anonymously, by the image's name under registry.
+	digests: Pins.digests
+
+	// upstream is the kagent-dev release the fork is cut from. The fork
+	// builds only the controller and the UI, so the agents' images come from
+	// this release, by the index digests its chart's
+	// files/builtin-harness-images.json lists, which the fork's chart does
+	// not carry. They have to be this release's: since v1.0.0-rc3 a harness
+	// fetches its configuration from the controller's bootstrap RPC, with no
+	// fallback to the environment, so an older harness cannot start under
+	// this controller.
+	upstream: {
+		release:  Pins.upstream.release
+		registry: "ghcr.io/kagent-dev/kagent"
+	}
+	// harnessImages are config.harnessImages, the built-in Harness images by
+	// harness. The controller refuses an image not pinned by digest. The
+	// fourth key, release, stays unset: the controller refuses to start when
+	// it is set and differs from its own version, which is the fork's tag.
+	harnessImages: {
+		kagent: "\(upstream.registry)/golang-adk:\(upstream.release)@\(Pins.upstream.harnesses.kagent)"
+		claude: "\(upstream.registry)/claude-harness:\(upstream.release)@\(Pins.upstream.harnesses.claude)"
+		codex:  "\(upstream.registry)/codex-harness:\(upstream.release)@\(Pins.upstream.harnesses.codex)"
+	}
+	// guestImage is config.sandboxes.guestImage, the guest a SandboxTemplate's
+	// standalone sandbox runs in place of its image's entrypoint, from the
+	// same release, by the index digest of its tag. Agents do not use it;
+	// without it every SandboxTemplate is refused as unpinned.
+	guestImage: "\(upstream.registry)/sandbox-guest:\(upstream.release)@\(Pins.upstream.guest)"
+
+	// toolsTag is the tool server's image tag, with its digest, which the
+	// subchart puts after the colon as it is.
+	toolsTag: "\(Pins.tools.version)@\(Pins.tools.digest)"
+
 	// host and url are the UI's one public name, behind oauth2-proxy, under
 	// the ingress Gateway's wildcard certificate, so no Certificate of its
 	// own.

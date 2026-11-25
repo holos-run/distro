@@ -12,7 +12,7 @@ package holos
 // (clusterProjects, collections.cue), and a claim's mistake fails only the
 // renders of the clusters it selects, though one of those fails holos render
 // platform as a whole. cue vet evaluates this for the default cluster,
-// treasury, or the one -t clusterName names, and with no project named, so it
+// marina, or the one -t clusterName names, and with no project named, so it
 // reports a conflict over a person there; a check on one claim, such as
 // Projects.#Person, only the render reports. The people collection
 // (clusterPeople) takes part as members do, and keycloak-realm reads collected,

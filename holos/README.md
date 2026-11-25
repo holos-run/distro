@@ -16,13 +16,14 @@ holos/
 ├── cue.mod/        CUE module; holos init platform v1alpha6's schemas
 ├── brand.cue       the distribution's brand, Bank of the Salish Sea, which its own names are built from
 ├── clusters.cue    per-site and per-cluster data
+├── pins/           every cluster's versions and digests: their schema, and a file per cluster
 ├── registry.cue    the components, in sync order
 ├── collections.cue the ProjectClaim, people, product and binding collections, bound into the platform, which claims, people and bindings each cluster takes, and the owners' group and user definitions
 ├── argocd.cue      the repository, branch, project and signing keys Argo CD syncs with
 ├── private-ca.cue  the names of the private CA and its trust bundle, and the shape of its requesters
-├── istio.cue       the mesh's release, namespace, images and trust domain
-├── substrate.cue   the Substrate fork's commit and image digests, and the names Substrate is reached by
-├── kagent.cue      the kagent fork's pins, its namespace and controller identity, which Substrate trusts
+├── istio.cue       the mesh's namespace, charts and trust domain
+├── substrate.cue   the names Substrate is reached by
+├── kagent.cue      kagent's namespace and controller identity, which Substrate trusts
 ├── signing-keys/   the public keys commits on main are signed with
 ├── projects/       the ProjectClaim collection: its schema, and a file per project
 ├── people/         the people collection: its schema, and a file per person
@@ -30,7 +31,7 @@ holos/
 ├── bindings/       the collection of bindings: its schema, and a file per binding
 ├── platform/       the Platform: the registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
-├── vendor/         git submodules a component renders from: substrate, the Substrate fork
+├── vendor/         git submodules a component renders from: the Substrate fork, one per commit a cluster pins
 └── deploy/         rendered manifests, committed; never edited by hand
 ```
 
@@ -183,6 +184,43 @@ and render; the Gateway's `spec.addresses` and both pools follow. Then
 change the cluster's router line, `/<cluster>.bank.internal/<address>`, to
 match.
 
+### Versions
+
+Every version and digest the platform renders into a cluster is in that
+cluster's own file, `pins/<cluster>.cue`: charts, images, vendored releases and
+the Substrate and kagent forks' commits. `clusters.cue` reads it as the cluster's
+`pins`, and a component reads its own cluster's as `Cluster.pins`. What is not a
+version, such as a name, a port or a policy, is the component's and shared.
+
+`#Pins` (`pins/pins.cue`) is closed and has no defaults, and every cluster sets
+every pin, those of components it does not take included. A pin left out fails
+`cue vet` with the cluster and the pin, such as
+`pinned."marina.cilium.version"`, a misspelt one with
+`clusters.marina.pins.ciliun: field not allowed`, and a cluster with no file, or a
+file of no cluster, with `pinFiles.example`. The render alone does not report
+every one of these, so `cue vet ./...` comes first.
+
+A bump edits one file and renders into one cluster's tree, so a merge moves that
+cluster alone. To give another cluster the same versions, make the same edit in
+its file. Two things a bump brings stay beside what pins them until no cluster
+does:
+
+- a chart or a vendored release, in `components/<name>/vendor/<version>/`;
+- a Substrate commit's tree and input (Substrate, Bumping the pin, below).
+
+So delete a version's directory only once
+`grep -rF '<version>' pins/` finds no cluster on it.
+
+A component's code is shared. An edit to it, such as the new value a new chart
+needs, renders into every cluster that takes it, so after a bump check that
+`git status deploy/` lists only the cluster the bump names. An edit that must not
+reach the others is conditional on the pin, such as
+`if Cluster.pins.<name>.version == "<version>"`.
+
+Two versions are not here. The Talos and Kubernetes versions are `talosVersion`
+and `kubernetesVersion` in the cluster's `talosvm.json`, and the second in
+`clusters.cue` too.
+
 ### The stack
 
 The platform is a stack. Every entry in the registry (`registry.cue`) states
@@ -232,7 +270,7 @@ own list and an entry it does not take can never move them. It is a map in
 the root files, not a filter on `Cluster`, because the platform instance does
 not load `components/component.cue`, where `Cluster` is defined, and never
 gets the `clusterName` tag: a filter on that would quietly read its default,
-treasury, for every cluster. `clusterProjects`, in `collections.cue`, is the
+marina, for every cluster. `clusterProjects`, in `collections.cue`, is the
 claims each cluster takes, `clusterPeople` the people and `clusterBindings` the
 bindings, each a map for the same reason. `Projects.reserved`
 reads the whole registry, so a name is reserved whether or not a cluster
@@ -293,8 +331,9 @@ entries have no hand step.
    cluster with no committed file. A named endpoint is `endpoint` there and the
    host of `serviceAccountIssuer` in `clusters.cue`, and `kubernetesVersion`,
    when set, is in both. Nothing compares the two files, so compare them by
-   hand. It needs at least three workers, since
-   ceph-csi's three provisioner replicas take one worker each. *Only with
+   hand. Its versions at `pins/<cluster>.cue` (Versions, above): copy the file of
+   the cluster whose versions it starts on, and change the cluster's name in it. It
+   needs at least three workers, since ceph-csi's three provisioner replicas take one worker each. *Only with
    `substrate`*, one pool is named `general`, which `WorkerPool` `gvisor`
    selects.
 3. **Render and merge.** Render and run `contract-check` (Render, below). The
@@ -428,8 +467,8 @@ entries have no hand step.
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
 committed, so a render needs no network and reads the same chart everywhere.
-A component installed from release manifests rather than a chart vendors
-them in the same place, unmodified, and renders them with `#FileArtifact`.
+Versions that different clusters pin sit side by side (Versions, above). A
+component installed from release manifests rather than a chart vendors them in the same place, unmodified, and renders them with `#FileArtifact`.
 
 ### Cilium
 
@@ -1043,8 +1082,9 @@ label. The images are pinned by digest.
 Istio 1.31.4 in ambient mode (interview Q16), from the charts at
 `oci://ghcr.io/istio/release/charts`, in four components applied in this
 order: `istio-base` (the CRDs and the `istio-system` namespace), `istiod`,
-`istio-cni` and `ztunnel`. `istio.cue` has the release, the images, pinned by
-digest, and the trust domain, `cluster.local`. A workload's mesh identity is
+`istio-cni` and `ztunnel`. The release and the images, pinned by digest, are the
+cluster's `pins.istio`, and `istio.cue` has the trust domain, `cluster.local`. A
+workload's mesh identity is
 `spiffe://cluster.local/ns/<namespace>/sa/<service account>`.
 
 - `istio-system` is labeled `pod-security.kubernetes.io/enforce=privileged`:
@@ -1654,7 +1694,7 @@ them:
 - `keycloak-operator` is the Keycloak Operator 26.8.2 from the release's
   manifests, `kubernetes/` at tag 26.8.2 of
   https://github.com/keycloak/keycloak-k8s-resources, vendored unmodified
-  in `components/keycloak-operator/vendor/26.8.2/` and rendered with
+  in `components/keycloak-operator/vendor/<version>/` and rendered with
   `#FileArtifact`, which gives the namespace-less manifests the namespace as
   `kubectl apply -n keycloak` would. It holds all four CRDs, `Keycloak`,
   `KeycloakRealmImport`, `KeycloakOIDCClient` and `KeycloakSAMLClient`: the
@@ -1831,7 +1871,7 @@ is the manager, holos-controller from aavis-ops at tag
 `holos-controller-v0.22.0`: all eight CRDs (`keycloak.holos.run`,
 `quay.holos.run`, `security.holos.run`; the manager starts a controller for
 every kind) with `Prune=false,Delete=false`, its RBAC and its Deployment,
-vendored unmodified in `components/holos-controller/vendor/0.22.0/`, with the
+vendored unmodified in `components/holos-controller/vendor/<version>/`, with the
 image set to `ghcr.io/holos-run/holos-controller:holos-controller-v0.22.0`
 pinned by digest. The release names its namespace `holos-controller` and its
 objects `holos-controller-<suffix>`; the component's Kustomize patches give
@@ -2429,27 +2469,31 @@ kubectl delete ns sm-test
 
 `substrate` is Agent Substrate's control plane, from the holos-run fork
 (interview Q23, Q26 and Q27; [docs/forks.md](../docs/forks.md)). The fork is
-vendored as a git submodule at `vendor/substrate`, checked out at the pin,
-and the component renders upstream's own install tree from it, the files
-`go run ./cmd/ate-setup deploy ate-system` would apply. `Substrate`
-(`substrate.cue`) holds the fork's commit, every image's digest on
-`ghcr.io/holos-run/substrate`, and the names other components dial;
+vendored as a git submodule per commit a cluster pins, at
+`vendor/substrate-<commit>`, and the component renders upstream's own install
+tree from the cluster's, the files `go run ./cmd/ate-setup deploy ate-system`
+would apply. The commit and every image's digest on
+`ghcr.io/holos-run/substrate` are the cluster's `pins.substrate`
+(`pins/<cluster>.cue`), which `Substrate` reads (`components/substrate.cue`);
+`Substrate` also holds the names other components dial (`substrate.cue`), and
 `Kagent` (`kagent.cue`) holds the kagent controller's identity, which
 Substrate trusts before kagent is installed. ate-setup needs a cluster to
 render, so it is read, not run: `components/substrate/ATE-SETUP.md` maps
 every step of its `deploy ate-system` to a stage here or to a step by hand
 below, and is re-read on every bump.
 
-A clone renders only with the submodule checked out
-(`git submodule update --init holos/vendor/substrate` from the repository's
-root, once); without it `kubectl kustomize` finds no files and the render
-fails. The render reads nothing from the network.
+A clone renders only with every submodule checked out
+(`git submodule update --init` from the repository's root, after each pull that
+adds one); without it `kubectl kustomize` finds no files and the render
+fails. A clone from before the submodules were named by their commit keeps the
+old checkout, `holos/vendor/substrate`, as an untracked directory, which nothing
+reads: `rm -rf holos/vendor/substrate`. The render reads nothing from the network.
 
 The component is a pipeline, one artifact of four stages:
 
 1. **Input.** A `Command` generator runs `kubectl kustomize
    --load-restrictor LoadRestrictionsNone` on
-   `components/substrate/upstream/kustomization.yaml`, which lists
+   `components/substrate/upstream/<commit>/kustomization.yaml`, which lists
    `manifests/ate-install/base` and the files ate-setup applies on their
    own: the three CRDs and the controller's RBAC, the pod certificate
    controller, the SandboxConfig admission policy and `gvisor-default`, the
@@ -2476,7 +2520,7 @@ The component is a pipeline, one artifact of four stages:
    `ghcr.io/holos-run/substrate/<name>@<digest>`.
 4. **Slice.** `holos kubectl-slice` writes one file per resource.
 
-Two validators fail the render if the submodule is not at
+Two validators fail the render if the cluster's submodule is not at
 `Substrate.commit`, or if a `ko://` image, a `${...}` image placeholder, the GKE
 collector address, a PodMonitoring or a `gcs` storage backend survives.
 
@@ -2613,15 +2657,15 @@ their ten-minute progress deadline; the kubelet retries within about two
 minutes of their creation. Each command creates only what is missing, so a
 second run changes nothing. ate-setup uses `KUBECONFIG`'s current context
 (`--context` to choose), and `go run` builds it, about a minute the first
-time. `holos/vendor/substrate` is a submodule, empty in a fresh clone or
-worktree: check it out first with
-`git submodule update --init holos/vendor/substrate`, from the repository's
-root, before the ten minutes start.
+time. The tree is the submodule at the cluster's pin, empty in a fresh clone or
+worktree: check it out first with `git submodule update --init`, from the
+repository's root, before the ten minutes start.
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
 kubectl get ns ate-system podcertificate-controller-system   # synced
-cd holos/vendor/substrate                                    # from the repository's root
+commit=$(cd holos && cue export . -e "clusters.$cluster.pins.substrate.commit" --out text)   # from the repository's root
+cd holos/vendor/substrate-$commit
 go run ./cmd/ate-setup create podcertificate-controller-cas  # service-dns-, pod-identity-, postgres-ca-pool
 go run ./cmd/ate-setup create jwt-authority-pool             # actor-id-jwt-pool
 go run ./cmd/ate-setup create actor-id-ca-pool
@@ -2654,7 +2698,7 @@ after a rebuild with a new root, restart atelet
 
 ```sh
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
-go build -o ~/bin/kubectl-ate ./cmd/kubectl-ate   # from holos/vendor/substrate; ~/bin on PATH
+go build -o ~/bin/kubectl-ate ./cmd/kubectl-ate   # from holos/vendor/substrate-$commit; ~/bin on PATH
 kubectl ate create atespace demo
 
 # Into Quay, with the controller's token. buildx copies from the client, so
@@ -2693,30 +2737,59 @@ kubectl ate get actors -a demo            # both SUSPENDED until a request wakes
 #### Bumping the pin
 
 A new pin is a fork commit whose images `publish-images.yaml` has published to ghcr.io
-([docs/forks.md](../docs/forks.md)). From `holos/`:
+([docs/forks.md](../docs/forks.md)). A bump moves one cluster, `$cluster`, and a
+cluster that stays on its pin keeps the submodule and the input of its own
+commit. `$old` is the cluster's commit and `$new` the one it moves to. From
+`holos/`, with nothing to add when another cluster is already on `$new`:
 
 ```sh
-git -C vendor/substrate fetch origin
-git -C vendor/substrate checkout <commit>
-# substrate.cue: commit, version, and every digest from the publish run's references
+old=$(cue export . -e "clusters.$cluster.pins.substrate.commit" --out text)
+new=                                              # the new pin, a full commit
+git submodule add --name substrate-$new https://github.com/holos-run/substrate.git vendor/substrate-$new
+git -C vendor/substrate-$new checkout $new
+cp -r components/substrate/upstream/$old components/substrate/upstream/$new
+sed -i "s/substrate-$old/substrate-$new/" components/substrate/upstream/$new/kustomization.yaml
+# pins/$cluster.cue: substrate's commit, version, and every digest from the publish
+# run's references, and the comment above them
 # components/substrate/ATE-SETUP.md: walk steps/deploy.go again, change what moved,
-# then the line numbers and the pin at its top
+# in upstream/$new or in the component, then the line numbers and the pins at its top
 cue vet ./... && rm -rf deploy/clusters && holos render platform
-git diff deploy/clusters/*/components/substrate   # what the bump changes, on every cluster that takes it
-git add vendor/substrate substrate.cue components/substrate deploy
+git status --short deploy                         # only deploy/clusters/$cluster
+git diff deploy/clusters/$cluster/components/substrate
+git add ../.gitmodules vendor/substrate-$new pins/$cluster.cue components/substrate deploy
+```
+
+The component's patches are shared, and name containers of one tree by index and
+name. A patch only the new tree needs is guarded by the pin, such as
+`if S.commit == "<commit>"`, so a cluster on another commit renders as it did. If a change cannot
+render for a cluster that is to be destroyed, that cluster is taken out of the render instead, its
+committed tree under `deploy/clusters/` stays as it is, and the render check in
+CI is told to skip it.
+
+Once no cluster pins `$old` (`grep -rF $old pins/` finds nothing), drop its tree
+and input:
+
+```sh
+git rm vendor/substrate-$old && git rm -r components/substrate/upstream/$old
+git add ../.gitmodules
 ```
 
 A kagent bump goes with it, since kagent's replace names the Substrate
-pin ([docs/forks.md](../docs/forks.md), Rebasing on upstream):
+pin ([docs/forks.md](../docs/forks.md), Rebasing on upstream). `$version` is
+the new `Kagent.version` and `$kagent` a checkout of the fork at its commit:
 
 ```sh
-# kagent.cue: commit, version, the two chart digests and the two image digests,
-# and upstream.release with the harness and guest images, from that release's chart
-# components/kagent/setup.sql: re-copy go/core/pkg/postgressetup/setup.sql if it changed
-rm -rf components/kagent/vendor components/kagent-crds/vendor   # the render pulls both charts at Kagent.version
-cue vet ./... && rm -rf deploy/clusters && holos render platform
-git diff deploy/clusters/*/components/kagent deploy/clusters/*/components/kagent-crds
-git add kagent.cue components/kagent components/kagent-crds deploy
+# pins/$cluster.cue: kagent's commit, version, the two chart digests and the two image
+# digests, and upstream.release with the harness and guest digests, from that release's
+# chart
+mkdir -p components/kagent/vendor/$version
+cp $kagent/go/core/pkg/postgressetup/setup.sql components/kagent/vendor/$version/
+cue vet ./... && rm -rf deploy/clusters && holos render platform   # pulls both charts at the version
+git status --short deploy                                          # only deploy/clusters/$cluster
+git diff deploy/clusters/$cluster/components/kagent deploy/clusters/$cluster/components/kagent-crds
+git add pins/$cluster.cue components/kagent components/kagent-crds deploy
+# Once no cluster pins the old version, with $old its value:
+git rm -r components/kagent/vendor/$old components/kagent-crds/vendor/$old
 ```
 
 kagent's harness images move with it, so a claim's agent image is rebuilt on the
@@ -2739,11 +2812,14 @@ root `argocd-apps` **and** on `substrate`, `kagent-crds`, `kagent` and each
 claim's `product-planboard-<claim>`, whose render has the claim's pools, and
 keep the root paused until the merge: the root renders the children's
 `syncPolicy`, so restoring it alone re-applies `automated` to them and
-`selfHeal` puts the old pins back within a poll. A merge reaches every cluster
-at once, so every cluster that takes Substrate is either rolled by hand first or
-left paused through the merge and rolled after it, one cluster at a time. An
-unpaused one gets the whole bump in one unordered sync. The same goes for
-merging a revert. Apply the renders
+`selfHeal` puts the old pins back within a poll. A merge reaches `$cluster`
+alone, whose tree is the only one the bump changes (Versions, above), so the
+others need no pausing: their sync sees a new commit and no difference. A bump of
+a second cluster is a pull request of its own. If `$cluster` is not paused, it
+gets the whole bump in one unordered sync. The same goes for merging a revert.
+An edit of the component beside the pins reaches every cluster that takes it,
+so `git status deploy/` names the cluster alone, or each cluster it names is
+rolled as this one is. Apply the renders
 server-side as `argocd-controller` with Argo CD's tracking-id annotations,
 then restore all of them after the merge. Substrate's skew policy
 (`docs/reference/version-skew-policy.md`) fixes the order within its render,
@@ -2856,9 +2932,13 @@ kubectl -n ate-system logs cache-reset && kubectl -n ate-system delete pod cache
 kubectl -n ate-system delete pod -l app=atelet --field-selector spec.nodeName=<node>
 ```
 
-The render refuses a `Substrate.commit` that is not the submodule's, and a
+The render refuses a `Substrate.commit` whose submodule is not at it, and a
 `ko://` image the `images` field does not know, which is what a new
-component in upstream's tree looks like: add its name and digest. A new
+component in upstream's tree looks like. Add its name to `KoImages`
+(`components/substrate/substrate.cue`), its digest as an optional field of
+`#Pins` (`pins/pins.cue`), which becomes required once every cluster has it, and
+the digest itself to the cluster's file. An image a new tree drops turns optional
+the same way. A new
 flag ate-setup appends, a new file it applies on its own or a new
 ConfigMap key does not fail the render; only the re-read finds it. A
 schema change is migrated by ate-api-server on start, through the owner's
@@ -3182,8 +3262,8 @@ kagent runs agents as Substrate actors (interview Q26), from the holos-run
 fork ([docs/forks.md](../docs/forks.md)), at
 `https://kagent.treasury.bank.internal` behind a Keycloak login. `Kagent`
 (`kagent.cue`, and `components/kagent.cue` for the names that need the Gateway
-or Keycloak) holds the pins and the names, and the substrate component reads
-the same definition for the router's allowed list, the bootstrap owners and
+or Keycloak) holds the names, and reads the pins from the cluster's
+`pins.kagent`, and the substrate component reads the same definition for the router's allowed list, the bootstrap owners and
 the credential provider's namespace policy. Two components: `kagent-crds`, the
 CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
 
@@ -3198,8 +3278,9 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   The catalog's fourth key, `release`, stays unset: the controller refuses to
   start when it is set and differs from its own version, which is the
   fork's tag. The tool server and oauth2-proxy images are the subcharts'
-  defaults, by digest; oauth2-proxy's pin is `OAuth2Proxy`
-  (`components/oauth2-proxy.cue`), which each board's login reads too.
+  defaults, by digest; oauth2-proxy's pin, the cluster's `pins.oauth2Proxy`, is
+  read as `OAuth2Proxy` (`components/oauth2-proxy.cue`), which each board's login
+  reads too.
 - **Substrate.** `controller.substrateClientCertificate` mounts the pod
   identity certificate and the servicedns trust bundle; the controller dials
   `api.ate-system.svc:443` and `https://atenet-router.ate-system.svc:443`
@@ -3226,7 +3307,7 @@ CRD chart, and `kagent`, the main chart with the CUE-made objects beside it.
   `kagent`, roles `kagent_owner` and `kagent_readwrite` and logins
   `kagent_owner_user` and `kagent_readwrite_user`. The `kagent-db-setup`
   Job, a Sync hook in `ate-system` beside Substrate's own, runs kagent's
-  `setup.sql`, copied from the fork into `components/kagent/`, as the
+  `setup.sql`, copied from the fork into `components/kagent/vendor/<version>/`, as the
   superuser. The two passwords are generated once in `ate-system`, as
   `kagent-db-users`, the one copy the Job reads; the connection strings in
   `kagent`, `kagent-postgres-owner` and `kagent-postgres-readwrite`, are
@@ -3329,7 +3410,7 @@ alone. A claim with an agent gets a pool of its own beside it,
 `ate-workers/gvisor-<claim>`, labeled for the claim's namespace, and a
 placeholder `gvisor` in that namespace, both from its binding (The agent,
 below). Every pool reads one spec, `Substrate.workerPool.spec`
-(`substrate.cue`).
+(`substrate.cue`, with the worker image from the cluster's pins).
 
 A Harness for the platform pool, with snapshots in RustFS's `substrate`
 bucket:
@@ -4132,7 +4213,7 @@ A claim with no binding has no role, so its owners see nothing in Argo CD.
    claim selects, and so `holos render platform` as a whole, and CI for every
    cluster. Each cluster has its own Keycloak, so the same username on two
    clusters may be two people. `cue vet` reports a conflict over a person for
-   treasury alone, or for another cluster with `-t clusterName=<cluster>`, and
+   marina alone, or for another cluster with `-t clusterName=<cluster>`, and
    a service user as a member not at all, so the render is what reports those.
    A malformed or upper-case key is the other way about: `cue vet` refuses it,
    and the render exits 0 having rendered nothing, which is why `cue vet` goes
@@ -4514,7 +4595,7 @@ claim's goes, and `Orphan` leaves the realm's user and password, and the one in
 
    `cue vet` refuses a person with no name, or whose selector is missing or
    selects no cluster, each of which `holos render platform` alone would let
-   by. It reports a conflict between people for treasury alone, or for another
+   by. It reports a conflict between people for marina alone, or for another
    cluster with `-t clusterName=<cluster>`, and the render reports every
    conflict above for every cluster. A project that takes a person's username
    fails only the render.
@@ -4605,7 +4686,7 @@ RoleBinding. `collections.cue` binds all three into the platform.
 | Collection | Whose | What it holds | Where | What renders it |
 | --- | --- | --- | --- | --- |
 | ProjectClaim | The platform's; a product engineer adds a claim | A project: its clusters, by label, and its owners, editors and viewers | `projects/<project>.cue` | `components/project`, as `project-<project>` |
-| Product | The vendor's or the platform's | What it renders, the components a cluster must take for it, the schema of its values with their defaults, and its image digests | `products/<product>.cue` | `components/product-<product>`, once per binding |
+| Product | The vendor's or the platform's | What it renders, the components a cluster must take for it, and the schema of its values with their defaults; each cluster pins its images | `products/<product>.cue` | `components/product-<product>`, once per binding |
 | Binding | The claim's owner's | Which products a claim runs, and the values they leave to it | `bindings/<claim>-<product>.cue` | `components/product-<product>`, as `product-<product>-<claim>` |
 
 A binding is shaped like a RoleBinding. `project` is its namespace,
@@ -4663,7 +4744,7 @@ with exit 0 too, and render as though nothing were wrong.
 
 Two rules are schema, not convention. A product's `#Values` is closed, so a
 binding cannot set an atespace or an image: the atespace comes from the
-binding's `project` and the images from the product. Its fields carry patterns
+binding's `project` and the images from the cluster's pins. Its fields carry patterns
 too, because a value can reach a shell script or a policy match. And a product's
 component fills two buckets of `#ProductComponent` (`components/product.cue`),
 which are the only source of its artifacts:
@@ -5335,7 +5416,7 @@ clusters, so a build could stop for an hour.
 | Target | Base | What it adds | Quay repository |
 | --- | --- | --- | --- |
 | `board` | `quay.io/lib/alpine:3.22.1`, upgraded | `git`, `planboard`, the placeholder `/etc/gitconfig`, `HOME=/data`, uid 65532 | `<claim>/planboard` |
-| `agent` | kagent's `claude-harness` from `ghcr.io`, the digest `harnessImages.claude` in `kagent.cue` pins | `planboard` and the placeholder `/etc/gitconfig`, one layer, the entrypoint and user unchanged | `<claim>/planboard-agent` |
+| `agent` | kagent's `claude-harness` from `ghcr.io`, the cluster's `pins.kagent.upstream.harnesses.claude` | `planboard` and the placeholder `/etc/gitconfig`, one layer, the entrypoint and user unchanged | `<claim>/planboard-agent` |
 | `plugin` | `scratch` | The checkout's `plugins/planboard` at `/plugin`, so the `AgentTemplate` names it with `path: plugin` | `<claim>/planboard-plugin` |
 
 `planboard` is built in `quay.io/projectquay/golang:1.27`, a Go 1.27.3 image on
@@ -5369,8 +5450,8 @@ for t in board agent plugin; do build $t type=oci,dest=/tmp/$t.tar --no-cache; d
 ```
 
 Each build prints `exporting manifest sha256:...`. The two runs print the same
-three digests, which are `images` in `products/planboard.cue`, and pushing gives
-the digest the export did. `v0.0.1` gave:
+three digests, which are the cluster's `pins.planboard` (`pins/<cluster>.cue`), and
+pushing gives the digest the export did. `v0.0.1` gave:
 
 | Image | Digest |
 | --- | --- |
@@ -5410,6 +5491,11 @@ done
 rm -rf $DOCKER_CONFIG $ctx; unset DOCKER_CONFIG
 ```
 
+Each cluster pins its own images, in `pins.planboard`, and pulls them from its own
+Quay, so a new image is built and pushed for the cluster that moves. The
+Dockerfile's harness is the last one built for: to build for a cluster on another
+`upstream.harnesses.claude`, set it to that cluster's.
+
 For a new agent image on the same `planboard` tag, such as a kagent bump's, push
 `agent` alone, under a tag of its own such as `v0.0.1-harness-1.0.1`. Pushing it
 as `$tag` moves that tag off the image the last pin deployed, and Quay drops an
@@ -5421,11 +5507,12 @@ until the workflow runner rebuilds the images in the cluster.
 
 ## Render
 
-From this directory, in a clone or worktree with the Substrate submodule
-checked out (Substrate, above), which a fresh one is not:
+From this directory, in a clone or worktree with the Substrate submodules
+checked out (Substrate, above), which a fresh one is not. There is one per commit a
+cluster pins, and a pull can add one:
 
 ```sh
-git submodule update --init vendor/substrate
+git submodule update --init
 cue vet ./...
 rm -rf deploy/clusters
 holos render platform

@@ -134,8 +134,10 @@ let DSN = {
 }
 
 // SetupSQL is kagent's setup.sql, go/core/pkg/postgressetup/setup.sql at the
-// fork's commit, copied unmodified beside this file. Re-copy it on a bump.
-_setupSQL: _ @embed(file=setup.sql, type=text)
+// fork's commit, copied unmodified beside the chart of each version a cluster
+// pins, vendor/<version>/setup.sql. A bump copies it there with the chart; a
+// version without it fails the render.
+_setupSQL: _ @embed(glob=vendor/*/setup.sql, type=text)
 
 // SetupScript runs it as postgressetup's Script does: in one transaction,
 // with the role names, schema and passwords as psql variables
@@ -316,7 +318,7 @@ let Values = {
 			enabled: false
 		}
 		tools: {
-			image: tag: "0.3.0@sha256:cb89eb76216195a90cac73846b447525b6e6e33e45154d1ded9621bf11340315"
+			image: tag: K.toolsTag
 			// The server's own read-only mode, which leaves out every tool
 			// that writes, so an agent is not offered tools the role
 			// refuses.
@@ -606,7 +608,7 @@ _Resources: #Resources & {
 	// The role Job's SQL, in Substrate's namespace, where the Job runs.
 	ConfigMap: "kagent-db-setup": {
 		metadata: namespace: S.namespace
-		data: "setup.sql":   _setupSQL
+		data: "setup.sql":   _setupSQL["vendor/\(K.version)/setup.sql"]
 	}
 
 	// The role Job: kagent's setup.sql, run with psql as substrate-db's

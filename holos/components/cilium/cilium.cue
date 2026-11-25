@@ -2,12 +2,12 @@ package holos
 
 // Cilium is the cluster's CNI and its kube-proxy replacement.
 //
-// 1.20 is the latest stable minor. Its tested Kubernetes versions stop at
-// 1.36; 1.37 is first tested by 1.21, still a pre-release (1.21.0-pre.3).
+// The pin is Cluster.pins.cilium. 1.20 is the latest stable minor. Its tested
+// Kubernetes versions stop at 1.36; 1.37 is first tested by 1.21, still a pre-release (1.21.0-pre.3).
 // Cilium's policy is that newer Kubernetes versions depend on Kubernetes'
 // own backward compatibility, and 1.20 is reported working on 1.37
 // (cilium/cilium#48694). Move to 1.21 once it is released.
-CiliumVersion: "1.20.4"
+let Pins = Cluster.pins.cilium
 
 // Cilium runs in kube-system, the one namespace Talos exempts from its
 // baseline Pod Security enforcement, so the agent's privileges need no
@@ -29,7 +29,7 @@ holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: CiliumNamespace
 	chart: {
 		name:    "cilium"
-		version: CiliumVersion
+		version: Pins.version
 		release: "cilium"
 		repository: {
 			name: "cilium"

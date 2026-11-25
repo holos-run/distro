@@ -8,17 +8,17 @@ import "encoding/yaml"
 // component renders, beside the issuers they guard (README.md, "The private
 // CA").
 //
-// v0.29.0, the latest stable, from Jetstack's OCI chart, with the image the
-// chart names on quay.io, pinned by digest. It runs in cert-manager's
+// It is Jetstack's OCI chart, with the image the chart names on quay.io,
+// pinned by digest (Cluster.pins.approverPolicy). It runs in cert-manager's
 // namespace, as the chart expects: its RBAC and its webhook's CA Secret are
 // there.
-ApproverPolicyVersion: "v0.29.0"
+let Pins = Cluster.pins.approverPolicy
 
 holos: spec: artifacts: [(#HelmArtifact & {
 	namespace: PrivateCA.namespace
 	chart: {
 		name:    "oci://quay.io/jetstack/charts/cert-manager-approver-policy"
-		version: ApproverPolicyVersion
+		version: Pins.version
 		release: "cert-manager-approver-policy"
 	}
 	values: {
@@ -29,8 +29,8 @@ holos: spec: artifacts: [(#HelmArtifact & {
 		crds: enabled: true
 
 		image: {
-			tag:    ApproverPolicyVersion
-			digest: "sha256:b516dba9e41d8e29957fa8f16479fb109741f7d3f418ef6aa2b47221dfdd5ef3"
+			tag:    Pins.version
+			digest: Pins.digest
 		}
 	}
 

@@ -59,10 +59,10 @@ let DB = "quay-db"
 let Database = "quay"
 let Owner = "quay"
 
-// PostgreSQLImage is keycloak's, CloudNativePG 1.30.1's default, PostgreSQL
-// 18.6, stated so an operator upgrade does not move the database to a new
+// PostgreSQLImage is CloudNativePG 1.30.1's default, PostgreSQL 18.6, as
+// keycloak's is, pinned by tag (Cluster.pins.quay.postgresql) so an operator upgrade does not move the database to a new
 // major version by itself.
-let PostgreSQLImage = "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"
+let PostgreSQLImage = "ghcr.io/cloudnative-pg/postgresql:\(Cluster.pins.quay.postgresql)"
 
 // SecretKeys is the Secret holding Quay's SECRET_KEY and DATABASE_SECRET_KEY.
 let SecretKeys = "quay-secret-keys"
@@ -72,7 +72,7 @@ let SecretKeys = "quay-secret-keys"
 let Redis = {
 	name:  "quay-redis"
 	port:  6379
-	image: "docker.io/library/redis:8.6.8-alpine@sha256:7d8d9a58ab3ef32025b06c9f9aeb273d0fb82a79f13d63658e7d7e56ee2f032c"
+	image: "docker.io/library/redis:\(Cluster.pins.quay.redis.version)@\(Cluster.pins.quay.redis.digest)"
 	labels: {"app.kubernetes.io/name": name}
 }
 

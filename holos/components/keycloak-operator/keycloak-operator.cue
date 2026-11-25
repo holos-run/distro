@@ -9,9 +9,10 @@ import "encoding/yaml"
 // only (JOSDK_WATCH_CURRENT, as released), so every Keycloak resource it
 // reconciles is in keycloak, and its permissions there are RoleBindings.
 //
-// 26.8.2 (2026-11-05), the latest release, from the release's tag of
+// The files are from the release's tag of
 // https://github.com/keycloak/keycloak-k8s-resources, directory kubernetes/,
-// vendored unmodified in vendor/26.8.2/:
+// vendored unmodified in vendor/<version>/ for each version a cluster pins
+// (Cluster.pins.keycloak). 26.8.2's (2026-11-05):
 //
 //	keycloaks.k8s.keycloak.org-v1.yml             sha256:20c51247cb6cbc6158098caabeaf6b429dc8c016e35829f5ddd9c468b7582667
 //	keycloakrealmimports.k8s.keycloak.org-v1.yml  sha256:8d552e1864d78117a07e535479ddb36e16a42b2695726c875f44828e1323edd4
@@ -29,9 +30,9 @@ import "encoding/yaml"
 // kubernetes.yml names no namespace, as the release's kustomization.yml
 // sets it, so namespace below does the same. The release pins the operator's
 // image and the server image it runs (RELATED_IMAGE_KEYCLOAK) by tag, to
-// quay.io/keycloak/keycloak-operator:26.8.2 and
-// quay.io/keycloak/keycloak:26.8.2; a patch below sets both to Keycloak.images,
-// the same tags with their digests, so the Keycloak resource names no image
+// quay.io/keycloak/keycloak-operator:<version> and
+// quay.io/keycloak/keycloak:<version>; a patch below sets both to
+// Keycloak.images, the same tags with their digests, so the Keycloak resource names no image
 // and the server stays on the operator's version. The Deployment tolerates no
 // taint, so the control plane's NoSchedule taint keeps it, and every
 // Keycloak pod, on the workers. The operator registers no admission webhook.

@@ -15,8 +15,8 @@ import (
 // ones whose claim lands on it and whose components it names (clusterBindings),
 // and argocd-apps gives each an Application in the platform AppProject
 // (#ProductComponent, components/product.cue). Planboard's code is not here: the
-// Dockerfile beside this file builds the images, and products/planboard.cue
-// pins them.
+// Dockerfile beside this file builds the images, and each cluster pins its own
+// (Cluster.pins.planboard).
 //
 // Everything but the waypoint's policy is in the platform bucket, since none of
 // it is the owner's to change in git. The Substrate objects are in the
@@ -335,7 +335,7 @@ if ProjectName != "" {
 		{name: "REPO_PATH", value: Read.values.repo.path},
 	]
 
-	let Image = "\(Quay.host)/\(CLAIM)/planboard@\(Read.product.images.board)"
+	let Image = "\(Quay.host)/\(CLAIM)/planboard@\(Cluster.pins.planboard.board)"
 
 	// TemplateSpec is the ActorTemplate but for its metadata. The containers run
 	// as the image's user, 65532, which gVisor lets bind port 80, and share
@@ -395,7 +395,7 @@ if ProjectName != "" {
 	// Template is the ActorTemplate's name: the image's digest, to read, and a
 	// hash of the whole template, because a template is immutable and a name
 	// from the image alone would keep the old one when a value changes.
-	let Digest12 = strings.SliceRunes(strings.TrimPrefix(Read.product.images.board, "sha256:"), 0, 12)
+	let Digest12 = strings.SliceRunes(strings.TrimPrefix(Cluster.pins.planboard.board, "sha256:"), 0, 12)
 	let Spec8 = strings.SliceRunes(hex.Encode(sha256.Sum256(json.Marshal(TemplateSpec))), 0, 8)
 	let Template = "planboard-\(Digest12)-\(Spec8)"
 	let TemplateRef = {atespace: CLAIM, name: Template}
@@ -806,7 +806,7 @@ if ProjectName != "" {
 		systemPrompt: AgentPrompt
 		plugins: [{
 			source: {
-				oci:  "\(Quay.host)/\(CLAIM)/planboard-plugin@\(Read.product.images.plugin)"
+				oci:  "\(Quay.host)/\(CLAIM)/planboard-plugin@\(Cluster.pins.planboard.plugin)"
 				path: "plugin"
 			}
 			skills: ["planboard"]
@@ -1260,7 +1260,7 @@ if ProjectName != "" {
 				}
 				spec: {
 					claude: {}
-					workload: image: "\(Quay.host)/\(CLAIM)/planboard-agent@\(Read.product.images.agent)"
+					workload: image: "\(Quay.host)/\(CLAIM)/planboard-agent@\(Cluster.pins.planboard.agent)"
 					env: AgentEnv
 					substrate: {
 						workerPoolRef: name:      Pool.name

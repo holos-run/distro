@@ -13,7 +13,8 @@ package holos
 // and TLSRoute as v1 too. Istio 1.31 watches ListenerSet v1 without a
 // feature flag.
 //
-// vendor/v1.6.3/standard-install.yaml is the release asset, unmodified:
+// vendor/<version>/standard-install.yaml is the release asset, unmodified, for
+// each version a cluster pins (Cluster.pins.gatewayAPI). v1.6.3's:
 // https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.3/standard-install.yaml
 // sha256:356c2b8e286a964dc20995435659ad1095386329974793af10bbfe3eff977fe5
 //
@@ -21,8 +22,8 @@ package holos
 // its binding, which the API server evaluates itself (CEL, no webhook): it
 // refuses replacing these CRDs with an older bundle version or with the
 // experimental channel.
-GatewayAPIVersion: "v1.6.3"
+let Pins = Cluster.pins.gatewayAPI
 
 holos: spec: artifacts: [(#FileArtifact & {
-	file: "vendor/\(GatewayAPIVersion)/standard-install.yaml"
+	file: "vendor/\(Pins.version)/standard-install.yaml"
 }).artifact]

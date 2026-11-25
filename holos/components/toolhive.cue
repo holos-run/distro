@@ -7,9 +7,9 @@ package holos
 // proxy runner, which authenticates and authorizes every request, in front
 // of the MCP server's own pod, which only the proxy reaches.
 //
-// To bump, set version to the new release's, copy the operator, proxy
-// runner and vMCP index digests from ghcr.io/stacklok/toolhive and the
-// registry API's from its own repository, re-read the
+// To bump a cluster, set its pins.toolhive: version to the new release's, the
+// operator, proxy runner and vMCP index digests from ghcr.io/stacklok/toolhive
+// and the registry API's from its own repository; then re-read the
 // operator chart's values.yaml against the toolhive-operator component's
 // and the CRDs against the toolhive component's, and re-render: holos pulls
 // the charts by version into the components' vendor/ caches, which are
@@ -17,7 +17,7 @@ package holos
 ToolHive: {
 	// version is the release's, which is also its charts' version and,
 	// with a v, its images' tag.
-	version:  "0.63.0"
+	version:  Cluster.pins.toolhive.version
 	registry: "ghcr.io/stacklok/toolhive"
 
 	// charts are the release's two OCI charts. The digests are for the
@@ -25,11 +25,11 @@ ToolHive: {
 	charts: {
 		crds: {
 			name:   "oci://\(registry)/toolhive-operator-crds"
-			digest: "sha256:88d683797fdd9c76cb8171e2c4962bf3b0c43f8da21a6d2ad22cff250eb04163"
+			digest: Cluster.pins.toolhive.charts.crds
 		}
 		operator: {
 			name:   "oci://\(registry)/toolhive-operator"
-			digest: "sha256:710fd900c96c4edb12e3a91b8beeea7709d1034194e31d664aac2fb15eb6d175"
+			digest: Cluster.pins.toolhive.charts.operator
 		}
 	}
 
@@ -38,10 +38,10 @@ ToolHive: {
 	// nothing here runs but which the chart hands the operator, by index
 	// digest. The registry API has its own version, the chart's default.
 	images: {
-		operator:    "\(registry)/operator:v\(version)@sha256:3cfc741dbb0e37724b4f316ea3e6d0f5a3df36c0ac76cc534952c906525158bd"
-		proxyrunner: "\(registry)/proxyrunner:v\(version)@sha256:d2bfa6a3c19712eec4c87599696e69ed9234254414754d9dbb3953af383ce4af"
-		vmcp:        "\(registry)/vmcp:v\(version)@sha256:7d07294e3f78995c9f1e7fde7ec34135ad505503b0ab521847625bffe592f72d"
-		registryAPI: "ghcr.io/stacklok/thv-registry-api:v1.5.3@sha256:323652f7bd195a0a6a84815e749f52a809633a07d911580abb2d58945abc78f3"
+		operator:    "\(registry)/operator:v\(version)@\(Cluster.pins.toolhive.digests.operator)"
+		proxyrunner: "\(registry)/proxyrunner:v\(version)@\(Cluster.pins.toolhive.digests.proxyrunner)"
+		vmcp:        "\(registry)/vmcp:v\(version)@\(Cluster.pins.toolhive.digests.vmcp)"
+		registryAPI: "ghcr.io/stacklok/thv-registry-api:\(Cluster.pins.toolhive.registryAPI.version)@\(Cluster.pins.toolhive.registryAPI.digest)"
 	}
 
 	// operator is the operator's namespace and Helm release.
@@ -66,7 +66,7 @@ ToolHive: {
 		// /mcp on port, below, so the proxy reaches it over the network, which
 		// the NetworkPolicy can hold, rather than by attaching to its stdio
 		// through the API server.
-		image: "ghcr.io/stacklok/dockyard/npx/server-everything:2026.8.31@sha256:cb2e2287d4b6a7d25affee2cde10265bfbf91f9dc38d5cbc8165c6b23fd0cded"
+		image: "ghcr.io/stacklok/dockyard/npx/server-everything:\(Cluster.pins.toolhive.everything.version)@\(Cluster.pins.toolhive.everything.digest)"
 		port:  3001
 		// proxy is the proxy runner's port and Service, which the ingress
 		// Gateway routes to.
