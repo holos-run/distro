@@ -67,7 +67,7 @@ spec:
         - secretRef:
             name: ate-api-server-secret-envvars
             optional: true
-        image: ghcr.io/holos-run/substrate/ateapi@sha256:e8c0071e6327f7c689ee332af5b5ec302f9b4f385acf9f3240a421344a124cd6
+        image: ghcr.io/holos-run/substrate/ateapi@sha256:3d1eca0ec41506f64af2a91970f46bd7961c202fc4185f943f27dc7a786daad4
         livenessProbe:
           httpGet:
             path: /healthz
@@ -169,7 +169,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ate-otel-config
-        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:1648297ceac9200739fde63a702f2879809f82b6364b1dbaeb0196e445ce36a5
+        image: ghcr.io/holos-run/substrate/objectstore-plugin@sha256:89b60788cf49083a088175adf48749d38c9a847aa4d0bbd9db31ac5b3d977410
         name: objectstore-plugin
         ports:
         - containerPort: 8445

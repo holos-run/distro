@@ -6,8 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: kagent
     app.kubernetes.io/part-of: kagent
-    app.kubernetes.io/version: 0.0.0-holos.20261107.3af6ae5
-    helm.sh/chart: kagent-0.0.0-holos.20261107.3af6ae5
+    app.kubernetes.io/version: 0.0.0-holos.20261125.c1dbae1
+    helm.sh/chart: kagent-0.0.0-holos.20261125.c1dbae1
   name: kagent-management-rolebinding
   namespace: kagent
 roleRef:

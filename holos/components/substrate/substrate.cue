@@ -236,7 +236,10 @@ let ConfigHashes = {
 		"ate-controller": otel:                     OTel
 		"atenet-router": otel:                      OTel
 		"atenet-egress": otel:                      OTel
-		"k8s-credential-provider": namespacePolicy: NamespacePolicy
+		"k8s-credential-provider": {
+			namespacePolicy: NamespacePolicy
+			otel:            OTel
+		}
 	}
 	DaemonSet: atelet: otel: OTel
 }
