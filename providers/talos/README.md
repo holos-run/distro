@@ -430,13 +430,19 @@ kubectl --kubeconfig ~/.config/holos/talos/$cluster/kubeconfig get nodes \
 
 # Now run the loop in "Trusting the root on the workers", linked above, and then:
 export KUBECONFIG=~/.config/holos/talos/$cluster/kubeconfig
+# restart refuses a node that is not Ready or has no Ready Cilium and ztunnel pod.
+kubectl wait --for=condition=Ready node --all --timeout=10m
+kubectl -n kube-system rollout status ds/cilium --timeout=10m
+kubectl -n istio-system rollout status ds/ztunnel --timeout=10m
 go run ./providers/talos/cmd/talosvm restart -cluster "$cluster" -nodes "$(echo "$names" | tr ' ' ,)"
 ```
 
 `labels` waits up to ten minutes for the nodes to join, and fails, naming it,
-when one has not or is without a label. It can be run again. `apply` does not
-wait between nodes, and a change that needs a reboot reboots them all, which is
-what the dry run is for.
+when one has not or is without a label. It can be run again. A node has joined
+once it has an address, before it is `Ready`, so `labels` can return while the
+new nodes are still `NotReady`: on marina, `restart` run then refused them.
+`apply` does not wait between nodes, and a change that needs a reboot reboots
+them all, which is what the dry run is for.
 
 ## Machine configuration
 
@@ -902,12 +908,15 @@ the emptiness.
 
 The controllers on the workers remember versions of objects newer than the
 restored ones. Once every node is Ready, restart the workers, one at a time, which also restarts their
-kubelets ([Restarting nodes](#restarting-nodes)), then run
-[Check](../../holos/README.md#check) and start the timer again:
+kubelets ([Restarting nodes](#restarting-nodes)). A worker that registered again
+since the snapshot, as one added after it does, came back without its pool's
+admin labels, and what selects them stays `Pending`, so `labels` sets them
+again. Then run [Check](../../holos/README.md#check) and start the timer again:
 
 ```sh
 set -a; . ~/.config/holos/proxmox.env; set +a
 go run ./providers/talos/cmd/talosvm restart -cluster $cluster -talosctl "$talosctl"
+TALOSCTL="$talosctl" providers/talos/cluster.sh labels $cluster
 systemctl --user enable --now etcd-snapshot@$cluster.timer
 systemctl --user start etcd-snapshot@$cluster.service
 providers/talos/etcd-snapshot.sh check $cluster

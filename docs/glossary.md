@@ -23,8 +23,9 @@ details live in [holos/README.md](../holos/README.md), linked from each entry.
 
 **marina**
 : The garage's third Talos cluster, independent of the other two: control plane `marina-cp-1` at
-  10.20.0.70 and workers `marina-general-1` to `-3` at .71 to .73, with its ingress gateway at
-  10.20.0.38. Its API endpoint is a name, `api.marina.bank.internal`.
+  10.20.0.70, workers `marina-general-1` to `-3` at .71 to .73 and the `microvm` pool's
+  `marina-microvm-1` and `-2` at .74 and .75, with its ingress gateway at 10.20.0.38. Its API
+  endpoint is a name, `api.marina.bank.internal`.
 
 **bank.internal**
 : The garage's private DNS zone. Each cluster has a subdomain of it, so every service is
