@@ -6,6 +6,12 @@
   "endpoint": "api.marina.bank.internal",
   "controlPlane": { "count": 1, "cores": 2, "memoryMiB": 8192, "diskGiB": 32 },
   "pools": [
-    { "name": "general", "count": 3, "cores": 4, "memoryMiB": 16384, "diskGiB": 64, "nodes": ["r620a", "r620b", "r620c"] }
+    { "name": "general", "count": 3, "cores": 4, "memoryMiB": 16384, "diskGiB": 64, "nodes": ["r620a", "r620b", "r620c"] },
+    {
+      "name": "microvm", "count": 2, "cores": 8, "memoryMiB": 16384, "diskGiB": 100, "nodes": ["r620b", "r620c"],
+      "taints": ["ate.dev/sandboxClass=microvm:NoSchedule"],
+      "labels": ["node.kubernetes.io/exclude-from-external-load-balancers="],
+      "adminLabels": ["node-restriction.kubernetes.io/sandbox-class=microvm"]
+    }
   ]
 }

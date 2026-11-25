@@ -254,8 +254,9 @@ clusters: cartography: {
 	}
 }
 
-// marina is the third garage cluster, in slot 3: marina-cp-1 at 10.20.0.70 and
-// marina-general-1 to -3 at .71 to .73 on the k8s vnet, one worker on each R620.
+// marina is the third garage cluster, in slot 3: marina-cp-1 at 10.20.0.70,
+// marina-general-1 to -3 at .71 to .73 on the k8s vnet, one worker on each R620,
+// and the microvm pool's marina-microvm-1 and -2 at .74 and .75, on r620b and r620c.
 // It takes the third block of the ingress range and every optional component,
 // and shares only the site with the other two. It is the first whose endpoint is
 // a name.
