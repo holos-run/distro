@@ -13,6 +13,10 @@
 # talosctl-<version> on PATH, else talosctl, and it must be that version;
 # the refusal prints how to install it.
 #
+# The same file may set endpoint, a DNS name the cluster's Kubernetes endpoint
+# uses in place of the control plane's address, and kubernetesVersion, in
+# place of KUBERNETES_VERSION below. talosctl uses the address either way.
+#
 # The patches in patches/ are the same for every cluster. A cluster that
 # needs a patch of its own puts it in clusters/<cluster>/controlplane.yaml;
 # none does today.
@@ -27,6 +31,11 @@ set -euo pipefail
 
 KUBERNETES_VERSION=1.37.1
 POOL_LABEL=holos.run/nodepool
+
+# What endpoint and kubernetesVersion may be: the patterns in config.go, whose
+# test finds them here.
+ENDPOINT_PATTERN='\A([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?\z'
+KUBERNETES_VERSION_PATTERN='\A[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\z'
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
@@ -47,6 +56,28 @@ config=$here/clusters/$cluster/talosvm.json
 [[ -f $config ]] || die "no config for cluster $cluster: $config does not exist"
 TALOS_VERSION=$(jq -r '.talosVersion // empty' "$config") || die "cannot read talosVersion from $config"
 [[ -n $TALOS_VERSION ]] || die "$config sets no talosVersion"
+
+# Go matches keys in any case and jq does not, so talosvm would take Endpoint
+# for endpoint while gen built the cluster on its address.
+miscased=$(jq -r 'keys[] | select(ascii_downcase == ("endpoint", "kubernetesversion"))
+  | select(. != "endpoint" and . != "kubernetesVersion")' "$config") || die "cannot read the keys of $config"
+[[ -z $miscased ]] || die "$config: key $miscased: want endpoint or kubernetesVersion, in that case"
+
+# optional prints the config's field $1, or nothing when the file leaves it
+# out or sets it to null, and fails when it is not a string matching $2. The
+# check is jq's, on the string the file holds: \A and \z see a trailing
+# newline, which the shell would drop.
+optional() {
+  jq -r --arg field "$1" --arg pattern "$2" '.[$field] |
+    if . == null then empty
+    elif type == "string" and length <= 253 and test($pattern) then .
+    else "" | halt_error(1) end' "$config"
+}
+ENDPOINT=$(optional endpoint "$ENDPOINT_PATTERN") ||
+  die "$config: endpoint $(jq -c .endpoint "$config"): want a lowercase DNS name alone, such as api.example.internal, with no scheme, port or trailing dot"
+version=$(optional kubernetesVersion "$KUBERNETES_VERSION_PATTERN") ||
+  die "$config: kubernetesVersion $(jq -c .kubernetesVersion "$config"): want a release such as $KUBERNETES_VERSION, without a leading v"
+KUBERNETES_VERSION=${version:-$KUBERNETES_VERSION}
 
 if [[ -z ${TALOSCTL:-} ]]; then
   TALOSCTL=talosctl
@@ -142,13 +173,14 @@ gen() {
     "$TALOSCTL" gen secrets -o "$state/secrets.yaml"
   fi
 
-  local cp image base
+  local cp endpoint image base
   cp=$(controlplane)
+  endpoint=https://${ENDPOINT:-$cp}:6443
   image=$(installer)
-  log "endpoint https://$cp:6443, installer $image"
+  log "endpoint $endpoint, Kubernetes $KUBERNETES_VERSION, installer $image"
   base=$(mktemp -d "$state/gen.XXXXXX")
   trap 'rm -rf "$base"' RETURN
-  "$TALOSCTL" gen config "$cluster" "https://$cp:6443" \
+  "$TALOSCTL" gen config "$cluster" "$endpoint" \
     --with-secrets "$state/secrets.yaml" \
     --talos-version "${TALOS_VERSION%.*}" \
     --kubernetes-version "$KUBERNETES_VERSION" \
@@ -158,6 +190,8 @@ gen() {
     ${own_patch[@]+"${own_patch[@]}"} \
     --output "$base" --force >/dev/null
 
+  # talosctl stays on the address, so it works when the endpoint's name does
+  # not resolve.
   "$TALOSCTL" --talosconfig "$base/talosconfig" config endpoint "$cp"
   "$TALOSCTL" --talosconfig "$base/talosconfig" config node "$cp"
   mv "$base/talosconfig" "$TALOSCONFIG"

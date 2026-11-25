@@ -134,9 +134,14 @@ clusters: example: {
 }
 ```
 
-`serviceAccountIssuer` and `apiServer.address` are recorded, not chosen: both
-are the control plane's address, its slot's first, which `talosvm.json` sets
-as `firstAddress` and `providers/talos/cluster.sh` generates the cluster with.
+`serviceAccountIssuer` and `apiServer.address` are recorded, not chosen.
+`apiServer.address` is always the control plane's address, its slot's first,
+which `talosvm.json` sets as `firstAddress`. `serviceAccountIssuer` is the
+endpoint `providers/talos/cluster.sh` generates the cluster with:
+`https://<address>:6443` on the same address, unless `talosvm.json` sets
+`endpoint`, a DNS name, which makes it `https://<endpoint>:6443`
+([Config](../providers/talos/README.md#config)). A cluster whose `talosvm.json`
+sets `kubernetesVersion` records that here as `kubernetesVersion` too.
 
 Its names are `<service>.example.bank.internal`, under its own
 `*.example.bank.internal` wildcard, and the router gets a line of its own
