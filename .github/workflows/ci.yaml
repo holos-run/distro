@@ -116,7 +116,11 @@ jobs:
       # The tests need nothing but the checkout and Go: the HTTP servers,
       # kubectl and talosctl they talk to are fakes in the tests, and
       # contract-check's test reads holos/deploy as committed, which the
-      # Render job checks is the render.
+      # Render job checks is the render. One is the exception and is skipped
+      # here: holos/rendertest's TestClaimSandboxClass runs cue and holos
+      # against the module, Substrate submodules included, which this job has
+      # none of, so it runs only with RENDERTEST_TOOLS=1, which the Render job
+      # sets (its rendertest step).
       - name: test
         run: go test ./...
 
@@ -231,6 +235,20 @@ jobs:
             git diff --stat
             exit 1
           fi
+
+      # holos/rendertest's TestClaimSandboxClass, which needs cue, holos and
+      # the Substrate submodules, all here and none in the Go job, which
+      # skips it. RENDERTEST_TOOLS=1 runs it, and makes a missing tool or an
+      # empty submodule a failure rather than a skip; -v puts its run in the
+      # log. It checks that a claim asking for a sandbox class its cluster
+      # does not run fails cue vet and the renders of its project and its
+      # binding, with the claim, the class and the cluster in the message
+      # (README.md, A claim's runtime). It runs on a copy of the module with
+      # a claim and a binding of its own, which never reach deploy/.
+      - name: rendertest
+        env:
+          RENDERTEST_TOOLS: "1"
+        run: go test -count=1 -v -run TestClaimSandboxClass ./holos/rendertest
 
       # ADR 0003's Service contract, checked over the render just shown to be
       # the committed one: every webhook configuration, conversion webhook

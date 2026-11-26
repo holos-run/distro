@@ -465,7 +465,7 @@ entries have no hand step.
 | `kagent` | kagent from the holos-run fork's `kagent` OCI chart, images by digest, in `kagent` (not in the mesh), at `kagent.treasury.bank.internal` behind oauth2-proxy and Keycloak: the controller, the UI, the read-only tool server and oauth2-proxy; its schema and roles in `substrate-db`, with their role Job and passwords in `ate-system`; its Keycloak `Client` `kagent`, the copy of the platform secret `anthropic-api-key`, a zero-replica placeholder `WorkerPool` `gvisor` naming the platform pool, and the NetworkPolicies that admit only the hop before each pod; on a cluster where a binding runs an agent, the controller's `Role`s in each such claim's namespace too, a login limited to `/platform/owners` and those claims' owner and editor groups, and `kagent` closed to those users: no default `ModelConfig`, tool server, `kagent-api` `RemoteMCPServer`, Anthropic key or management `Role` there (The agent, below) |
 | `quay` | Quay 3.17.6 in the ambient namespace `quay`, at `quay.treasury.bank.internal`: one Deployment, its one-instance CloudNativePG cluster `quay-db`, an ephemeral Redis, blobs in RustFS's bucket `quay`, its Keycloak `Client` `quay`, the platform controller's Quay credential, and on a cluster that names `substrate`, the `Organization` `demo` and its public `Repository` `demo/echo` |
 | `project-<name>` | One per ProjectClaim in `projects/` that selects the cluster, from `components/project` (Projects, below): the project's ambient namespace, its Keycloak groups, members and memberships, its Quay `Organization`, the owners' `RoleBinding`, its `AppProject` and `Application`, and on a cluster that names `substrate` and `substrate-shim`, its Substrate atespace with its route through the shim; and on a cluster where a binding names it, its zone on the ingress Gateway, a `ListenerSet` with a wildcard of its own |
-| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>`, and the waypoint the login reaches the board through: its `Gateway` and parameters `ConfigMap` `planboard-waypoint`, the `ServiceEntry` and `DestinationRule` `planboard-shim` and the `TrafficExtension` `planboard-waypoint`, in the claim's namespace, with the waypoint's `RequestAuthentication` and `AuthorizationPolicy` `planboard` in the claim's own directory (The board's hostname and The board's login, below); and the agent, on kagent's Claude harness: the `Harness` `claude`, the `ModelConfig`, `AgentTemplate` and `Agent` `<claim>-planning` and `<claim>-planning-test`, the `EgressPolicy` `github` and a placeholder `WorkerPool` `gvisor` in the claim's namespace, and the `WorkerPool` `gvisor-<claim>` in `ate-workers` that its actors run on (The agent, below) |
+| `product-<product>-<claim>` | One per product of a binding in `bindings/` that lands on the cluster, from `components/product-<product>` (Products and bindings, below). `product-planboard-<claim>` is the board: the claim's three public Quay `Repository` objects, the credential provider's `Role` on the two Secrets the owner makes, an `AuthorizationPolicy` for the board's host on the shim's `Gateway`, the Sync hook `planboard-<claim>` in `ate-system`, which makes the actor, a `ConfigMap` of that name beside it, which carries the hook's hash so that a change to the hook starts a sync (The board as an actor, below), the board's `HTTPRoute` on the ingress Gateway, and the login it routes to: oauth2-proxy `planboard-oauth2-proxy` in the claim's namespace, its cookie secret, the Istio `AuthorizationPolicy` that admits the ingress Gateway to it, and the Keycloak public `Client` `planboard-<claim>`, and the waypoint the login reaches the board through: its `Gateway` and parameters `ConfigMap` `planboard-waypoint`, the `ServiceEntry` and `DestinationRule` `planboard-shim` and the `TrafficExtension` `planboard-waypoint`, in the claim's namespace, with the waypoint's `RequestAuthentication` and `AuthorizationPolicy` `planboard` in the claim's own directory (The board's hostname and The board's login, below); and the agent, on kagent's Claude harness: the `Harness` `claude`, the `ModelConfig`, `AgentTemplate` and `Agent` `<claim>-planning` and `<claim>-planning-test`, the `EgressPolicy` `github` and a placeholder `WorkerPool` `<class>` in the claim's namespace, and the `WorkerPool` `<class>-<claim>` in `ate-workers` that its actors run on, `<class>` the claim's `runtime.sandboxClass`, `gvisor` by default (The agent, below) |
 | `argocd-apps` | The `platform` `AppProject` and an Argo CD `Application` per component its cluster takes, its own being the root `Application` |
 
 Helm charts are cached in `components/<name>/vendor/<version>/`, which is
@@ -2769,7 +2769,10 @@ carrying the admin label `node-restriction.kubernetes.io/sandbox-class=microvm`
 that `cluster.sh labels` sets ([A pool for one kind of
 workload](../providers/talos/README.md#a-pool-for-one-kind-of-workload)).
 `Substrate.microvm` (`substrate.cue`) names what the class takes. A cluster
-that does not name it renders none of this.
+that does not name it renders none of this. A claim asks for the class with
+`runtime.sandboxClass: "microvm"`, on a cluster that runs it, and its binding
+then puts its agent and its board on a pool of the class, `microvm-<claim>`
+(A claim's runtime, under Projects, below).
 
 - **The SandboxConfig.** `microvm`, cluster-scoped, the class default:
   upstream's `manifests/ate-install/sandboxconfig-microvm.yaml.tmpl` at the
@@ -3592,10 +3595,12 @@ worker `Deployment`, at 0, and an unused `ateworker` ServiceAccount.
 
 A label has one value, so the platform's pool serves the `kagent` namespace
 alone. A claim with an agent gets a pool of its own beside it,
-`ate-workers/gvisor-<claim>`, labeled for the claim's namespace, and a
-placeholder `gvisor` in that namespace, both from its binding (The agent,
-below). Every pool reads one spec, `Substrate.workerPool.spec`
-(`substrate.cue`, with the worker image from the cluster's pins).
+`ate-workers/<class>-<claim>`, labeled for the claim's namespace, and a
+placeholder `<class>` in that namespace, both from its binding (The agent,
+below), `<class>` the claim's `runtime.sandboxClass`, `gvisor` by default. Every
+gVisor pool reads one spec, `Substrate.workerPool.spec` (`substrate.cue`, with
+the worker image from the cluster's pins), and every microVM pool
+`Substrate.microvm.workerPool.spec`.
 
 A Harness for the platform pool, with snapshots in RustFS's `substrate`
 bucket:
@@ -4407,6 +4412,8 @@ A claim with no binding has no role, so its owners see nothing in Argo CD.
    `waypointClass` is the `GatewayClass` of the waypoint a binding puts in the
    claim's namespace, `istio-waypoint` unless the claim says otherwise (The
    board's login, below); a claim with no binding renders nothing for it.
+   `runtime` is what runs the claim's actors (A claim's runtime, below);
+   a claim that says nothing puts its pools and its agent's actors on gVisor.
 
 2. Render, from this directory, and check what changed. The changes below are
    each selected cluster's, and a cluster the claim does not select stays as
@@ -4453,6 +4460,74 @@ A claim with no binding has no role, so its owners see nothing in Argo CD.
    kubectl --context $cluster-oidc auth can-i create deployments -n my-project   # yes
    kubectl --context $cluster-oidc auth can-i create deployments -n default      # no
    ```
+
+### A claim's runtime
+
+`runtime` names what runs a claim's actors, beside `waypointClass`, the seam
+for the waypoint:
+
+```cue
+projects: "my-project": {
+	clusterSelector: matchLabels: "holos.run/cluster-name": "marina"
+	owners: "alice@bank.internal": _
+	runtime: sandboxClass: "microvm"
+}
+```
+
+`runtime.name` is the runtime, `substrate`, Agent Substrate, and the only
+value it takes: it is where a vendor's runtime would be added, with fields of
+its own, and nothing renders differently for it yet. `runtime.sandboxClass` is
+Substrate's own term for what isolates an actor from its node: `gvisor`, a
+gVisor sandbox, by default, or `microvm`, a Kata guest on Cloud Hypervisor
+with a kernel of its own (The microVM class, under Substrate, above). A claim
+that says nothing is `gvisor`, and renders as every claim did before the
+field: `payments`, `ledger`, `checkout` and `splunk` say nothing.
+
+The default puts the claim's pools and its agent's actors on gVisor, and not
+its board. A board on the default class has no `workerSelector`, as before the
+field, so it may land on any pool's workers, and on a cluster that runs
+`microvm` those include the class's test pool and every `microvm-<claim>`; an
+actor keeps the class of its first snapshot for good, so a board that first
+snapshots there stays a microVM. That was so before the field, with fewer
+pools to land on, and the render does not change it: a selector on the default
+class would rename every board's template (The agent, below).
+
+In Substrate a class is a worker pool's, and an atespace has no default one,
+so it is a binding's render that reads the field. Planboard's puts the claim's
+pools, the agent's actors and, off the default class, the board on the class
+(The agent, below). A claim with no binding renders nothing for it, though it
+is still checked.
+
+A claim may ask only for a class each cluster it lands on runs, the cluster's
+`sandboxClasses` (`clusters.cue`): marina runs `gvisor` and `microvm`,
+treasury and cartography `gvisor` alone. Anything else fails `cue vet` at
+`claimSandboxClasses` (`collections.cue`), binding or no binding, with the
+claim, the class and the cluster in the message:
+
+```
+claimSandboxClasses.treasury."my-project": conflicting values "claim my-project asks for sandbox class microvm, which cluster treasury does not run: its sandboxClasses are gvisor (clusters.cue)" and "my-project"
+```
+
+It fails `holos render platform` too, and not only the claim's own
+`project-<name>`: every `project-*` on that cluster fails with the same
+message, so one claim holds back the whole cluster's render, as a person's
+conflict does. A binding's `product-planboard-<name>` fails with it as well,
+also when rendered alone with `--selector component=product-planboard-<name>`,
+which would otherwise write a `microvm-<name>` pool into a cluster with no
+nodes for it.
+
+`holos/rendertest`'s `TestClaimSandboxClass` puts such a claim and a binding
+of it on treasury, in a copy of the module, and expects that failure from
+`cue vet` and from both components' renders (Render, below).
+
+Not covered: changing the class of a claim whose actors have snapshots. An
+actor keeps the class of its first snapshot for good, so a new template and a
+pool of the new class do not move it. The board's actor, and each agent
+session's that has a snapshot, have to be deleted and made again, losing their
+durable data, and nothing here does it. For the board, a platform operator
+deletes the actor (`kubectl ate delete actor planboard -a <claim>`) and the
+hook makes it again at the next sync of `product-planboard-<claim>` (The
+board as an actor, below).
 
 ### Editors and viewers
 
@@ -4891,6 +4966,11 @@ bindings: "my-project-planboard": {
 }
 ```
 
+Planboard's values (`products/planboard.cue`) are `repo`, the planning
+repository (The board as an actor, below), `access.viewers.projects`, what the
+viewer group may open (The board's login, below), and `model`, the planning
+agent's model (The agent, below), any of which a binding may leave out.
+
 A `productSelector` could stand beside `productRefs` to bind what a label
 selects. That door is left open, and nothing is built behind it. Each binding
 and product is a registry entry `product-<product>-<claim>`, `optional`, with
@@ -5308,13 +5388,13 @@ still lets anyone it admits create objects of their own there (below):
 
 | Object | Name | What it is |
 | --- | --- | --- |
-| `Harness` | `claude` | The Claude harness, with the claim's `planboard-agent` image by digest: kagent's `claude-harness` with `planboard` copied in (Building the Planboard images, below). Its `env` is the agent's git and Planboard identity, `<claim> planning agent` and `planboard-agent@<claim>.<domain>`, as `PLANBOARD_USER` and git's author and committer, and the binding's repository, as `REPO_URL`, `REPO_REF` and `PLANBOARD_ROOT=/data/workspace/repo<path>`. `workerPoolRef` `gvisor`, and snapshots under `s3://substrate/<claim>/` |
-| `ModelConfig` | `<claim>-planning`, `<claim>-planning-test` | Anthropic, `claude-sonnet-5-5` and `claude-haiku-5-5`, the newest of each the API listed when pinned, with the key from the owner's `planboard-anthropic` |
+| `Harness` | `claude` | The Claude harness, with the claim's `planboard-agent` image by digest: kagent's `claude-harness` with `planboard` copied in (Building the Planboard images, below). Its `env` is the agent's git and Planboard identity, `<claim> planning agent` and `planboard-agent@<claim>.<domain>`, as `PLANBOARD_USER` and git's author and committer, and the binding's repository, as `REPO_URL`, `REPO_REF` and `PLANBOARD_ROOT=/data/workspace/repo<path>`. `workerPoolRef` `<class>`, the claim's `runtime.sandboxClass`, `gvisor` by default, and snapshots under `s3://substrate/<claim>/` |
+| `ModelConfig` | `<claim>-planning`, `<claim>-planning-test` | Anthropic, the binding's `model`, `claude-sonnet-5-5` unless it says `claude-haiku-5-5`, and `claude-haiku-5-5`, the newest of each the API listed when pinned, with the key from the owner's `planboard-anthropic` |
 | `AgentTemplate` | `<claim>-planning`, `<claim>-planning-test` | One per model, since the model is the template's. The `planboard` plugin from the claim's `planboard-plugin` image by digest, and the system prompt (`AgentPrompt` in `components/product-planboard/product-planboard.cue`) |
-| `Agent` | `<claim>-planning`, `<claim>-planning-test` | Each template on `claude`, with the `EgressPolicy` `github`. Sonnet is the agent people plan with; Haiku is for every test |
+| `Agent` | `<claim>-planning`, `<claim>-planning-test` | Each template on `claude`, with the `EgressPolicy` `github`. The first is the agent people plan with, on Sonnet unless the binding says Haiku; the second is on Haiku, for every test |
 | `EgressPolicy` | `github` | `https://github.com:443`, with `Authorization` replaced by `Basic ` and the owner's `planboard-git`, as the board's own egress does |
-| `WorkerPool` | `gvisor`, in `<claim>` | A placeholder, for the controller to read the sandbox class from: no workers and no `kagent.dev` labels, as `kagent/gvisor` is (Agents and the worker pool, under kagent, above) |
-| `WorkerPool` | `gvisor-<claim>`, in `ate-workers` | The workers the agent's actors run on: the platform pool's spec, labeled `kagent.dev/worker-pool-name: gvisor` and `kagent.dev/worker-pool-namespace: <claim>` |
+| `WorkerPool` | `<class>`, in `<claim>` | A placeholder, for the controller to read the sandbox class from: no workers and no `kagent.dev` labels, as `kagent/gvisor` is (Agents and the worker pool, under kagent, above). Under `microvm` it also selects the class's admin label, as every pool of the class must (The microVM class, above) |
+| `WorkerPool` | `<class>-<claim>`, in `ate-workers` | The workers the agent's actors run on, and under `microvm` the board: the spec of the class's pool, the platform's `gvisor` or the class's test pool `microvm`, labeled `kagent.dev/worker-pool-name: <class>` and `kagent.dev/worker-pool-namespace: <claim>`, and none of the test pool's labels |
 
 kagent runs an agent's actors in the atespace of the agent's namespace, here the
 claim's, which `project-<claim>` makes; the controller only reads an atespace,
@@ -5323,10 +5403,44 @@ by two labels, the `Harness`'s pool name and its namespace, which Substrate
 matches against every worker in the cluster. The platform's pool carries
 `kagent`'s namespace, and a label has one value, so each claim gets a pool of
 its own, `gvisor-<claim>`, which also keeps one claim's agent sessions off
-another's workers; an actor whose template names no workers, such as a board,
-can still land on any pool's. It costs three more worker pods per claim with an
-agent, on the same nodes as the platform's, each of which reports the whole node
-as its capacity.
+another's workers; an actor whose template names no workers, such as a board on
+gVisor, can still land on any pool's. It costs three more worker pods per claim
+with an agent, on the same nodes as the platform's, each of which reports the
+whole node as its capacity.
+
+The pool's class is the claim's `runtime.sandboxClass` (A claim's runtime,
+above). Under `microvm` the pool is `microvm-<claim>`: two workers of
+`ateworker-microvm` on the microvm nodes, by the class's admin label, the
+spec of the class's test pool `ate-workers/microvm`, whose nodes it shares and
+overcommits as that pool does; the placeholder is `microvm`, and the
+`Harness` names it. The board goes onto the same pool: its template gains a
+`workerSelector` on the pool's two `kagent.dev` labels, which only that pool
+carries, and not on `holos.run/project`, which the placeholder carries too and
+a claim's owner could put on a worker of their own making, and its CPU limit
+goes from 500 to 1000 millicores, since the class runs the virtual machine
+monitor inside the actor's limit. Both change the template's name, so the hook
+makes a new template and moves the board to it. On `gvisor` the template has no
+selector, as before the field, since a selector there would rename every
+board's template. The board's golden snapshot stays off under `microvm`: a
+guest restores only if its CRNG was ready at its first snapshot, and the
+board's first is a suspend's, after a clone over TLS, which waited for it.
+kagent gives every agent actor the `runtimeDefaults` of its controller's
+configuration, one CPU and 1 GiB, whatever the class, and its templates cut a
+golden snapshot, which this render does not change; whether a golden snapshot
+of an agent's guest restores on the garage's CPUs (the CRNG, The microVM class,
+above) is not settled here.
+
+The binding's `model` is the model of `<claim>-planning`, the agent people
+plan with: `claude-sonnet-5-5` by default, or `claude-haiku-5-5`, which costs a
+fraction of it, and nothing else (`#Values.#models`, `products/planboard.cue`).
+`<claim>-planning-test` is on Haiku either way, so with
+
+```cue
+values: planboard: model: "claude-haiku-5-5"
+```
+
+both of the claim's agents are on Haiku. A binding that says nothing renders as
+before the field.
 
 Every session is a fresh actor, with `/data/workspace` its working directory.
 The system prompt is kagent's one lever on the agent, which it passes to
@@ -5410,7 +5524,7 @@ To check it, once the owner has made both Secrets:
 ```sh
 kubectl -n $claim get agents                       # both READY True
 kubectl -n $claim get modelconfig,harness,agenttemplate,egresspolicy,workerpool
-kubectl -n ate-workers get workerpool gvisor-$claim   # 3 ready, RESOLVED True
+kubectl -n ate-workers get workerpool gvisor-$claim   # 3 ready, RESOLVED True; microvm-$claim and 2 under microvm
 kubectl ate get actor-templates -a $claim          # <claim>-planning-<12 hex> and <claim>-planning-test-<12 hex>, beside the board's
 ```
 
@@ -5418,7 +5532,7 @@ Then a session: log in to `https://kagent.<domain>` as a member of the claim's
 owner or editor group, open `<claim>-planning-test`, and ask it to clone the
 repository and run `planboard api version`. It answers with the version, and
 `kubectl ate get actors -a $claim` shows its actor `RUNNING`, whose
-`workerAssignment` in `-o yaml` names the pool `gvisor-<claim>`. A viewer of the claim, such as `morgan` on cartography,
+`workerAssignment` in `-o yaml` names the pool `<class>-<claim>`. A viewer of the claim, such as `morgan` on cartography,
 gets oauth2-proxy's 403 after Keycloak's login.
 
 ### Editing a bound claim's policy live
@@ -5734,10 +5848,19 @@ annotation is listed as an exception instead; none has one.
 `holos/rendertest` holds Go tests over the committed tree for what the CUE
 alone does not hold to, which CI's Go job runs with the rest of `go test
 ./...`: that every `WorkerPool` of the `microvm` class selects its nodes by
-the class's admin label alone (The microVM class, under Substrate, above).
+the class's admin label alone (The microVM class, under Substrate, above). One
+more, `TestClaimSandboxClass`, needs `cue`, `holos` and the Substrate
+submodules, which the Go job lacks, so it runs only with `RENDERTEST_TOOLS=1`,
+which CI's Render job sets in a step of its own after the render; with the
+variable set, a missing tool or an empty submodule fails it, and without it
+the test is skipped. It adds a claim and its Planboard binding to a copy of the
+module and expects `microvm` on treasury to fail `cue vet` and the renders of
+`project-<claim>` and `product-planboard-<claim>`, with the claim, the class
+and the cluster in the message, and `microvm` on marina and the default on
+treasury to pass (A claim's runtime, under Projects, above).
 
 ```sh
-go test ../holos/rendertest
+RENDERTEST_TOOLS=1 go test -v ../holos/rendertest
 ```
 
 ## Bootstrap Argo CD

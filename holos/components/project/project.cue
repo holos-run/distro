@@ -60,7 +60,13 @@ import (
 // directory, it is empty and the instance renders nothing.
 ProjectName: string | *"" @tag(project)
 
-let NAME = ProjectName & Projects.#Unreserved
+// NAME is also the claim's entry in claimSandboxClasses (collections.cue),
+// which is its name where this cluster runs the sandbox class its runtime asks
+// for and otherwise conflicts with a sentence naming the claim, the class and
+// the cluster, so a claim this cluster cannot run fails the render here, with
+// that sentence, binding or no binding. Every NAME below is under
+// ProjectName != "", so cue vet never looks up the empty name.
+let NAME = ProjectName & Projects.#Unreserved & claimSandboxClasses[Cluster.name][ProjectName]
 let P = projects[NAME]
 
 // Labels mark everything the claim renders as the project's.

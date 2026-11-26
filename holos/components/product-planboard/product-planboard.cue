@@ -56,12 +56,14 @@ import (
 //   - the agent, on kagent's Claude harness, which the controller runs as
 //     actors in the claim's atespace: a Harness claude with the binding's
 //     repository in its environment; a ModelConfig, an AgentTemplate and an
-//     Agent for each of <claim>-planning, on Sonnet, and
-//     <claim>-planning-test, on Haiku, which read the owner's
+//     Agent for each of <claim>-planning, on the binding's model, Sonnet by
+//     default, and <claim>-planning-test, on Haiku, which read the owner's
 //     planboard-anthropic; an EgressPolicy github, which reads the owner's
-//     planboard-git; a placeholder WorkerPool gvisor, which kagent reads the
-//     sandbox class from; and the pool the actors run on, gvisor-<claim>, in
-//     ate-workers beside the platform's.
+//     planboard-git; a placeholder WorkerPool named for the sandbox class the
+//     claim's runtime asks for, gvisor by default, which kagent reads the
+//     class from; and the pool the actors run on, <class>-<claim>, in
+//     ate-workers beside the platform's, which under microvm the board's
+//     template selects too.
 //
 // The project bucket, the claim's own Application, holds the waypoint's
 // RequestAuthentication and AuthorizationPolicy, which decide who reads which
@@ -301,7 +303,16 @@ let AgentPrompt = """
 
 if ProjectName != "" {
 	let Read = #ProductComponent & {projectName: ProjectName, productName: ProductName}
-	let CLAIM = ProjectName
+
+	// CLAIM is the claim's name, and also its entry in claimSandboxClasses
+	// (collections.cue), as the project component's NAME is: the name where
+	// this cluster runs the sandbox class the claim's runtime asks for, and
+	// otherwise a conflict with a sentence naming the claim, the class and the
+	// cluster. Everything below reads CLAIM, so a binding of a claim this
+	// cluster cannot run fails here too, with that sentence, even in a render
+	// of this component alone, which would otherwise put a pool of the class
+	// in a cluster that has no nodes for it.
+	let CLAIM = ProjectName & claimSandboxClasses[Cluster.name][ProjectName]
 	let Labels = {"holos.run/project": CLAIM}
 
 	// Secrets are what the owner makes in their namespace by hand (README.md,
@@ -337,14 +348,69 @@ if ProjectName != "" {
 
 	let Image = "\(Quay.host)/\(CLAIM)/planboard@\(Cluster.pins.planboard.board)"
 
+	// Class is the sandbox class the claim's runtime asks for
+	// (#Project.runtime), which this cluster runs, or CLAIM, above, would have
+	// failed this render. In Substrate a class is a worker pool's, and an
+	// atespace has no default one, so this render is what reads it. Default
+	// is whether it is the platform pool's, gvisor, which every claim had
+	// before the field, and for which everything renders as it did then.
+	let Class = Read.claim.runtime.sandboxClass
+	let Default = Class == Substrate.workerPool.sandboxClass
+
+	// Pool is the pool of the class that the claim's pools copy: the
+	// platform's gVisor pool, or the microVM class's test pool, each in
+	// ate-workers (Substrate.workerPool and Substrate.microvm.workerPool,
+	// substrate.cue). Its name is the class's, so the claim's pool in
+	// ate-workers is <class>-<claim> and the placeholder in the claim's
+	// namespace <class>. Only its name and spec are read: the test pool's
+	// holos.run/worker-pool label, which a template selects it by, stays off
+	// the claim's copy.
+	let Pool = {
+		gvisor:  Substrate.workerPool
+		microvm: Substrate.microvm.workerPool
+	}[Class]
+
+	// BoardCPU is the board's CPU limit, in millicores, by class: half a CPU
+	// on gVisor, and one under microvm, since the class runs the virtual
+	// machine monitor inside the actor's limit and its wake was timed at one
+	// CPU (README.md, The microVM class).
+	let BoardCPU = {
+		gvisor:  500
+		microvm: 1000
+	}[Class]
+
 	// TemplateSpec is the ActorTemplate but for its metadata. The containers run
 	// as the image's user, 65532, which gVisor lets bind port 80, and share
 	// /data, a durable directory. The golden snapshot is off, since it would run
-	// the board before any clone. The probe is on /, the embedded UI, because
+	// the board before any clone, and it stays off under microvm, where a guest
+	// restores only if its CRNG was ready at its first snapshot (README.md, The
+	// microVM class): the board's first is then a suspend's, after a clone over
+	// TLS, which waits for the CRNG. The probe is on /, the embedded UI, because
 	// /api/projects loads the whole tree and each probe request gets 250 ms, and
 	// board starts only once the checkout is there, so its 120 seconds has to
 	// cover the first clone.
-	let TemplateSpec = {
+	//
+	// Selector is the template's workerSelector, which puts the board on the
+	// claim's pool in ate-workers, beside the agent's actors, by the two labels
+	// kagent selects that pool by (the WorkerPools, below), which only that
+	// pool carries: not the product's labels, which the placeholder in the
+	// claim's namespace carries too, and which a claim's owner could put on a
+	// worker of their own making. It is there only off the default class. An
+	// actor keeps the class of its first snapshot for good, and one with no
+	// selector may land on a pool of any class, so a board asked to run on
+	// microvm must say so; on gvisor there is none, as before the field, since
+	// the template's name hashes the whole spec, and a selector there would
+	// rename every board's template and move every board to it. It is a list's
+	// first element rather than a comprehension in TemplateSpec, which the CUE
+	// holos evaluates with, v0.15.1, takes for a cycle through Spec8 (below).
+	let Selector = [
+		if !Default {{workerSelector: matchLabels: {
+			"kagent.dev/worker-pool-name":      Pool.name
+			"kagent.dev/worker-pool-namespace": CLAIM
+		}}},
+		{},
+	][0]
+	let TemplateSpec = Selector & {
 		containers: [
 			{
 				name:  "sync"
@@ -385,7 +451,7 @@ if ProjectName != "" {
 				}]
 			},
 		]
-		resources: limits: {cpuMillicores: 500, memoryBytes: 536870912}
+		resources: limits: {cpuMillicores: BoardCPU, memoryBytes: 536870912}
 		snapshotConfig: {
 			preferredFidelity: "SNAPSHOT_FIDELITY_MEMORY"
 			goldenSnapshotConfig: mode: "GOLDEN_SNAPSHOT_MODE_DISABLED"
@@ -781,17 +847,17 @@ if ProjectName != "" {
 
 	// Models are the agent's two models, by the name of the ModelConfig, the
 	// AgentTemplate and the Agent that use each, since modelConfig is a field
-	// of the template: Sonnet for the agent people plan with, and Haiku for
-	// every test, which costs a fraction of it. Each is the newest of its
-	// family the Anthropic API listed (GET /v1/models) when pinned,
-	// 2026-11-07.
+	// of the template: the binding's model for the agent people plan with,
+	// Sonnet unless the binding says Haiku, and Haiku for every test, which
+	// costs a fraction of it. Both are the product's (#Values.#models,
+	// products/planboard.cue).
 	let Models = {
 		"\(CLAIM)-planning": {
-			model:       "claude-sonnet-5-5"
+			model:       Read.values.model
 			description: "Plans the \(CLAIM) project with Planboard, in its planning repository."
 		}
 		"\(CLAIM)-planning-test": {
-			model:       "claude-haiku-5-5"
+			model:       Read.product.#Values.#models.haiku
 			description: "The \(CLAIM) planning agent on Haiku, for tests."
 		}
 	}
@@ -812,9 +878,6 @@ if ProjectName != "" {
 			skills: ["planboard"]
 		}]
 	}
-
-	// Pool is the platform's gVisor pool, which the agent's pools copy.
-	let Pool = Substrate.workerPool
 
 	// HarnessName is the Harness's name, which both Agents refer to.
 	let HarnessName = "claude"
@@ -1244,7 +1307,7 @@ if ProjectName != "" {
 			// which the controller requires of an image; it keeps the stock
 			// entrypoint, which the Claude adapter runs whatever command a
 			// Harness gives. The env is the binding's (AgentEnv). Its actors
-			// land on the workers of gvisor-<claim> (below), and their snapshots
+			// land on the workers of <class>-<claim> (below), and their snapshots
 			// go under a directory of the claim's own in Substrate's bucket,
 			// which ate-api-server's PerTemplateSnapshotLocation gate admits
 			// (components/substrate). The platform's, rendered and healed by Argo
@@ -1273,10 +1336,14 @@ if ProjectName != "" {
 			// controller reads the pool's sandbox class from the WorkerPool of
 			// that name in the Harness's namespace, reporting
 			// WorkerPoolNotFound without one, as for kagent's own
-			// (components/kagent). This one exists to be found: the platform
-			// pool's name and class, no workers, and no kagent.dev labels, so
-			// no actor selects a worker of it. ate-controller still makes its
-			// worker Deployment, at 0, and an unused ateworker ServiceAccount.
+			// (components/kagent). This one exists to be found: the name and
+			// class of the claim's class's pool (Pool), no workers, and no
+			// kagent.dev labels, so no actor selects a worker of it.
+			// ate-controller still makes its worker Deployment, at 0, and an
+			// unused ateworker ServiceAccount. Under microvm it also takes the
+			// test pool's node selector, the class's admin label, which
+			// holos/rendertest holds every pool of the class to, a placeholder
+			// too; on gvisor it has none, as before the field.
 			WorkerPool: (Pool.name): {
 				metadata: {
 					namespace: CLAIM
@@ -1286,21 +1353,30 @@ if ProjectName != "" {
 					replicas:       0
 					workerImage:    Pool.spec.workerImage
 					sandboxClasses: Pool.spec.sandboxClasses
+					if Class == Substrate.microvm.sandboxClass {
+						template: nodeSelector: Pool.spec.template.nodeSelector
+					}
 				}
 			}
 
-			// The workers the agent's actors run on. kagent selects workers by
-			// two labels, the Harness's pool name and the Harness's namespace,
-			// and Substrate matches them across every worker in the cluster
+			// The workers the agent's actors run on, and under microvm the
+			// board's (TemplateSpec). kagent selects workers by two labels, the
+			// Harness's pool name and the Harness's namespace, and Substrate
+			// matches them across every worker in the cluster
 			// (actor_template.go, workerSelectorForPool). The platform pool's
 			// carry kagent's namespace, and a label has one value, so the claim
-			// gets a pool of its own: the platform pool's spec
-			// (Substrate.workerPool.spec), beside it in its privileged
-			// namespace, labeled for the claim. It also keeps the claim's agent
+			// gets a pool of its own: the spec of its class's pool (Pool),
+			// Substrate.workerPool.spec or Substrate.microvm.workerPool.spec,
+			// beside it in its privileged namespace, labeled for the claim, and
+			// so <class>-<claim>, gvisor-<claim> by default. A microvm copy
+			// selects the class's admin label, as the test pool does, but
+			// carries none of that pool's labels, so a template that selects
+			// the test pool by holos.run/worker-pool does not land on the
+			// claim's workers. It also keeps the claim's agent
 			// sessions off another claim's workers; an actor whose template has
-			// no worker selector, such as the board, can still land on any
-			// pool's. Workers in the claim's own
-			// namespace would need it privileged.
+			// no worker selector, such as the board on gvisor, can still land
+			// on any pool's. Workers in the claim's own namespace would need it
+			// privileged.
 			WorkerPool: "\(Pool.name)-\(CLAIM)": {
 				metadata: {
 					namespace: Pool.namespace

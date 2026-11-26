@@ -2,6 +2,7 @@ package holos
 
 import (
 	"list"
+	"strings"
 
 	bnd "go.holos.run/distro/holos/bindings"
 	ppl "go.holos.run/distro/holos/people"
@@ -112,6 +113,41 @@ clusterProjects: {
 claimClusters: {
 	for NAME, _ in projects {
 		(NAME): [for CLUSTER, P in clusterProjects if P[NAME] != _|_ {CLUSTER}] & [_, ...]
+	}
+}
+
+// claimSandboxClasses checks the sandbox class each claim's runtime asks for
+// (#Project.runtime) against each cluster the claim lands on, by cluster and
+// then project name: the claim's name where the cluster runs the class
+// (#Cluster.sandboxClasses), and otherwise also a sentence naming the claim,
+// the class and the cluster, which conflicts with the name and fails cue vet.
+// A class is a worker pool's in Substrate, so only a binding's render reads
+// it, but the check is here, where claims meet clusters, so a claim fails
+// whether or not it has a binding. The project component folds the entry into
+// the claim's name, which everything it renders reads (components/project), so
+// holos render platform fails on it too, where it passes over a root field
+// alone, such as claimClusters: every project-* on the cluster fails with the
+// message, not only the claim's own. A binding's component folds it into the
+// claim's name as well (components/product-planboard), so a render of that
+// component alone fails too. The sentence is the message, since the
+// module's language version, v0.11.1, predates CUE's error builtin, and cue
+// vet and the render print it as one of the two conflicting values:
+//
+//	claimSandboxClasses.treasury.choria: conflicting values "claim choria asks
+//	for sandbox class microvm, which cluster treasury does not run: its
+//	sandboxClasses are gvisor (clusters.cue)" and "choria"
+claimSandboxClasses: {
+	for CLUSTER, PROJECTS in clusterProjects {
+		(CLUSTER): {
+			for NAME, P in PROJECTS {
+				let CLASSES = clusters[CLUSTER].sandboxClasses
+				let CLASS = P.runtime.sandboxClass
+				(NAME): NAME
+				if !list.Contains(CLASSES, CLASS) {
+					(NAME): "claim \(NAME) asks for sandbox class \(CLASS), which cluster \(CLUSTER) does not run: its sandboxClasses are \(strings.Join(CLASSES, ", ")) (clusters.cue)"
+				}
+			}
+		}
 	}
 }
 

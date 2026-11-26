@@ -29,6 +29,23 @@ products: planboard: {
 			path: *"" | =~"^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$"
 		}
 
+		// #models are the Anthropic models the agent runs on, by family, each
+		// the newest of its family the Anthropic API listed (GET /v1/models)
+		// when pinned, 2026-11-07. It is a definition, as #projectPattern is,
+		// so a binding reads it and does not set it.
+		#models: {
+			sonnet: "claude-sonnet-5-5"
+			haiku:  "claude-haiku-5-5"
+		}
+
+		// model is the model of the claim's planning agent, <claim>-planning,
+		// the one people plan with: Sonnet by default, or Haiku, which costs a
+		// fraction of it, so that a binding can put both of the claim's agents
+		// on Haiku. <claim>-planning-test is on Haiku whatever this says
+		// (components/product-planboard). It is one of #models and nothing
+		// else, so a binding names no model the agent has not been run on.
+		model: *#models.sonnet | #models.haiku
+
 		// #projectPattern is the shape of a Planboard project's name, a
 		// directory name, as a regular expression. It is a definition, so it is
 		// not a value a binding sets, and it is one, because the waypoint's Lua

@@ -64,11 +64,14 @@ import (
 
 	// sandboxClasses are the Substrate sandbox classes the cluster runs, ate-setup's
 	// --sandbox-classes, on a cluster that names substrate. gvisor is always one:
-	// the platform's pool and every claim's are gVisor (Substrate.workerPool).
-	// microvm adds the class's SandboxConfig and its test pool to the substrate
-	// component, and its asset bucket to rustfs (Substrate.microvm). It needs
-	// nodes with /dev/kvm that carry the admin label the pool selects, and the
-	// assets staged by hand (README.md, Substrate, The microVM class).
+	// the platform's pool is gVisor (Substrate.workerPool), and so is every
+	// claim's that does not ask otherwise. microvm adds the class's
+	// SandboxConfig and its test pool to the substrate component, and its asset
+	// bucket to rustfs (Substrate.microvm), and lets a claim's runtime ask for
+	// it (#Project.runtime), which a cluster without it refuses
+	// (claimSandboxClasses, collections.cue). It needs nodes with /dev/kvm that
+	// carry the admin label the pool selects, and the assets staged by hand
+	// (README.md, Substrate, The microVM class).
 	sandboxClasses: *["gvisor"] | ["gvisor", "microvm"]
 	if list.Contains(sandboxClasses, "microvm") {
 		_microvmNeedsSubstrate: true & list.Contains(components, "substrate")

@@ -193,6 +193,38 @@ let DNSLabel = "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
 	// claim with no binding renders nothing different for it.
 	waypointClass: string | *"istio-waypoint"
 
+	// runtime is what runs the claim's actors, the seam waypointClass is for
+	// the waypoint. name is the runtime, Agent Substrate, the one there is: a
+	// closed list of one, which is where a vendor's runtime would be added,
+	// with fields of its own beside it, and which nothing renders differently
+	// for yet. sandboxClass is Substrate's own term, and so the field's, for
+	// what isolates an actor from its node: gvisor, a gVisor sandbox, by
+	// default, or microvm, a Kata guest on Cloud Hypervisor with a kernel of
+	// its own (README.md, Substrate, The microVM class). A claim that says
+	// nothing is gVisor and renders as every claim did before the field: its
+	// pools and its agent's actors are gVisor. Its board is not pinned: a
+	// board's template on the default class has no worker selector, as before
+	// the field, so the board may land on any pool's workers, which on a
+	// cluster that runs microvm include the class's test pool and every
+	// microvm-<claim>, and keep that class for good.
+	//
+	// In Substrate a class is a worker pool's, and an atespace has no default
+	// one, so a binding's render reads it (components/product-planboard): it
+	// puts the claim's agents, and its board, on a pool of the class. A claim
+	// may ask only for a class each of its clusters runs
+	// (#Cluster.sandboxClasses): one that asks for microvm on a cluster that
+	// runs only gVisor fails cue vet and the render, with the claim, the
+	// class and the cluster in the error (claimSandboxClasses, collections.cue),
+	// whether or not it has a binding: the render of every claim on that
+	// cluster, and of its binding's component, even rendered alone. An actor
+	// keeps the class of its first snapshot for good, so changing the class of
+	// a claim whose actors have snapshots takes those actors deleted and made
+	// again, which nothing here does.
+	runtime: {
+		name:         *"substrate" | "substrate"
+		sandboxClass: *"gvisor" | "microvm"
+	}
+
 	// owners are the project's owners by email, at least one, which the
 	// project component checks (components/project): a constraint here
 	// would make the schema itself unsatisfiable, since its owners are
