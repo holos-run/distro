@@ -96,9 +96,10 @@ Substrate: {
 		// the cluster's (components/substrate.cue). Each
 		// worker reports its whole node as its capacity, so two pools on the
 		// same nodes overcommit them. The substrate component renders it,
-		// and each claim kagent runs agents for gets a copy of it, labeled for
-		// the claim (components/product-planboard), so a bump moves
-		// every pool of its cluster at once, and a new replica count every pool.
+		// and each claim kagent runs agents for on gVisor, its runtime's
+		// default class, gets a copy of it, labeled for the claim
+		// (components/product-planboard), so a bump moves every gVisor pool
+		// of its cluster at once, and a new replica count every one.
 		spec: {
 			replicas: 3
 			sandboxClasses: [{name: sandboxClass}]
@@ -146,7 +147,9 @@ Substrate: {
 		// worker reports its whole node as its capacity, as the gVisor pool's
 		// do, so another pool on these nodes overcommits them. labels are
 		// what an ActorTemplate's workerSelector names to run on it, which
-		// Substrate matches against the pool's.
+		// Substrate matches against the pool's. A claim whose runtime asks for
+		// the class gets a copy of its spec, microvm-<claim>, without these
+		// labels (components/product-planboard).
 		workerPool: {
 			namespace: Substrate.workerPool.namespace
 			name:      sandboxClass

@@ -959,7 +959,8 @@ _Resources: #Resources & {
 	// no workers (components/kagent). A label has one value, so this pool
 	// serves kagent's namespace alone: each claim kagent runs agents for has
 	// a pool of its own beside it, gvisor-<claim>, with this spec
-	// (Substrate.workerPool.spec), which the claim's binding renders
+	// (Substrate.workerPool.spec), or microvm-<claim>, with the test pool's
+	// below, by the claim's runtime, which the claim's binding renders
 	// (components/product-planboard).
 	Namespace: (Pool.namespace): metadata: labels: "pod-security.kubernetes.io/enforce": "privileged"
 	WorkerPool: (Pool.name): {
