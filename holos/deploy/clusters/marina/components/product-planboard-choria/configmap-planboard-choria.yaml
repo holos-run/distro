@@ -1,0 +1,10 @@
+apiVersion: v1
+data:
+    job: 4e421c7fd7d16c6a4fc0f6fd82ab7beae889de498d90f2e7518c072ddebc599d
+    template: planboard-b5a72ab690dd-0e67bbc2
+kind: ConfigMap
+metadata:
+    labels:
+        holos.run/project: choria
+    name: planboard-choria
+    namespace: ate-system

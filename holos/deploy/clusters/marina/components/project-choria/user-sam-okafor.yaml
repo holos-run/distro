@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    labels:
+        holos.run/project: choria
+    name: sam-okafor
+    namespace: choria
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: sam.okafor@bank.internal
+    instanceRef:
+        name: default
+        namespace: keycloak
+    username: sam-okafor

@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/configmap: 3223056659c49748183265d1a2801c7a7f9c1f832558c1bdc6b83bca1d8092d4
+        checksum/configmap: a9eba40412d6a6eba559809e3ecdeec7d5f92ac7c46cd940b9736291c8b5c3c3
       labels:
         app.kubernetes.io/component: controller
         app.kubernetes.io/instance: kagent

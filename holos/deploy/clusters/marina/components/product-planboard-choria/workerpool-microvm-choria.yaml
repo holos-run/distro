@@ -1,0 +1,17 @@
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+    labels:
+        holos.run/project: choria
+        kagent.dev/worker-pool-name: microvm
+        kagent.dev/worker-pool-namespace: choria
+    name: microvm-choria
+    namespace: ate-workers
+spec:
+    replicas: 2
+    sandboxClasses:
+        - name: microvm
+    template:
+        nodeSelector:
+            node-restriction.kubernetes.io/sandbox-class: microvm
+    workerImage: ghcr.io/holos-run/substrate/ateworker-microvm:v0.0.0-holos.20261124.e54c359@sha256:c694ac3ec823361220b160c69f843bb08cccb2511c54eb4ce536cfc1ea991031

@@ -4243,9 +4243,9 @@ Q66), and on any other cluster it renders nothing:
 
 No Secrets Manager project (Q64), no `ResourceQuota`, and no RBAC for the
 editor and viewer groups, whose members have Quay, and what a binding opens to
-them, and nothing else of the project. `projects/` holds four claims: `payments`, `ledger`
-and `checkout`, each selecting `treasury`, and `splunk`, selecting
-`cartography`.
+them, and nothing else of the project. `projects/` holds five claims: `payments`, `ledger`
+and `checkout`, each selecting `treasury`, `splunk`, selecting
+`cartography`, and `choria`, selecting `marina`.
 
 **Owners in Argo CD.** Where a binding names the claim, its owners log in to
 Argo CD through Keycloak (Logging in, below) and work on the claim's own
@@ -4481,7 +4481,8 @@ Substrate's own term for what isolates an actor from its node: `gvisor`, a
 gVisor sandbox, by default, or `microvm`, a Kata guest on Cloud Hypervisor
 with a kernel of its own (The microVM class, under Substrate, above). A claim
 that says nothing is `gvisor`, and renders as every claim did before the
-field: `payments`, `ledger`, `checkout` and `splunk` say nothing.
+field: `payments`, `ledger`, `checkout` and `splunk` say nothing. `choria`, on
+marina, asks for `microvm`.
 
 The default puts the claim's pools and its agent's actors on gVisor, and not
 its board. A board on the default class has no `workerSelector`, as before the
@@ -5028,8 +5029,20 @@ Claims carry `metadata.labels` for selectors to come: `holos.run/project-name`
 from the name, as a cluster has `holos.run/cluster-name`, and any of their own.
 Nothing reads them yet, and they render nowhere.
 
-The one product so far is `planboard` (`products/planboard.cue`), and the one
-binding is `bindings/splunk-planboard.cue`, on cartography. A product that
+The one product so far is `planboard` (`products/planboard.cue`), and the
+bindings are `bindings/splunk-planboard.cue`, on cartography, and
+`bindings/choria-planboard.cue`, on marina.
+
+No cluster takes a second binding of a product that runs kagent, such as
+`planboard`, until the security tech debt
+`security-a-kagent-user-can-send-a-bound-claims-secrets-to` is fixed (The
+agent, below): kagent admits anyone it lets in to every watched claim's
+Secrets, so a second bound claim on a cluster makes that cross-tenant. The rule
+is read per cluster: `splunk` is cartography's one such binding and `choria`
+marina's, so neither cluster takes another. `choria` has no editor for the same reason, since an editor could
+overwrite or take the owner's git credential.
+
+A product that
 renders nothing leaves no directory in `deploy/`, and its `Application` would
 point at a path that does not exist and report a `ComparisonError`; a claim
 avoids that with its `ConfigMap` `project`, and a product with a binding has to
@@ -5499,7 +5512,9 @@ Secrets; a second bound claim makes it cross-tenant. It is high-priority
 security tech debt in the planning board
 (`security-a-kagent-user-can-send-a-bound-claims-secrets-to`), which
 `a-group-to-namespace-authorizer-for-kagent` closes; until then no second binding
-of a product that runs kagent merges.
+of a product that runs kagent merges on a cluster. The rule is read per cluster:
+`splunk` is cartography's one such binding and `choria` marina's (Products and
+bindings, above).
 
 The same holds in `kagent`'s own namespace, which the controller watches too,
 so on a cluster where a binding runs an agent the kagent component closes it

@@ -1,0 +1,34 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+    labels:
+        holos.run/project: choria
+    name: project-choria
+    namespace: substrate-shim
+spec:
+    listeners:
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: HTTPRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
+                            - ate-system
+          hostname: '*.choria.ate.marina.bank.internal'
+          name: choria
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+                - kind: Secret
+                  name: choria-wildcard-tls
+            mode: Terminate
+    parentRef:
+        group: gateway.networking.k8s.io
+        kind: Gateway
+        name: ate

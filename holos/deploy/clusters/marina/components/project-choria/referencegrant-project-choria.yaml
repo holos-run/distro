@@ -1,0 +1,27 @@
+apiVersion: security.holos.run/v1alpha1
+kind: ReferenceGrant
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: choria
+    name: project-choria
+    namespace: keycloak
+spec:
+    from:
+        - group: keycloak.holos.run
+          kind: Group
+          namespace: choria
+        - group: keycloak.holos.run
+          kind: User
+          namespace: choria
+        - group: keycloak.holos.run
+          kind: GroupMembership
+          namespace: choria
+        - group: keycloak.holos.run
+          kind: Client
+          namespace: choria
+    to:
+        - group: keycloak.holos.run
+          kind: Instance
+          name: default

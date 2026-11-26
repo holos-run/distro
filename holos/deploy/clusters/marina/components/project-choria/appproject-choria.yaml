@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: choria
+    name: choria
+    namespace: argocd
+spec:
+    description: The project choria, synced from https://github.com/holos-run/distro.git
+    destinations:
+        - namespace: choria
+          server: https://kubernetes.default.svc
+    namespaceResourceBlacklist:
+        - group: rbac.authorization.k8s.io
+          kind: Role
+        - group: rbac.authorization.k8s.io
+          kind: RoleBinding
+        - group: keycloak.holos.run
+          kind: '*'
+        - group: quay.holos.run
+          kind: '*'
+        - group: security.holos.run
+          kind: '*'
+        - group: gateway.networking.k8s.io
+          kind: '*'
+        - group: networking.istio.io
+          kind: '*'
+        - group: extensions.istio.io
+          kind: '*'
+        - group: telemetry.istio.io
+          kind: '*'
+        - group: ate.dev
+          kind: '*'
+        - group: argoproj.io
+          kind: '*'
+    namespaceResourceWhitelist:
+        - group: '*'
+          kind: '*'
+    roles:
+        - description: The owners of the project choria
+          groups:
+            - /projects/choria/roles/owner
+          name: owner
+          policies:
+            - p, proj:choria:owner, applications, get, choria/*, allow
+            - p, proj:choria:owner, applications, sync, choria/*, allow
+            - p, proj:choria:owner, applications, update, choria/*, allow
+            - p, proj:choria:owner, applications, action/*, choria/*, allow
+            - p, proj:choria:owner, logs, get, choria/*, allow
+    signatureKeys:
+        - keyID: 7716CCA9F8F7BE25
+        - keyID: B5690EEEBB952194
+    sourceRepos:
+        - https://github.com/holos-run/distro.git

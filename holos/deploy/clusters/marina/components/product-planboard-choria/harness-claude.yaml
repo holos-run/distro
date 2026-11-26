@@ -1,0 +1,33 @@
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+    labels:
+        holos.run/project: choria
+    name: claude
+    namespace: choria
+spec:
+    claude: {}
+    env:
+        - name: PLANBOARD_USER
+          value: choria planning agent
+        - name: GIT_AUTHOR_NAME
+          value: choria planning agent
+        - name: GIT_AUTHOR_EMAIL
+          value: planboard-agent@choria.marina.bank.internal
+        - name: GIT_COMMITTER_NAME
+          value: choria planning agent
+        - name: GIT_COMMITTER_EMAIL
+          value: planboard-agent@choria.marina.bank.internal
+        - name: REPO_URL
+          value: https://github.com/holos-run/choria-planning
+        - name: REPO_REF
+          value: main
+        - name: PLANBOARD_ROOT
+          value: /data/workspace/repo
+    substrate:
+        snapshotPolicy:
+            location: s3://substrate/choria/
+        workerPoolRef:
+            name: microvm
+    workload:
+        image: quay.marina.bank.internal/choria/planboard-agent@sha256:b9d207e18537098c064364a1012c5a10a7dd3d7a219a152058ee0a20ad73a2c5

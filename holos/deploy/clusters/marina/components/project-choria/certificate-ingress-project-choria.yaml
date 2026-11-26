@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+    labels:
+        holos.run/project: choria
+    name: ingress-project-choria
+    namespace: istio-ingress
+spec:
+    dnsNames:
+        - '*.choria.marina.bank.internal'
+    issuerRef:
+        group: cert-manager.io
+        kind: ClusterIssuer
+        name: private-ca
+    privateKey:
+        algorithm: ECDSA
+        size: 256
+    secretName: ingress-project-choria-tls

@@ -1,0 +1,26 @@
+apiVersion: policy.cert-manager.io/v1alpha1
+kind: CertificateRequestPolicy
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: choria
+    name: ingress-project-choria
+spec:
+    allowed:
+        dnsNames:
+            required: true
+            validations:
+                - message: 'must be one of these exactly, * included: *.choria.marina.bank.internal'
+                  rule: self in ["*.choria.marina.bank.internal"]
+            values:
+                - '*.choria.marina.bank.internal'
+        isCA: false
+    selector:
+        issuerRef:
+            group: cert-manager.io
+            kind: ClusterIssuer
+            name: private-ca
+        namespace:
+            matchNames:
+                - istio-ingress

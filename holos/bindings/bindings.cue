@@ -1,6 +1,9 @@
 // Package bindings is the collection of bindings: one small file per binding,
 // the claim owner's, named <claim>-<product>.cue, which binds products to a
-// claim as a RoleBinding binds a role to subjects. A binding is
+// claim as a RoleBinding binds a role to subjects. A cluster takes at most one
+// binding of a product that runs kagent until the planning board's
+// security-a-kagent-user-can-send-a-bound-claims-secrets-to is fixed
+// (README.md, Products and bindings). A binding is
 //
 //	// holos/bindings/my-project-planboard.cue
 //	package bindings

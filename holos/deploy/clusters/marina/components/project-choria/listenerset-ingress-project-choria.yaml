@@ -1,0 +1,34 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+    labels:
+        holos.run/project: choria
+    name: ingress-project-choria
+    namespace: istio-ingress
+spec:
+    listeners:
+        - allowedRoutes:
+            kinds:
+                - group: gateway.networking.k8s.io
+                  kind: HTTPRoute
+            namespaces:
+                from: Selector
+                selector:
+                    matchExpressions:
+                        - key: kubernetes.io/metadata.name
+                          operator: In
+                          values:
+                            - choria
+          hostname: '*.choria.marina.bank.internal'
+          name: choria
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+                - kind: Secret
+                  name: ingress-project-choria-tls
+            mode: Terminate
+    parentRef:
+        group: gateway.networking.k8s.io
+        kind: Gateway
+        name: ingress

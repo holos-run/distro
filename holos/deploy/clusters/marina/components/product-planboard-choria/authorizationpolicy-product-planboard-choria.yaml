@@ -1,0 +1,34 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: choria
+    name: product-planboard-choria
+    namespace: substrate-shim
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.marina.bank.internal/realms/default/*
+          to:
+            - operation:
+                hosts:
+                    - planboard.choria.ate.marina.bank.internal
+                    - planboard.choria.ate.marina.bank.internal:443
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+                - /projects/choria/roles/editor
+                - /projects/choria/roles/owner
+                - /projects/choria/roles/viewer
+            - key: request.auth.audiences
+              values:
+                - kubectl
+                - planboard-choria
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: ate
