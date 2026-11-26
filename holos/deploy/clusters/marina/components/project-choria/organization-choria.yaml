@@ -1,0 +1,28 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    labels:
+        holos.run/project: choria
+    name: choria
+    namespace: choria
+spec:
+    credentialsSecretRef:
+        name: seabank-controller-quay-creds
+    deletionPolicy: Orphan
+    email: quay+choria@bank.internal
+    name: choria
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin
+        - name: projectowners
+          oidcGroup: /projects/choria/roles/owner
+          role: admin
+        - name: projecteditors
+          oidcGroup: /projects/choria/roles/editor
+          repositoryPermission: write
+          role: creator
+        - name: projectviewers
+          oidcGroup: /projects/choria/roles/viewer
+          repositoryPermission: read
+          role: member

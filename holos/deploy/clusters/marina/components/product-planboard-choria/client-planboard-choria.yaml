@@ -1,0 +1,16 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: Client
+metadata:
+    labels:
+        holos.run/project: choria
+    name: planboard-choria
+    namespace: choria
+spec:
+    clientId: planboard-choria
+    description: Planboard for the project choria
+    instanceRef:
+        name: default
+        namespace: keycloak
+    redirectUris:
+        - https://planboard.choria.marina.bank.internal/oauth2/callback
+    type: public

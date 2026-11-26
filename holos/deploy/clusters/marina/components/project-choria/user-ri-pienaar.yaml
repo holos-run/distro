@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    labels:
+        holos.run/project: choria
+    name: ri-pienaar
+    namespace: choria
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: ri.pienaar@bank.internal
+    instanceRef:
+        name: default
+        namespace: keycloak
+    username: ri-pienaar

@@ -21,6 +21,7 @@ data:
     kubernetes:
       namespace: kagent
       watchNamespaces:
+      - choria
       - kagent
     logging:
       level: info

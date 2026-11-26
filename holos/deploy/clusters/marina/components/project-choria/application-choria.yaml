@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+    labels:
+        holos.run/project: choria
+    name: choria
+    namespace: argocd
+spec:
+    destination:
+        namespace: choria
+        server: https://kubernetes.default.svc
+    project: choria
+    source:
+        path: holos/deploy/clusters/marina/projects/choria
+        repoURL: https://github.com/holos-run/distro.git
+        targetRevision: main
+    syncPolicy:
+        automated:
+            prune: true
+            selfHeal: true
+        retry:
+            backoff:
+                duration: 5s
+                factor: 2
+                maxDuration: 3m
+            limit: 10
+        syncOptions:
+            - ServerSideApply=true

@@ -7,6 +7,7 @@ rules:
   - ""
   resourceNames:
   - oidc:jeff
+  - oidc:ri-pienaar
   resources:
   - users
   verbs:
@@ -15,6 +16,7 @@ rules:
   - ""
   resourceNames:
   - /platform/owners
+  - /projects/choria/roles/owner
   resources:
   - groups
   verbs:

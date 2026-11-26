@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/version: 0.0.0-holos.20261125.c1dbae1
     helm.sh/chart: kagent-0.0.0-holos.20261125.c1dbae1
   name: kagent-management-rolebinding
-  namespace: kagent
+  namespace: choria
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

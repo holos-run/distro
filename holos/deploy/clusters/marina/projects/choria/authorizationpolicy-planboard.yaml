@@ -1,0 +1,52 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+    labels:
+        holos.run/project: choria
+    name: planboard
+    namespace: choria
+spec:
+    action: ALLOW
+    rules:
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.marina.bank.internal/realms/default/*
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /platform/owners
+                - /projects/choria/roles/editor
+                - /projects/choria/roles/owner
+        - from:
+            - source:
+                requestPrincipals:
+                    - https://keycloak.marina.bank.internal/realms/default/*
+          to:
+            - operation:
+                methods:
+                    - GET
+                    - HEAD
+                notPaths:
+                    - /api/*
+                    - /files/*
+                    - /present/*
+            - operation:
+                methods:
+                    - GET
+                    - HEAD
+                paths:
+                    - /api/agent
+                    - /api/catalog
+                    - /api/events
+                    - /api/projects
+                    - /api/research
+                    - /api/research/*
+          when:
+            - key: request.auth.claims[groups]
+              values:
+                - /projects/choria/roles/viewer
+    targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: planboard-waypoint

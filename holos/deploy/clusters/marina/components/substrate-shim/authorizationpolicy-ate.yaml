@@ -19,6 +19,9 @@ spec:
             - key: request.auth.claims[groups]
               values:
                 - /platform/owners
+            - key: request.auth.audiences
+              values:
+                - kubectl
         - from:
             - source:
                 requestPrincipals:
@@ -32,6 +35,9 @@ spec:
             - key: request.auth.claims[groups]
               values:
                 - /platform/owners
+            - key: request.auth.audiences
+              values:
+                - kubectl
     targetRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway

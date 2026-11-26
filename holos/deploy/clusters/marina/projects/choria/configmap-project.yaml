@@ -1,0 +1,13 @@
+apiVersion: v1
+data:
+    name: choria
+    ownerAccess: admin
+    ownerGroup: /projects/choria/roles/owner
+    owners: ri.pienaar@bank.internal
+    viewers: sam.okafor@bank.internal
+kind: ConfigMap
+metadata:
+    labels:
+        holos.run/project: choria
+    name: project
+    namespace: choria
