@@ -1,0 +1,28 @@
+apiVersion: quay.holos.run/v1alpha1
+kind: Organization
+metadata:
+    labels:
+        holos.run/project: lending
+    name: lending
+    namespace: lending
+spec:
+    credentialsSecretRef:
+        name: seabank-controller-quay-creds
+    deletionPolicy: Orphan
+    email: quay+lending@bank.internal
+    name: lending
+    syncedTeams:
+        - name: platformowners
+          oidcGroup: /platform/owners
+          role: admin
+        - name: projectowners
+          oidcGroup: /projects/lending/roles/owner
+          role: admin
+        - name: projecteditors
+          oidcGroup: /projects/lending/roles/editor
+          repositoryPermission: write
+          role: creator
+        - name: projectviewers
+          oidcGroup: /projects/lending/roles/viewer
+          repositoryPermission: read
+          role: member

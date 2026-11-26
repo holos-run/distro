@@ -1,0 +1,15 @@
+apiVersion: keycloak.holos.run/v1alpha1
+kind: User
+metadata:
+    labels:
+        holos.run/project: lending
+    name: dave
+    namespace: lending
+spec:
+    adopt: true
+    deletionPolicy: Orphan
+    email: dave@bank.internal
+    instanceRef:
+        name: default
+        namespace: keycloak
+    username: dave

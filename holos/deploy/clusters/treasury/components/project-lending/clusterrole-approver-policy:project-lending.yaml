@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    labels:
+        holos.run/project: lending
+    name: approver-policy:project-lending
+rules:
+    - apiGroups:
+        - policy.cert-manager.io
+      resourceNames:
+        - project-lending
+      resources:
+        - certificaterequestpolicies
+      verbs:
+        - use
