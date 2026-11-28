@@ -32,6 +32,8 @@ holos/
 ├── platform/       the Platform: the registry, rendered per cluster
 ├── components/     one directory per component, each producing a BuildPlan
 ├── vendor/         git submodules a component renders from: the Substrate fork, one per commit a cluster pins
+├── tools.sh        installs the tools a render runs, at their pinned versions, and checks out the submodules
+├── render.sh       checks the tools, then cue vet and the render
 └── deploy/         rendered manifests, committed; never edited by hand
 ```
 
@@ -2499,10 +2501,10 @@ render, so it is read, not run: `components/substrate/ATE-SETUP.md` maps
 every step of its `deploy ate-system` to a stage here or to a step by hand
 below, and is re-read on every bump.
 
-A clone renders only with every submodule checked out
-(`git submodule update --init` from the repository's root, after each pull that
-adds one); without it `kubectl kustomize` finds no files and the render
-fails. A clone from before the submodules were named by their commit keeps the
+A clone renders only with every submodule checked out (`./tools.sh`, or
+`git submodule update --init` from the repository's root, after each pull that
+adds one); without it `render.sh` stops before it removes anything and names
+`tools.sh`. A clone from before the submodules were named by their commit keeps the
 old checkout, `holos/vendor/substrate`, as an untracked directory, which nothing
 reads: `rm -rf holos/vendor/substrate`. The render reads nothing from the network.
 
@@ -2936,7 +2938,7 @@ sed -i "s/substrate-$old/substrate-$new/" components/substrate/upstream/$new/kus
 # run's references, and the comment above them
 # components/substrate/ATE-SETUP.md: walk steps/deploy.go again, change what moved,
 # in upstream/$new or in the component, then the line numbers and the pins at its top
-cue vet ./... && rm -rf deploy/clusters && holos render platform
+./render.sh
 git status --short deploy                         # only deploy/clusters/$cluster
 git diff deploy/clusters/$cluster/components/substrate
 git add ../.gitmodules vendor/substrate-$new pins/$cluster.cue components/substrate deploy
@@ -2972,7 +2974,7 @@ the new `Kagent.version` and `$kagent` a checkout of the fork at its commit:
 # chart
 mkdir -p components/kagent/vendor/$version
 cp $kagent/go/core/pkg/postgressetup/setup.sql components/kagent/vendor/$version/
-cue vet ./... && rm -rf deploy/clusters && holos render platform   # pulls both charts at the version
+./render.sh   # pulls both charts at the version
 git status --short deploy                                          # only deploy/clusters/$cluster
 git diff deploy/clusters/$cluster/components/kagent deploy/clusters/$cluster/components/kagent-crds
 git add pins/$cluster.cue components/kagent components/kagent-crds deploy
@@ -4420,7 +4422,7 @@ A claim with no binding has no role, so its owners see nothing in Argo CD.
    it was, byte for byte:
 
    ```sh
-   cue vet ./... && rm -rf deploy/clusters && holos render platform
+   ./render.sh
    git status deploy/
      # new: components/project-<name>/, projects/<name>/ and
      #      components/argocd-apps/application-project-<name>.yaml
@@ -4867,7 +4869,7 @@ claim's goes, and `Orphan` leaves the realm's user and password, and the one in
    does not select stays as it was, byte for byte, and no sync wave moves:
 
    ```sh
-   cue vet ./... && rm -rf deploy/clusters && holos render platform
+   ./render.sh
    git status deploy/
      # new: clusters/<cluster>/components/keycloak-realm/user-<username>.yaml
      #      for each selected cluster, and nothing else
@@ -5823,28 +5825,39 @@ until the workflow runner rebuilds the images in the cluster.
 
 ## Render
 
-From this directory, in a clone or worktree with the Substrate submodules
-checked out (Substrate, above), which a fresh one is not. There is one per commit a
-cluster pins, and a pull can add one:
+From this directory, in a clone or worktree. A fresh one has neither the
+tools at the versions `deploy/` is rendered with nor the Substrate submodules
+(Substrate, above), one per commit a cluster pins, which a pull can add.
+`tools.sh` gets both, and is run again after a pull that adds a submodule or
+moves a tool's pin:
 
 ```sh
-git submodule update --init
-cue vet ./...
-rm -rf deploy/clusters
-holos render platform
+./tools.sh
+./render.sh
 git status deploy/
 ```
 
-`holos render platform` writes files but never removes one a component no
-longer renders, such as the Hubble certgen Job whose name changes with the
-Cilium values, so remove `deploy/clusters` first. Commit the result;
-`deploy/` must be clean after a render. CI's Render job
-(`.github/workflows/ci.yaml`) runs the same steps, with holos 0.106.0 and
-the helm v3.17.3, kubectl v1.37.1 and cue v0.17.1 it runs, and fails a
+`tools.sh` installs holos, cue, helm and kubectl into `.tools/bin` at the
+repository's root, which git ignores, each checked against its SHA-256, on
+Linux x86_64 and arm64 and macOS arm64, and checks out each submodule that is
+not, at its commit alone. The versions and checksums are in the script and
+nowhere else. Tools installed another way do as well, when they are on `PATH`
+at the same versions, and so does `git submodule update --init`.
+
+`render.sh` is `cue vet ./...`, `rm -rf deploy/clusters` and
+`holos render platform`, after `tools.sh check`: a tool that is missing or at
+another version, or a submodule not checked out, stops it before anything is
+removed, and so does a failed `cue vet`. The vet takes about 7 seconds and
+the render about 10. `holos render platform` writes files but never removes
+one a component no longer renders, such as the Hubble certgen Job whose name
+changes with the Cilium values, which is why `deploy/clusters` goes first.
+Commit the result; `deploy/` must be clean after a render. CI's Render job
+(`.github/workflows/ci.yaml`) runs the same two scripts, and fails a
 pull request whose committed tree differs from its render. Argo CD syncs
 what is committed on `main`, so a change reaches a cluster only with its
-render. Render one
-component with `holos render platform --selector component=cilium`.
+render. Render one component with
+`holos render platform --selector component=cilium`, with `.tools/bin` on
+`PATH` (`PATH=$(./tools.sh bin):$PATH`).
 
 Then check the render against ADR 0003's Service contract, as CI's Render
 job does next:
